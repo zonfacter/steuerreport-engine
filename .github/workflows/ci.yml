@@ -1,0 +1,80 @@
+name: CI Compliance Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+
+      - name: Setup Python
+        uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d
+        with:
+          python-version: "3.11"
+
+      - name: Install Base Tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit ruff mypy pytest pytest-cov
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Dependency Audit
+        run: pip-audit
+
+      - name: Static Analysis
+        run: |
+          ruff check .
+          if [ -d src ]; then mypy src/; fi
+
+      - name: Tests and Coverage
+        run: |
+          if [ -d tests ]; then
+            pytest -q
+          else
+            echo "tests/ not found" && exit 1
+          fi
+
+      - name: Coverage Gate (Core >=95)
+        run: |
+          CORE_FILES=$(find src/tax_engine/core -type f -name '*.py' ! -name '__init__.py' | wc -l || true)
+          CORE_TESTS=$(find tests/unit/core -type f -name 'test_*.py' | wc -l || true)
+          if [ "${CORE_FILES}" -gt 0 ] && [ "${CORE_TESTS}" -gt 0 ]; then
+            pytest tests/unit/core --cov=src/tax_engine/core --cov-fail-under=95 -q
+          else
+            echo "Skipping core coverage gate (no core files or tests yet)."
+          fi
+
+      - name: Coverage Gate (API >=80)
+        run: |
+          API_FILES=$(find src/tax_engine/api -type f -name '*.py' ! -name '__init__.py' | wc -l || true)
+          API_TESTS=$(find tests/unit/api -type f -name 'test_*.py' | wc -l || true)
+          if [ "${API_FILES}" -gt 0 ] && [ "${API_TESTS}" -gt 0 ]; then
+            pytest tests/unit/api --cov=src/tax_engine/api --cov-fail-under=80 -q
+          else
+            echo "Skipping api coverage gate (no api files or tests yet)."
+          fi
+
+      - name: Coverage Gate (UI >=70)
+        run: |
+          UI_FILES=$(find src/tax_engine/ui -type f -name '*.py' ! -name '__init__.py' | wc -l || true)
+          UI_TESTS=$(find tests/unit/ui -type f -name 'test_*.py' | wc -l || true)
+          if [ "${UI_FILES}" -gt 0 ] && [ "${UI_TESTS}" -gt 0 ]; then
+            pytest tests/unit/ui --cov=src/tax_engine/ui --cov-fail-under=70 -q
+          else
+            echo "Skipping ui coverage gate (no ui files or tests yet)."
+          fi
+
+      - name: Golden Hash Verification
+        run: |
+          if [ -f scripts/verify_integrity.py ]; then
+            python scripts/verify_integrity.py --all-years
+          else
+            echo "scripts/verify_integrity.py not found" && exit 1
+          fi
