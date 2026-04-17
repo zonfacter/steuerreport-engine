@@ -6,6 +6,8 @@ from uuid import uuid4
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from tax_engine.api.import_router import router as import_router
+
 
 class StandardResponse(BaseModel):
     trace_id: str = Field(description="Request trace identifier")
@@ -20,6 +22,8 @@ app = FastAPI(
     version="0.1.0",
     description="Modulare, auditierbare Steuer-Engine API",
 )
+
+app.include_router(import_router)
 
 
 @app.get("/api/v1/health", response_model=StandardResponse, tags=["system"])
