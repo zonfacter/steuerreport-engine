@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-import re
 from typing import Any
 
 from dateutil import parser as date_parser
 
-from tax_engine.ingestion.models import ColumnFormatDetection, ErrorDetail, ImportProfile, WarningDetail
-
+from tax_engine.ingestion.models import (
+    ColumnFormatDetection,
+    ErrorDetail,
+    ImportProfile,
+    WarningDetail,
+)
 
 NUMBER_PATTERN = re.compile(r"^[\s\+\-\(]?[\d\.,\s\u00A0]+(?:e[\+\-]?\d+)?\)?\s*$", re.IGNORECASE)
 ISO_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?(?:Z|[\+\-]\d{2}:?\d{2})?$")

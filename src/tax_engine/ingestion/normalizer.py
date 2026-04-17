@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 from decimal import Decimal
-import json
 from typing import Any
 
 from tax_engine.ingestion.models import (
     ErrorDetail,
+    NormalizedRow,
     NormalizePreviewData,
     NormalizePreviewRequest,
-    NormalizedRow,
     WarningDetail,
 )
 from tax_engine.ingestion.parser import parse_datetime_with_fallback, parse_decimal
-
 
 NUMERIC_LIKE_PATTERN = r"^[\s\+\-\(]?[\d\.,\s\u00A0]+(?:e[\+\-]?\d+)?\)?\s*$"
 
@@ -104,7 +102,7 @@ def normalize_preview(
         normalized_rows.append(
             NormalizedRow(
                 index=row_index,
-                values=json.loads(json.dumps(normalized_values, default=str)),
+                values=normalized_values,
                 unresolved_fields=sorted(set(unresolved_fields)),
             )
         )

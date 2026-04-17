@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from threading import Lock
-from typing import Any
+from typing import Any, Literal
 
 from tax_engine.ingestion.models import AuditEvent
 
@@ -17,7 +17,7 @@ class AuditEventWriter:
         *,
         trace_id: str,
         step: str,
-        status: str,
+        status: Literal["success", "error", "partial"],
         details: dict[str, Any] | None = None,
     ) -> AuditEvent:
         event = AuditEvent(

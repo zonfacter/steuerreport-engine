@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter
@@ -17,12 +17,16 @@ from tax_engine.ingestion.models import (
     PersistedSourceFile,
 )
 from tax_engine.ingestion.normalizer import normalize_preview
-from tax_engine.ingestion.parser import detect_column_format, detect_source_candidates, dedupe_payload_for_row
+from tax_engine.ingestion.parser import (
+    dedupe_payload_for_row,
+    detect_column_format,
+    detect_source_candidates,
+)
 from tax_engine.integrity.audit import AuditEventWriter
 from tax_engine.integrity.fingerprint import unique_event_id
 
-
 router = APIRouter(prefix="/api/v1/import", tags=["import"])
+StatusLiteral = Literal["success", "error", "partial"]
 
 _AUDIT_WRITER = AuditEventWriter()
 _PERSISTED_SOURCE_FILES: list[PersistedSourceFile] = []
@@ -68,7 +72,7 @@ def detect_format(request: DetectFormatRequest) -> dict[str, Any]:
             values=[row.get(field) for row in request.rows],
             source_candidates=source_candidates,
             profile=request.profile,
-        ).model_dump()
+        )
         for field in keys
     ]
 
@@ -93,7 +97,7 @@ def normalize_preview_endpoint(request: NormalizePreviewRequest) -> dict[str, An
     trace_id = str(uuid4())
     data, errors, warnings = normalize_preview(request)
 
-    status = "success"
+    status: StatusLiteral = "success"
     if errors and data.normalized_rows:
         status = "partial"
     elif errors:
@@ -173,7 +177,7 @@ def confirm_import(request: ConfirmImportRequest) -> dict[str, Any]:
         _PERSISTED_RAW_EVENTS[event_id] = persisted_event
         persisted_events.append(persisted_event)
 
-    status = "success"
+    status: StatusLiteral = "success"
     warnings: list[dict[str, Any]] = []
     if schema_errors and persisted_events:
         status = "partial"
