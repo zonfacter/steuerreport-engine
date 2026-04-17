@@ -13,6 +13,16 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Dependency-Dateien `requirements.txt` und `requirements-dev.txt` ergänzt.
 - `Makefile` mit Standard-Developer-Targets ergänzt (`lint`, `typecheck`, `test-cov`, `verify`, `ci`).
 - Integritäts-Skript-Stub `scripts/verify_integrity.py` ergänzt.
+- Modulare Ruleset-Strategie (`TaxRuleset`, Registry, DE-Standardregel) implementiert.
+- Deterministische Integritäts-Fingerprints für Event/Config/Ruleset/Report ergänzt.
+- Etappe-1-Importendpunkte ergänzt:
+  - `POST /api/v1/import/detect-format`
+  - `POST /api/v1/import/normalize-preview`
+  - `POST /api/v1/import/confirm`
+- Ingestion-Pipeline mit Decimal-/Datetime-Parsing, Subunit-Umrechnung und Audit-Trail ergänzt.
+- Unit-Tests für Ruleset, Integrität, Parser und Importendpunkte ergänzt.
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.
+- CI-Workflow installiert Dev-Abhängigkeiten aus `requirements-dev.txt` (Fallback auf `requirements.txt`).
+- API-Health-Test auf stabilen Contract-Test umgestellt.
