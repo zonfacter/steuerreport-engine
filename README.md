@@ -68,7 +68,8 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - Coinbase Exchange API (mit Passphrase, nicht Coinbase Advanced Trade)
 - Status `transactions-preview`:
   - Binance: Deposits + Withdrawals (signierte API-Abfrage)
-  - Bitget/Coinbase: Platzhalter mit klarer `not_implemented`-Warnung bis zum nächsten Release
+  - Bitget: Deposit-/Withdrawal-Records + Spot-Fills (signierte API-Abfrage)
+  - Coinbase Exchange: Accounts-Ledger + Fills (signierte API-Abfrage)
 
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).

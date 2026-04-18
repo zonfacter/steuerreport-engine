@@ -68,7 +68,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - CEX-Transaktionsvorschau ergänzt:
   - `POST /api/v1/connectors/cex/transactions-preview`
   - Binance: signierte Deposits-/Withdrawals-Historie als kanonische Preview-Zeilen
-  - Bitget/Coinbase: explizite `not_implemented`-Warnungen statt Blackbox-Verhalten
+  - Bitget: signierte Deposit-/Withdrawal-Records und Spot-Fills
+  - Coinbase Exchange: signierte Account-Ledger- und Fill-Abfragen
 - Signatur-Handling und Credentials-Validierung für Binance, Bitget und Coinbase Exchange ergänzt.
 - UI-Review-Tabellen ergänzt:
   - Filterbare Ansicht für `tax_lines` (Asset/Tax-Status)

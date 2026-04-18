@@ -173,18 +173,24 @@ def fetch_cex_transactions_preview(
             start_time_ms=start_time_ms,
             end_time_ms=end_time_ms,
         )
-    if connector in {"bitget", "coinbase"}:
-        return {
-            "connector_id": connector,
-            "count": 0,
-            "rows": [],
-            "warnings": [
-                {
-                    "code": "not_implemented",
-                    "message": f"{connector} transactions preview folgt im nächsten Connector-Release",
-                }
-            ],
-        }
+    if connector == "bitget":
+        return _bitget_transactions_preview(
+            api_key=api_key,
+            api_secret=api_secret,
+            passphrase=passphrase,
+            timeout_seconds=timeout_seconds,
+            max_rows=max_rows,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+        )
+    if connector == "coinbase":
+        return _coinbase_transactions_preview(
+            api_key=api_key,
+            api_secret=api_secret,
+            passphrase=passphrase,
+            timeout_seconds=timeout_seconds,
+            max_rows=max_rows,
+        )
     raise ValueError("unsupported_connector")
 
 
@@ -389,6 +395,184 @@ def _bitget_assets_payload(
     return payload
 
 
+def _bitget_signed_get(
+    path: str,
+    api_key: str,
+    api_secret: str,
+    passphrase: str | None,
+    timeout_seconds: int,
+    params: dict[str, str] | None = None,
+) -> Any:
+    if not passphrase:
+        raise ValueError("missing_passphrase")
+    query = urlencode(params or {})
+    request_path_with_query = path if not query else f"{path}?{query}"
+    timestamp = str(int(time.time() * 1000))
+    signature = build_bitget_signature(
+        timestamp=timestamp,
+        method="GET",
+        request_path_with_query=request_path_with_query,
+        body="",
+        secret=api_secret,
+    )
+    headers = {
+        "ACCESS-KEY": api_key,
+        "ACCESS-SIGN": signature,
+        "ACCESS-TIMESTAMP": timestamp,
+        "ACCESS-PASSPHRASE": passphrase,
+        "Content-Type": "application/json",
+    }
+    url = f"https://api.bitget.com{request_path_with_query}"
+    return _safe_get_json(url=url, headers=headers, timeout_seconds=timeout_seconds)
+
+
+def _bitget_transactions_preview(
+    api_key: str,
+    api_secret: str,
+    passphrase: str | None,
+    timeout_seconds: int,
+    max_rows: int,
+    start_time_ms: int | None,
+    end_time_ms: int | None,
+) -> dict[str, Any]:
+    if not passphrase:
+        raise ValueError("missing_passphrase")
+    now_ms = int(time.time() * 1000)
+    default_start = now_ms - (90 * 24 * 60 * 60 * 1000)
+    start_ms = start_time_ms if start_time_ms is not None else default_start
+    end_ms = end_time_ms if end_time_ms is not None else now_ms
+
+    base_params = {
+        "startTime": str(start_ms),
+        "endTime": str(end_ms),
+        "limit": str(min(max_rows, 1000)),
+    }
+
+    deposit_payload = _bitget_signed_get(
+        path="/api/v2/spot/wallet/deposit-records",
+        api_key=api_key,
+        api_secret=api_secret,
+        passphrase=passphrase,
+        timeout_seconds=timeout_seconds,
+        params=base_params,
+    )
+    withdrawal_payload = _bitget_signed_get(
+        path="/api/v2/spot/wallet/withdrawal-records",
+        api_key=api_key,
+        api_secret=api_secret,
+        passphrase=passphrase,
+        timeout_seconds=timeout_seconds,
+        params=base_params,
+    )
+    fills_payload = _bitget_signed_get(
+        path="/api/v2/spot/trade/fills",
+        api_key=api_key,
+        api_secret=api_secret,
+        passphrase=passphrase,
+        timeout_seconds=timeout_seconds,
+        params=base_params,
+    )
+
+    rows: list[dict[str, Any]] = []
+    warnings: list[dict[str, str]] = []
+
+    for payload_name, payload in (
+        ("deposit", deposit_payload),
+        ("withdrawal", withdrawal_payload),
+        ("fills", fills_payload),
+    ):
+        if not isinstance(payload, dict):
+            warnings.append({"code": f"{payload_name}_invalid_payload"})
+
+    dep_items = deposit_payload.get("data", []) if isinstance(deposit_payload, dict) else []
+    wdr_items = withdrawal_payload.get("data", []) if isinstance(withdrawal_payload, dict) else []
+    fill_items = fills_payload.get("data", []) if isinstance(fills_payload, dict) else []
+
+    for item in dep_items:
+        coin = str(item.get("coin") or item.get("currency") or "").upper()
+        amount = _to_decimal(item.get("size") or item.get("amount") or item.get("quantity") or "0")
+        ts_raw = item.get("uTime") or item.get("cTime") or item.get("ts") or item.get("createTime")
+        event_time = _to_utc_iso(ts_raw)
+        rows.append(
+            {
+                "timestamp_utc": event_time,
+                "asset": coin,
+                "quantity": amount.to_eng_string(),
+                "price": "",
+                "fee": "0",
+                "fee_asset": "",
+                "side": "in",
+                "event_type": "deposit",
+                "tx_id": str(item.get("orderId") or item.get("txId") or item.get("id") or ""),
+                "source": "bitget_api",
+                "raw_row": item,
+            }
+        )
+
+    for item in wdr_items:
+        coin = str(item.get("coin") or item.get("currency") or "").upper()
+        amount = _to_decimal(item.get("size") or item.get("amount") or item.get("quantity") or "0")
+        fee = _to_decimal(item.get("fee") or item.get("withdrawFee") or "0")
+        ts_raw = item.get("uTime") or item.get("cTime") or item.get("ts") or item.get("createTime")
+        event_time = _to_utc_iso(ts_raw)
+        rows.append(
+            {
+                "timestamp_utc": event_time,
+                "asset": coin,
+                "quantity": amount.to_eng_string(),
+                "price": "",
+                "fee": fee.to_eng_string(),
+                "fee_asset": coin,
+                "side": "out",
+                "event_type": "withdrawal",
+                "tx_id": str(item.get("orderId") or item.get("txId") or item.get("id") or ""),
+                "source": "bitget_api",
+                "raw_row": item,
+            }
+        )
+
+    for item in fill_items:
+        symbol = str(item.get("symbol") or "")
+        side = str(item.get("side") or item.get("tradeSide") or "").lower()
+        event_type = "trade"
+        quantity = _to_decimal(
+            item.get("size")
+            or item.get("baseVolume")
+            or item.get("fillQuantity")
+            or item.get("amount")
+            or "0"
+        )
+        price = _to_decimal(item.get("price") or item.get("priceAvg") or item.get("fillPrice") or "0")
+        fee = _to_decimal(item.get("feeDetail") or item.get("fee") or "0")
+        fee_coin = str(item.get("feeCoin") or item.get("feeCurrency") or "")
+        ts_raw = item.get("fillTime") or item.get("cTime") or item.get("uTime") or item.get("ts")
+        event_time = _to_utc_iso(ts_raw)
+        rows.append(
+            {
+                "timestamp_utc": event_time,
+                "asset": symbol,
+                "quantity": quantity.to_eng_string(),
+                "price": price.to_eng_string() if price else "",
+                "fee": fee.to_eng_string(),
+                "fee_asset": fee_coin.upper(),
+                "side": side,
+                "event_type": event_type,
+                "tx_id": str(item.get("tradeId") or item.get("orderId") or item.get("id") or ""),
+                "source": "bitget_api",
+                "raw_row": item,
+            }
+        )
+
+    rows.sort(key=lambda r: str(r.get("timestamp_utc") or ""))
+    limited_rows = rows[:max_rows]
+    return {
+        "connector_id": "bitget",
+        "count": len(limited_rows),
+        "rows": limited_rows,
+        "warnings": warnings,
+    }
+
+
 def _coinbase_accounts_payload(
     api_key: str, api_secret: str, passphrase: str | None, timeout_seconds: int
 ) -> Any:
@@ -415,3 +599,166 @@ def _coinbase_accounts_payload(
         headers=headers,
         timeout_seconds=timeout_seconds,
     )
+
+
+def _coinbase_signed_get(
+    path: str,
+    api_key: str,
+    api_secret: str,
+    passphrase: str | None,
+    timeout_seconds: int,
+    params: dict[str, str] | None = None,
+) -> Any:
+    if not passphrase:
+        raise ValueError("missing_passphrase")
+    query = urlencode(params or {})
+    request_path = path if not query else f"{path}?{query}"
+    timestamp = str(int(time.time()))
+    signature = build_coinbase_signature(
+        timestamp=timestamp,
+        method="GET",
+        request_path=request_path,
+        body="",
+        secret_base64=api_secret,
+    )
+    headers = {
+        "CB-ACCESS-KEY": api_key,
+        "CB-ACCESS-SIGN": signature,
+        "CB-ACCESS-TIMESTAMP": timestamp,
+        "CB-ACCESS-PASSPHRASE": passphrase,
+        "Content-Type": "application/json",
+    }
+    return _safe_get_json(
+        url=f"https://api.exchange.coinbase.com{request_path}",
+        headers=headers,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _coinbase_transactions_preview(
+    api_key: str,
+    api_secret: str,
+    passphrase: str | None,
+    timeout_seconds: int,
+    max_rows: int,
+) -> dict[str, Any]:
+    if not passphrase:
+        raise ValueError("missing_passphrase")
+    accounts_payload = _coinbase_signed_get(
+        path="/accounts",
+        api_key=api_key,
+        api_secret=api_secret,
+        passphrase=passphrase,
+        timeout_seconds=timeout_seconds,
+    )
+    fills_payload = _coinbase_signed_get(
+        path="/fills",
+        api_key=api_key,
+        api_secret=api_secret,
+        passphrase=passphrase,
+        timeout_seconds=timeout_seconds,
+        params={"limit": str(min(max_rows, 1000))},
+    )
+    rows: list[dict[str, Any]] = []
+    warnings: list[dict[str, str]] = []
+
+    if not isinstance(accounts_payload, list):
+        warnings.append({"code": "accounts_invalid_payload"})
+        accounts_payload = []
+    if not isinstance(fills_payload, list):
+        warnings.append({"code": "fills_invalid_payload"})
+        fills_payload = []
+
+    for account in accounts_payload:
+        account_id = str(account.get("id", ""))
+        currency = str(account.get("currency", "")).upper()
+        try:
+            ledger_payload = _coinbase_signed_get(
+                path=f"/accounts/{account_id}/ledger",
+                api_key=api_key,
+                api_secret=api_secret,
+                passphrase=passphrase,
+                timeout_seconds=timeout_seconds,
+                params={"limit": "100"},
+            )
+        except Exception:
+            warnings.append({"code": "ledger_fetch_failed", "account_id": account_id})
+            continue
+        if not isinstance(ledger_payload, list):
+            warnings.append({"code": "ledger_invalid_payload", "account_id": account_id})
+            continue
+        for item in ledger_payload:
+            ledger_type = str(item.get("type", "")).lower()
+            if ledger_type not in {"transfer", "match", "fee"}:
+                continue
+            amount = _to_decimal(item.get("amount", "0"))
+            side = "in" if amount >= 0 else "out"
+            event_type = "transfer" if ledger_type == "transfer" else "trade"
+            rows.append(
+                {
+                    "timestamp_utc": str(item.get("created_at") or ""),
+                    "asset": currency,
+                    "quantity": abs(amount).to_eng_string(),
+                    "price": "",
+                    "fee": "0",
+                    "fee_asset": "",
+                    "side": side,
+                    "event_type": event_type,
+                    "tx_id": str(item.get("id") or ""),
+                    "source": "coinbase_api",
+                    "raw_row": item,
+                }
+            )
+
+    for fill in fills_payload:
+        created_at = str(fill.get("created_at") or "")
+        size = _to_decimal(fill.get("size") or fill.get("filled_size") or "0")
+        price = _to_decimal(fill.get("price") or "0")
+        fee = _to_decimal(fill.get("fee") or "0")
+        side = str(fill.get("side") or "").lower()
+        product = str(fill.get("product_id") or "")
+        fee_currency = "USD"
+        if "-" in product:
+            fee_currency = product.split("-")[1]
+        rows.append(
+            {
+                "timestamp_utc": created_at,
+                "asset": product,
+                "quantity": size.to_eng_string(),
+                "price": price.to_eng_string() if price else "",
+                "fee": fee.to_eng_string(),
+                "fee_asset": fee_currency.upper(),
+                "side": side,
+                "event_type": "trade",
+                "tx_id": str(fill.get("trade_id") or fill.get("order_id") or ""),
+                "source": "coinbase_api",
+                "raw_row": fill,
+            }
+        )
+
+    rows.sort(key=lambda r: str(r.get("timestamp_utc") or ""))
+    limited_rows = rows[:max_rows]
+    return {
+        "connector_id": "coinbase",
+        "count": len(limited_rows),
+        "rows": limited_rows,
+        "warnings": warnings,
+    }
+
+
+def _to_utc_iso(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)) or str(value).isdigit():
+        ts = int(str(value))
+        if ts > 9999999999:
+            return datetime.fromtimestamp(ts / 1000, tz=UTC).isoformat()
+        return datetime.fromtimestamp(ts, tz=UTC).isoformat()
+    raw = str(value)
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC).isoformat()
+    except ValueError:
+        return raw

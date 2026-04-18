@@ -83,7 +83,34 @@ def test_fetch_cex_transactions_preview_binance_maps_deposit_and_withdrawal(monk
     assert any(row["event_type"] == "withdrawal" for row in result["rows"])
 
 
-def test_fetch_cex_transactions_preview_not_implemented_returns_warning() -> None:
+def test_fetch_cex_transactions_preview_unsupported_connector_raises() -> None:
+    try:
+        fetch_cex_transactions_preview(
+            connector_id="unknown",
+            api_key="key",
+            api_secret="secret",
+            passphrase="pass",
+            timeout_seconds=10,
+            max_rows=100,
+            start_time_ms=None,
+            end_time_ms=None,
+        )
+    except ValueError as exc:
+        assert str(exc) == "unsupported_connector"
+        return
+    raise AssertionError("expected ValueError for unsupported connector")
+
+
+def test_fetch_cex_transactions_preview_bitget_maps_data(monkeypatch) -> None:
+    def _fake_bitget_signed_get(**kwargs):
+        if kwargs["path"].endswith("deposit-records"):
+            return {"code": "00000", "data": [{"coin": "USDT", "size": "50", "orderId": "dep-1", "cTime": "1704067200000"}]}
+        if kwargs["path"].endswith("withdrawal-records"):
+            return {"code": "00000", "data": [{"coin": "BTC", "amount": "0.01", "fee": "0.0001", "orderId": "wd-1", "cTime": "1704153600000"}]}
+        return {"code": "00000", "data": [{"symbol": "BTCUSDT", "side": "Buy", "price": "40000", "size": "0.001", "tradeId": "tr-1", "cTime": "1704240000000"}]}
+
+    monkeypatch.setattr("tax_engine.connectors.service._bitget_signed_get", _fake_bitget_signed_get)
+
     result = fetch_cex_transactions_preview(
         connector_id="bitget",
         api_key="key",
@@ -94,5 +121,35 @@ def test_fetch_cex_transactions_preview_not_implemented_returns_warning() -> Non
         start_time_ms=None,
         end_time_ms=None,
     )
-    assert result["count"] == 0
-    assert result["warnings"][0]["code"] == "not_implemented"
+    assert result["count"] == 3
+    assert any(row["event_type"] == "deposit" for row in result["rows"])
+    assert any(row["event_type"] == "withdrawal" for row in result["rows"])
+    assert any(row["event_type"] == "trade" for row in result["rows"])
+
+
+def test_fetch_cex_transactions_preview_coinbase_maps_data(monkeypatch) -> None:
+    def _fake_coinbase_signed_get(**kwargs):
+        path = kwargs["path"]
+        if path == "/accounts":
+            return [{"id": "acc-1", "currency": "BTC"}]
+        if path == "/fills":
+            return [{"created_at": "2026-01-01T00:00:00Z", "size": "0.01", "price": "40000", "fee": "1", "side": "buy", "product_id": "BTC-USD", "trade_id": "t-1"}]
+        if path == "/accounts/acc-1/ledger":
+            return [{"created_at": "2026-01-01T01:00:00Z", "id": "l-1", "amount": "0.5", "type": "transfer"}]
+        return []
+
+    monkeypatch.setattr("tax_engine.connectors.service._coinbase_signed_get", _fake_coinbase_signed_get)
+
+    result = fetch_cex_transactions_preview(
+        connector_id="coinbase",
+        api_key="key",
+        api_secret="MDEyMzQ1Njc4OWFiY2RlZg==",
+        passphrase="pass",
+        timeout_seconds=10,
+        max_rows=100,
+        start_time_ms=None,
+        end_time_ms=None,
+    )
+    assert result["count"] == 2
+    assert any(row["event_type"] == "transfer" for row in result["rows"])
+    assert any(row["event_type"] == "trade" for row in result["rows"])
