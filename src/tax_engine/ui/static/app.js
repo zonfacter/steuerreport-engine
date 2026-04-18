@@ -4,6 +4,8 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const state = {
   unmatchedOutbound: [],
   unmatchedInbound: [],
+  taxLines: [],
+  derivativeLines: [],
 };
 
 const defaultEvents = [
@@ -42,6 +44,105 @@ function updateMetrics(data) {
   el("mTaxLines").textContent = String(data.tax_line_count ?? "-");
   el("mDerivLines").textContent = String(data.derivative_line_count ?? "-");
   el("summaryOut").textContent = JSON.stringify(data.result_summary ?? {}, null, 2);
+}
+
+function currentJobId() {
+  return el("jobId").value.trim();
+}
+
+function renderTaxTable() {
+  const tbody = el("taxTable").querySelector("tbody");
+  tbody.innerHTML = "";
+  const assetFilter = el("taxFilterAsset").value.trim().toUpperCase();
+  const statusFilter = el("taxFilterStatus").value.trim();
+  const rows = state.taxLines.filter((line) => {
+    if (assetFilter && String(line.asset).toUpperCase() !== assetFilter) return false;
+    if (statusFilter && line.tax_status !== statusFilter) return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="10">Keine Tax Lines für aktuellen Filter.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  rows.forEach((line) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${line.line_no}</td>
+      <td>${line.asset}</td>
+      <td class="num">${line.qty}</td>
+      <td>${line.buy_timestamp_utc}</td>
+      <td>${line.sell_timestamp_utc}</td>
+      <td class="num">${line.cost_basis_eur}</td>
+      <td class="num">${line.proceeds_eur}</td>
+      <td class="num">${line.gain_loss_eur}</td>
+      <td class="num">${line.hold_days}</td>
+      <td>${line.tax_status}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderDerivativeTable() {
+  const tbody = el("derivTable").querySelector("tbody");
+  tbody.innerHTML = "";
+  const assetFilter = el("derivFilterAsset").value.trim().toUpperCase();
+  const typeFilter = el("derivFilterType").value.trim();
+  const rows = state.derivativeLines.filter((line) => {
+    if (assetFilter && String(line.asset).toUpperCase() !== assetFilter) return false;
+    if (typeFilter && line.event_type !== typeFilter) return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="11">Keine Derivative Lines für aktuellen Filter.</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+
+  rows.forEach((line) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${line.line_no}</td>
+      <td>${line.position_id}</td>
+      <td>${line.asset}</td>
+      <td>${line.event_type}</td>
+      <td>${line.open_timestamp_utc}</td>
+      <td>${line.close_timestamp_utc}</td>
+      <td class="num">${line.collateral_eur}</td>
+      <td class="num">${line.proceeds_eur}</td>
+      <td class="num">${line.fees_eur}</td>
+      <td class="num">${line.funding_eur}</td>
+      <td class="num">${line.gain_loss_eur}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function toCsv(rows, headers) {
+  const esc = (value) => {
+    const v = value == null ? "" : String(value);
+    return `"${v.replaceAll('"', '""')}"`;
+  };
+  const lines = [headers.join(",")];
+  rows.forEach((row) => {
+    lines.push(headers.map((h) => esc(row[h])).join(","));
+  });
+  return lines.join("\n");
+}
+
+function downloadCsv(filename, content) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 async function callApi(path, method = "GET", body = null, btn = null) {
@@ -253,7 +354,77 @@ function init() {
     const data = await callApi(`/api/v1/process/status/${jobId}`, "GET", null, e.currentTarget);
     if (data?.data) updateMetrics(data.data);
   });
+
+  el("btnLoadTaxLines").addEventListener("click", async (e) => {
+    const jobId = currentJobId();
+    if (!jobId) {
+      showToast("Bitte zuerst eine job_id eintragen.", "warn");
+      return;
+    }
+    const data = await callApi(`/api/v1/process/tax-lines/${jobId}`, "GET", null, e.currentTarget);
+    state.taxLines = data?.data?.lines ?? [];
+    renderTaxTable();
+  });
+
+  el("btnLoadDerivLines").addEventListener("click", async (e) => {
+    const jobId = currentJobId();
+    if (!jobId) {
+      showToast("Bitte zuerst eine job_id eintragen.", "warn");
+      return;
+    }
+    const data = await callApi(`/api/v1/process/derivative-lines/${jobId}`, "GET", null, e.currentTarget);
+    state.derivativeLines = data?.data?.lines ?? [];
+    renderDerivativeTable();
+  });
+
+  el("taxFilterAsset").addEventListener("input", renderTaxTable);
+  el("taxFilterStatus").addEventListener("change", renderTaxTable);
+  el("derivFilterAsset").addEventListener("input", renderDerivativeTable);
+  el("derivFilterType").addEventListener("change", renderDerivativeTable);
+
+  el("btnTaxCsv").addEventListener("click", () => {
+    if (!state.taxLines.length) {
+      showToast("Keine Tax Lines geladen.", "warn");
+      return;
+    }
+    const csv = toCsv(state.taxLines, [
+      "line_no",
+      "asset",
+      "qty",
+      "buy_timestamp_utc",
+      "sell_timestamp_utc",
+      "cost_basis_eur",
+      "proceeds_eur",
+      "gain_loss_eur",
+      "hold_days",
+      "tax_status",
+      "source_event_id",
+    ]);
+    downloadCsv(`tax_lines_${currentJobId() || "job"}.csv`, csv);
+  });
+
+  el("btnDerivCsv").addEventListener("click", () => {
+    if (!state.derivativeLines.length) {
+      showToast("Keine Derivative Lines geladen.", "warn");
+      return;
+    }
+    const csv = toCsv(state.derivativeLines, [
+      "line_no",
+      "position_id",
+      "asset",
+      "event_type",
+      "open_timestamp_utc",
+      "close_timestamp_utc",
+      "collateral_eur",
+      "proceeds_eur",
+      "fees_eur",
+      "funding_eur",
+      "gain_loss_eur",
+      "loss_bucket",
+      "source_event_id",
+    ]);
+    downloadCsv(`derivative_lines_${currentJobId() || "job"}.csv`, csv);
+  });
 }
 
 init();
-

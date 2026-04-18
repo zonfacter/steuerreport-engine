@@ -106,6 +106,73 @@
         <h3>Result Summary</h3>
         <pre id="summaryOut"></pre>
 
+        <h3>Tax Lines</h3>
+        <div class="row">
+          <label>Asset Filter<input id="taxFilterAsset" placeholder="z.B. BTC" /></label>
+          <label>Tax Status
+            <select id="taxFilterStatus">
+              <option value="">alle</option>
+              <option value="taxable">taxable</option>
+              <option value="exempt">exempt</option>
+            </select>
+          </label>
+          <button id="btnLoadTaxLines">Tax Lines laden</button>
+          <button id="btnTaxCsv">Tax CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table id="taxTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Asset</th>
+                <th>Menge</th>
+                <th>Kauf</th>
+                <th>Verkauf</th>
+                <th>Kosten EUR</th>
+                <th>Erlös EUR</th>
+                <th>Gewinn/Verlust</th>
+                <th>Haltedauer</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <h3>Derivative Lines</h3>
+        <div class="row">
+          <label>Asset Filter<input id="derivFilterAsset" placeholder="z.B. ETH" /></label>
+          <label>Event-Typ
+            <select id="derivFilterType">
+              <option value="">alle</option>
+              <option value="close">close</option>
+              <option value="liquidation">liquidation</option>
+            </select>
+          </label>
+          <button id="btnLoadDerivLines">Derivative Lines laden</button>
+          <button id="btnDerivCsv">Derivative CSV</button>
+        </div>
+        <div class="table-wrap">
+          <table id="derivTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Position</th>
+                <th>Asset</th>
+                <th>Typ</th>
+                <th>Open</th>
+                <th>Close</th>
+                <th>Collateral</th>
+                <th>Proceeds</th>
+                <th>Fees</th>
+                <th>Funding</th>
+                <th>Gain/Loss</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
         <h3>Letzte API-Antwort</h3>
         <pre id="responseOut"></pre>
       </section>
@@ -113,4 +180,3 @@
     <script src="/ui/static/app.js"></script>
   </body>
 </html>
-

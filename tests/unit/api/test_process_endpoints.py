@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from tax_engine.api.app import (
     import_confirm,
+    process_derivative_lines,
     process_run,
     process_status,
+    process_tax_lines,
     process_worker_run_next,
 )
 from tax_engine.ingestion.models import ConfirmImportRequest
@@ -104,6 +106,8 @@ def test_worker_run_next_completes_queued_job() -> None:
 
     result = process_worker_run_next(WorkerRunNextRequest(simulate_fail=False))
     status = process_status(job_id)
+    tax_lines_response = process_tax_lines(job_id)
+    derivative_lines_response = process_derivative_lines(job_id)
 
     assert result.status == "success"
     assert result.data["job_id"] == job_id
@@ -120,6 +124,10 @@ def test_worker_run_next_completes_queued_job() -> None:
     assert len(derivative_lines) == 1
     assert tax_lines[0]["asset"] == "BTC"
     assert derivative_lines[0]["asset"] == "ETH"
+    assert tax_lines_response.status == "success"
+    assert derivative_lines_response.status == "success"
+    assert tax_lines_response.data["count"] == 1
+    assert derivative_lines_response.data["count"] == 1
     assert status.data["status"] == "completed"
 
 

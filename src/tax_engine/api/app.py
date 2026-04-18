@@ -19,6 +19,7 @@ from tax_engine.ingestion import (
     normalize_preview,
     write_audit,
 )
+from tax_engine.ingestion.store import STORE
 from tax_engine.queue import (
     ProcessRunRequest,
     WorkerRunNextRequest,
@@ -177,6 +178,50 @@ def process_status(job_id: str) -> StandardResponse:
         payload={"job_id": job_id, "found": True, "status": job["status"]},
     )
     return StandardResponse(trace_id=trace_id, status="success", data=job, errors=[], warnings=[])
+
+
+@app.get("/api/v1/process/tax-lines/{job_id}", response_model=StandardResponse, tags=["process"])
+def process_tax_lines(job_id: str) -> StandardResponse:
+    trace_id = str(uuid4())
+    job = get_processing_job(job_id)
+    if job is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "job_not_found", "message": f"Job not found: {job_id}"}],
+            warnings=[],
+        )
+    lines = STORE.get_tax_lines(job_id)
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={"job_id": job_id, "count": len(lines), "lines": lines},
+        errors=[],
+        warnings=[],
+    )
+
+
+@app.get("/api/v1/process/derivative-lines/{job_id}", response_model=StandardResponse, tags=["process"])
+def process_derivative_lines(job_id: str) -> StandardResponse:
+    trace_id = str(uuid4())
+    job = get_processing_job(job_id)
+    if job is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "job_not_found", "message": f"Job not found: {job_id}"}],
+            warnings=[],
+        )
+    lines = STORE.get_derivative_lines(job_id)
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={"job_id": job_id, "count": len(lines), "lines": lines},
+        errors=[],
+        warnings=[],
+    )
 
 
 @app.post("/api/v1/process/worker/run-next", response_model=StandardResponse, tags=["process"])

@@ -53,6 +53,13 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Validierung/Toasts für Fehler- und Erfolgsmeldungen
   - Unmatched-Listen + Dropdowns für Manual-Match
   - Review-Kacheln für Jobstatus und Ergebniskennzahlen
+- Process-Read-Endpunkte für Ergebniszeilen ergänzt:
+  - `GET /api/v1/process/tax-lines/{job_id}`
+  - `GET /api/v1/process/derivative-lines/{job_id}`
+- UI-Review-Tabellen ergänzt:
+  - Filterbare Ansicht für `tax_lines` (Asset/Tax-Status)
+  - Filterbare Ansicht für `derivative_lines` (Asset/Event-Typ)
+  - CSV-Download direkt aus dem Browser für beide Tabellen
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.

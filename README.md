@@ -45,6 +45,8 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - Form-Validierung und Status-/Fehlermeldungen
   - Kandidatenlisten für manuelles Transfer-Matching
   - Kennzahlen-Review für Job-Status, Tax-/Derivative-Lines
+  - Review-Tabellen für `tax_lines` und `derivative_lines`
+  - Filter (Asset/Status/Event-Typ) und CSV-Download direkt im Browser
 
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).
