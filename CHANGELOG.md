@@ -48,6 +48,11 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Persistenz für `transfer_matches` ergänzt.
 - Erstes lokales Web-UX ergänzt unter `GET /app` (statische Dashboard-Seite).
 - UI deckt Import/Reconcile/Process/Worker/Status für manuelles End-to-End-Testen ab.
+- UX auf Workflow-Usability ausgebaut:
+  - Schritt-Navigation mit Panels
+  - Validierung/Toasts für Fehler- und Erfolgsmeldungen
+  - Unmatched-Listen + Dropdowns für Manual-Match
+  - Review-Kacheln für Jobstatus und Ergebniskennzahlen
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.

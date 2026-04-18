@@ -40,6 +40,11 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - Import Confirm
   - Reconcile Auto/Manual + Unmatched View
   - Process Run / Worker Run Next / Status
+- UX-Verbesserungen (aktuell):
+  - Schritt-Navigation (Import, Reconcile, Process, Review)
+  - Form-Validierung und Status-/Fehlermeldungen
+  - Kandidatenlisten für manuelles Transfer-Matching
+  - Kennzahlen-Review für Job-Status, Tax-/Derivative-Lines
 
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).
