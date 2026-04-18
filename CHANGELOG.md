@@ -56,6 +56,12 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Process-Read-Endpunkte für Ergebniszeilen ergänzt:
   - `GET /api/v1/process/tax-lines/{job_id}`
   - `GET /api/v1/process/derivative-lines/{job_id}`
+- Erste Import-Connector-Stufe ergänzt:
+  - `GET /api/v1/import/connectors`
+  - `POST /api/v1/import/parse-preview`
+  - `POST /api/v1/import/upload-preview` (Base64-Dateiinhalt)
+- Connector-Mapping für `binance`, `bitget`, `coinbase`, `pionex`, `blockpit` ergänzt
+  (CSV/XLSX-Parsing und Normalisierung ins kanonische Vorschauformat).
 - UI-Review-Tabellen ergänzt:
   - Filterbare Ansicht für `tax_lines` (Asset/Tax-Status)
   - Filterbare Ansicht für `derivative_lines` (Asset/Event-Typ)

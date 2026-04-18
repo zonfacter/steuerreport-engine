@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from base64 import b64decode
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,11 +13,16 @@ from pydantic import BaseModel, Field
 
 from tax_engine.ingestion import (
     ConfirmImportRequest,
+    ConnectorParseRequest,
     DetectFormatRequest,
     NormalizePreviewRequest,
+    UploadPreviewRequest,
     confirm_import,
     detect_format,
+    list_connectors,
+    normalize_connector_rows,
     normalize_preview,
+    parse_upload_file,
     write_audit,
 )
 from tax_engine.ingestion.store import STORE
@@ -135,6 +141,136 @@ def import_confirm(payload: ConfirmImportRequest) -> StandardResponse:
         },
     )
     return StandardResponse(trace_id=trace_id, status="success", data=result, errors=[], warnings=[])
+
+
+@app.get("/api/v1/import/connectors", response_model=StandardResponse, tags=["import"])
+def import_connectors() -> StandardResponse:
+    trace_id = str(uuid4())
+    connectors = list_connectors()
+    write_audit(
+        trace_id=trace_id,
+        action="import.connectors",
+        payload={"count": len(connectors)},
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={"connectors": connectors, "count": len(connectors)},
+        errors=[],
+        warnings=[],
+    )
+
+
+@app.post("/api/v1/import/parse-preview", response_model=StandardResponse, tags=["import"])
+def import_parse_preview(payload: ConnectorParseRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    normalized_rows, warnings, errors = normalize_connector_rows(
+        connector_id=payload.connector_id,
+        rows=payload.rows,
+        max_rows=payload.max_rows,
+    )
+    status = "success" if not errors else "partial"
+    write_audit(
+        trace_id=trace_id,
+        action="import.parse_preview",
+        payload={
+            "connector_id": payload.connector_id,
+            "input_rows": len(payload.rows),
+            "normalized_rows": len(normalized_rows),
+            "warnings_count": len(warnings),
+            "errors_count": len(errors),
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status=status,
+        data={
+            "connector_id": payload.connector_id,
+            "normalized_rows": normalized_rows,
+            "count": len(normalized_rows),
+        },
+        errors=errors,
+        warnings=warnings,
+    )
+
+
+@app.post("/api/v1/import/upload-preview", response_model=StandardResponse, tags=["import"])
+def import_upload_preview(payload: UploadPreviewRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    if not payload.filename:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "missing_filename", "message": "Filename missing"}],
+            warnings=[],
+        )
+
+    try:
+        content = b64decode(payload.file_content_base64, validate=True)
+    except Exception:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "invalid_base64", "message": "Dateiinhalt ist kein valides Base64"}],
+            warnings=[],
+        )
+
+    try:
+        rows, file_warnings = parse_upload_file(payload.filename, content)
+    except ValueError as exc:
+        write_audit(
+            trace_id=trace_id,
+            action="import.upload_preview",
+            payload={
+                "connector_id": payload.connector_id,
+                "filename": payload.filename,
+                "parse_error": str(exc),
+            },
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": str(exc), "message": "Upload konnte nicht geparst werden"}],
+            warnings=[],
+        )
+
+    normalized_rows, map_warnings, errors = normalize_connector_rows(
+        connector_id=payload.connector_id,
+        rows=rows,
+        max_rows=payload.max_rows,
+    )
+    warnings = [*file_warnings, *map_warnings]
+    status = "success" if not errors else "partial"
+
+    write_audit(
+        trace_id=trace_id,
+        action="import.upload_preview",
+        payload={
+            "connector_id": payload.connector_id,
+            "filename": payload.filename,
+            "input_rows": len(rows),
+            "normalized_rows": len(normalized_rows),
+            "warnings_count": len(warnings),
+            "errors_count": len(errors),
+        },
+    )
+
+    return StandardResponse(
+        trace_id=trace_id,
+        status=status,
+        data={
+            "connector_id": payload.connector_id,
+            "filename": payload.filename,
+            "input_rows": len(rows),
+            "count": len(normalized_rows),
+            "normalized_rows": normalized_rows,
+        },
+        errors=errors,
+        warnings=warnings,
+    )
 
 
 @app.post("/api/v1/process/run", response_model=StandardResponse, tags=["process"])

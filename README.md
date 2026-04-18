@@ -38,6 +38,7 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   3. Browser: `http://localhost:8000/app`
 - Das Dashboard deckt aktuell ab:
   - Import Confirm
+  - Connector-Preview (Binance, Bitget, Coinbase, Pionex, Blockpit)
   - Reconcile Auto/Manual + Unmatched View
   - Process Run / Worker Run Next / Status
 - UX-Verbesserungen (aktuell):
@@ -47,6 +48,13 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - Kennzahlen-Review für Job-Status, Tax-/Derivative-Lines
   - Review-Tabellen für `tax_lines` und `derivative_lines`
   - Filter (Asset/Status/Event-Typ) und CSV-Download direkt im Browser
+
+## Import-Connectoren (Phase 1)
+- Unterstützte Quellen (CSV/XLSX + API später): `binance`, `bitget`, `coinbase`, `pionex`, `blockpit`
+- Endpunkte:
+  - `GET /api/v1/import/connectors`
+  - `POST /api/v1/import/parse-preview` (JSON-Rows -> kanonisches Vorschauformat)
+  - `POST /api/v1/import/upload-preview` (Dateiinhalt als Base64 + Dateiname -> Vorschau)
 
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).

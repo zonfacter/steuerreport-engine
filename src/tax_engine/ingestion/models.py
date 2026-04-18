@@ -28,6 +28,19 @@ class ConfirmImportRequest(BaseModel):
     subunit_fields: dict[str, str] = Field(default_factory=dict)
 
 
+class ConnectorParseRequest(BaseModel):
+    connector_id: str = Field(min_length=1)
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    max_rows: int = Field(default=5000, ge=1, le=50000)
+
+
+class UploadPreviewRequest(BaseModel):
+    connector_id: str = Field(min_length=1)
+    filename: str = Field(min_length=1)
+    file_content_base64: str = Field(min_length=1)
+    max_rows: int = Field(default=5000, ge=1, le=50000)
+
+
 class AuditEntry(BaseModel):
     trace_id: str
     action: str
