@@ -46,6 +46,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - `POST /api/v1/reconcile/manual`
 - Time-Window-Matching mit Confidence-Score und Toleranz-Logik ergänzt.
 - Persistenz für `transfer_matches` ergänzt.
+- Erstes lokales Web-UX ergänzt unter `GET /app` (statische Dashboard-Seite).
+- UI deckt Import/Reconcile/Process/Worker/Status für manuelles End-to-End-Testen ab.
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.

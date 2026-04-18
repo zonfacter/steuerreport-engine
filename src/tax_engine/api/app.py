@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from tax_engine.ingestion import (
@@ -46,6 +49,9 @@ app = FastAPI(
     description="Modulare, auditierbare Steuer-Engine API",
 )
 
+_UI_STATIC_DIR = Path(__file__).resolve().parents[1] / "ui" / "static"
+app.mount("/ui/static", StaticFiles(directory=str(_UI_STATIC_DIR)), name="ui-static")
+
 
 @app.get("/api/v1/health", response_model=StandardResponse, tags=["system"])
 def health() -> StandardResponse:
@@ -60,6 +66,11 @@ def health() -> StandardResponse:
         errors=[],
         warnings=[],
     )
+
+
+@app.get("/app", include_in_schema=False)
+def web_app() -> FileResponse:
+    return FileResponse(_UI_STATIC_DIR / "index.html")
 
 
 @app.post("/api/v1/import/detect-format", response_model=StandardResponse, tags=["import"])

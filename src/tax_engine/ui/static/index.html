@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Steuerreport Engine - Dashboard</title>
+    <link rel="stylesheet" href="/ui/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="hero">
+        <h1>Steuerreport Engine</h1>
+        <p>Lokales Test-Dashboard für Ingestion, Reconciliation und Processing.</p>
+      </header>
+
+      <section class="card">
+        <h2>1) Import Confirm</h2>
+        <p>JSON-Array mit Roh-Events einfügen und in `raw_events` persistieren.</p>
+        <textarea id="eventsJson" rows="12"></textarea>
+        <div class="row">
+          <input id="sourceName" value="manual-ui.csv" />
+          <button id="btnImport">Import Confirm</button>
+        </div>
+      </section>
+
+      <section class="card grid">
+        <div>
+          <h2>2) Reconcile</h2>
+          <button id="btnAutoMatch">Auto-Match</button>
+          <button id="btnUnmatched">Unmatched Laden</button>
+          <h3>Manual Match</h3>
+          <input id="manualOut" placeholder="outbound_event_id" />
+          <input id="manualIn" placeholder="inbound_event_id" />
+          <input id="manualNote" placeholder="Notiz (optional)" />
+          <button id="btnManualMatch">Manual Match</button>
+        </div>
+        <div>
+          <h3>Unmatched</h3>
+          <pre id="unmatchedOut"></pre>
+        </div>
+      </section>
+
+      <section class="card grid">
+        <div>
+          <h2>3) Process</h2>
+          <div class="row">
+            <input id="taxYear" type="number" value="2026" />
+            <input id="rulesetId" value="DE-2026-v1.0" />
+          </div>
+          <button id="btnRun">Process Run</button>
+          <button id="btnWorker">Worker Run Next</button>
+        </div>
+        <div>
+          <h3>Status</h3>
+          <div class="row">
+            <input id="jobId" placeholder="job_id" />
+            <button id="btnStatus">Status Laden</button>
+          </div>
+          <pre id="statusOut"></pre>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Antworten</h2>
+        <pre id="responseOut"></pre>
+      </section>
+    </main>
+
+    <script src="/ui/static/app.js"></script>
+  </body>
+  </html>
+

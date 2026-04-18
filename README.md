@@ -31,11 +31,15 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
 - `make smoke` schneller End-to-End-Flow (Import/Reconcile/Process/Worker)
 
 ## UX-Status
-- Aktuell gibt es noch **kein Web-Frontend (Dashboard/UI)**.
-- Derzeit testest du über:
-  - automatisierte Tests (`make test`)
-  - Smoke-Test (`make smoke`)
-  - API direkt (FastAPI/Swagger folgt als nächster Schritt)
+- Ein erstes lokales Web-Dashboard ist verfügbar unter `GET /app`.
+- Start:
+  1. `cd /workspace/steuerreport`
+  2. `PYTHONPATH=src uvicorn tax_engine.api:app --reload --port 8000`
+  3. Browser: `http://localhost:8000/app`
+- Das Dashboard deckt aktuell ab:
+  - Import Confirm
+  - Reconcile Auto/Manual + Unmatched View
+  - Process Run / Worker Run Next / Status
 
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).
