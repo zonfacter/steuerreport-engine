@@ -23,6 +23,13 @@ from tax_engine.queue import (
     get_processing_job,
     run_next_queued_job,
 )
+from tax_engine.reconciliation import (
+    AutoMatchRequest,
+    ManualMatchRequest,
+    auto_match_and_persist,
+    list_unmatched_transfers,
+    manual_match,
+)
 
 
 class StandardResponse(BaseModel):
@@ -189,3 +196,76 @@ def process_worker_run_next(payload: WorkerRunNextRequest) -> StandardResponse:
         },
     )
     return StandardResponse(trace_id=trace_id, status="success", data=processed, errors=[], warnings=[])
+
+
+@app.post("/api/v1/reconcile/auto-match", response_model=StandardResponse, tags=["reconcile"])
+def reconcile_auto_match(payload: AutoMatchRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    result = auto_match_and_persist(
+        time_window_seconds=payload.time_window_seconds,
+        amount_tolerance_ratio=payload.amount_tolerance_ratio,
+        min_confidence=payload.min_confidence,
+    )
+    write_audit(
+        trace_id=trace_id,
+        action="reconcile.auto_match",
+        payload={
+            "persisted_match_count": result["persisted_match_count"],
+            "unmatched_outbound_count": len(result["unmatched_outbound_ids"]),
+            "unmatched_inbound_count": len(result["unmatched_inbound_ids"]),
+        },
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=result, errors=[], warnings=[])
+
+
+@app.get("/api/v1/review/unmatched", response_model=StandardResponse, tags=["reconcile"])
+def review_unmatched(
+    time_window_seconds: int = 600,
+    amount_tolerance_ratio: float = 0.02,
+    min_confidence: float = 0.75,
+) -> StandardResponse:
+    trace_id = str(uuid4())
+    result = list_unmatched_transfers(
+        time_window_seconds=time_window_seconds,
+        amount_tolerance_ratio=amount_tolerance_ratio,
+        min_confidence=min_confidence,
+    )
+    write_audit(
+        trace_id=trace_id,
+        action="review.unmatched",
+        payload={
+            "unmatched_outbound_count": len(result["unmatched_outbound_ids"]),
+            "unmatched_inbound_count": len(result["unmatched_inbound_ids"]),
+        },
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=result, errors=[], warnings=[])
+
+
+@app.post("/api/v1/reconcile/manual", response_model=StandardResponse, tags=["reconcile"])
+def reconcile_manual(payload: ManualMatchRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    result = manual_match(
+        outbound_event_id=payload.outbound_event_id,
+        inbound_event_id=payload.inbound_event_id,
+        note=payload.note,
+    )
+    if not result["ok"]:
+        write_audit(
+            trace_id=trace_id,
+            action="reconcile.manual",
+            payload={"ok": False, "error": result["error"]},
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": result["error"], "message": "Manual match failed"}],
+            warnings=[],
+        )
+
+    write_audit(
+        trace_id=trace_id,
+        action="reconcile.manual",
+        payload={"ok": True, "match_id": result["match_id"]},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=result, errors=[], warnings=[])

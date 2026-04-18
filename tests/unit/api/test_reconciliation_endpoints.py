@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+from tax_engine.api.app import (
+    import_confirm,
+    reconcile_auto_match,
+    reconcile_manual,
+    review_unmatched,
+)
+from tax_engine.ingestion.models import ConfirmImportRequest
+from tax_engine.ingestion.store import STORE
+from tax_engine.reconciliation.models import AutoMatchRequest, ManualMatchRequest
+
+
+def _reset_store() -> None:
+    STORE.reset_for_tests()
+
+
+def test_reconcile_auto_match_and_review_unmatched() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="x.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "SOL",
+                    "event_type": "withdrawal",
+                    "amount": "10.00",
+                },
+                {
+                    "timestamp": "2026-01-01T12:03:00Z",
+                    "asset": "SOL",
+                    "event_type": "deposit",
+                    "amount": "9.99",
+                },
+                {
+                    "timestamp": "2026-01-01T12:10:00Z",
+                    "asset": "BTC",
+                    "event_type": "withdrawal",
+                    "amount": "1.0",
+                },
+            ],
+        )
+    )
+
+    matched = reconcile_auto_match(AutoMatchRequest())
+    unmatched = review_unmatched()
+
+    assert matched.status == "success"
+    assert matched.data["persisted_match_count"] == 1
+    assert unmatched.status == "success"
+    assert unmatched.data["unmatched_outbound_ids"] != []
+
+
+def test_reconcile_manual_creates_match() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="y.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "ETH",
+                    "event_type": "withdrawal",
+                    "amount": "2.0",
+                },
+                {
+                    "timestamp": "2026-01-01T13:00:00Z",
+                    "asset": "ETH",
+                    "event_type": "deposit",
+                    "amount": "1.99",
+                },
+            ],
+        )
+    )
+    raw_events = STORE.list_raw_events()
+    outbound_id = raw_events[0]["unique_event_id"]
+    inbound_id = raw_events[1]["unique_event_id"]
+
+    result = reconcile_manual(
+        ManualMatchRequest(
+            outbound_event_id=outbound_id,
+            inbound_event_id=inbound_id,
+            note="manual link",
+        )
+    )
+
+    assert result.status == "success"
+    assert result.data["ok"] is True
+

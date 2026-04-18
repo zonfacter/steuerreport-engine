@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any
+from uuid import uuid4
 
 
 class SQLiteImportStore:
@@ -410,6 +411,86 @@ class SQLiteImportStore:
             for row in rows
         ]
 
+    def create_transfer_match(
+        self,
+        outbound_event_id: str,
+        inbound_event_id: str,
+        confidence_score: str,
+        time_diff_seconds: int,
+        amount_diff: str,
+        status: str,
+        method: str,
+        note: str | None = None,
+    ) -> str:
+        match_id = str(uuid4())
+        created_at_utc = datetime.now(UTC).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO transfer_matches (
+                    match_id,
+                    outbound_event_id,
+                    inbound_event_id,
+                    confidence_score,
+                    time_diff_seconds,
+                    amount_diff,
+                    status,
+                    method,
+                    note,
+                    created_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    match_id,
+                    outbound_event_id,
+                    inbound_event_id,
+                    confidence_score,
+                    time_diff_seconds,
+                    amount_diff,
+                    status,
+                    method,
+                    note,
+                    created_at_utc,
+                ),
+            )
+            conn.commit()
+        return match_id
+
+    def list_transfer_matches(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    match_id,
+                    outbound_event_id,
+                    inbound_event_id,
+                    confidence_score,
+                    time_diff_seconds,
+                    amount_diff,
+                    status,
+                    method,
+                    note,
+                    created_at_utc
+                FROM transfer_matches
+                ORDER BY created_at_utc ASC
+                """
+            ).fetchall()
+        return [
+            {
+                "match_id": row["match_id"],
+                "outbound_event_id": row["outbound_event_id"],
+                "inbound_event_id": row["inbound_event_id"],
+                "confidence_score": row["confidence_score"],
+                "time_diff_seconds": int(row["time_diff_seconds"]),
+                "amount_diff": row["amount_diff"],
+                "status": row["status"],
+                "method": row["method"],
+                "note": row["note"],
+                "created_at_utc": row["created_at_utc"],
+            }
+            for row in rows
+        ]
+
     def get_processing_job(self, job_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -467,6 +548,7 @@ class SQLiteImportStore:
 
     def reset_for_tests(self) -> None:
         with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM transfer_matches")
             conn.execute("DELETE FROM derivative_lines")
             conn.execute("DELETE FROM tax_lines")
             conn.execute("DELETE FROM processing_queue")

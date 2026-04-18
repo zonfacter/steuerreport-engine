@@ -75,8 +75,23 @@ CREATE TABLE IF NOT EXISTS derivative_lines (
     FOREIGN KEY(job_id) REFERENCES processing_queue(job_id)
 );
 
+CREATE TABLE IF NOT EXISTS transfer_matches (
+    match_id TEXT PRIMARY KEY,
+    outbound_event_id TEXT NOT NULL,
+    inbound_event_id TEXT NOT NULL,
+    confidence_score TEXT NOT NULL,
+    time_diff_seconds INTEGER NOT NULL,
+    amount_diff TEXT NOT NULL,
+    status TEXT NOT NULL,
+    method TEXT NOT NULL,
+    note TEXT,
+    created_at_utc TEXT NOT NULL,
+    UNIQUE(outbound_event_id, inbound_event_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_raw_events_source_file_id ON raw_events(source_file_id);
 CREATE INDEX IF NOT EXISTS idx_audit_trace_id ON audit_trail(trace_id);
 CREATE INDEX IF NOT EXISTS idx_processing_queue_status ON processing_queue(status);
 CREATE INDEX IF NOT EXISTS idx_tax_lines_job_id ON tax_lines(job_id);
 CREATE INDEX IF NOT EXISTS idx_derivative_lines_job_id ON derivative_lines(job_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_matches_status ON transfer_matches(status);

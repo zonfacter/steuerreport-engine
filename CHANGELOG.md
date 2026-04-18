@@ -40,6 +40,12 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - `DerivativesManager` als separates Core-Modul ergänzt (Open/Close/Liquidation inkl. Negative-Equity).
 - Persistenz für `derivative_lines` pro Job ergänzt.
 - Worker schreibt jetzt Spot- und Derivate-Ergebnisse inklusive Verlusttopf-Summary.
+- Transfer-Reconciliation ergänzt:
+  - `POST /api/v1/reconcile/auto-match`
+  - `GET /api/v1/review/unmatched`
+  - `POST /api/v1/reconcile/manual`
+- Time-Window-Matching mit Confidence-Score und Toleranz-Logik ergänzt.
+- Persistenz für `transfer_matches` ergänzt.
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.
