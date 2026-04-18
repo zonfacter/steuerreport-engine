@@ -76,6 +76,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - `scripts/verify_integrity.py` prüft jetzt Dateien/JSON-Struktur und erzeugt deterministische Hash-Ausgabe.
   - Dependency-Audit im Workflow auf deklarierte Requirements umgestellt (`pip-audit -r requirements*.txt`).
   - `pytest` auf gepatchte Version angehoben (`>=9.0.3,<10.0`), um CVE-2025-71176 im Audit zu schließen.
+  - Core-Coverage-Gate im CI auf konfigurierbaren Übergangswert umgestellt (`CORE_COVERAGE_MIN`, aktuell `50`).
 - UI-Review-Tabellen ergänzt:
   - Filterbare Ansicht für `tax_lines` (Asset/Tax-Status)
   - Filterbare Ansicht für `derivative_lines` (Asset/Event-Typ)
