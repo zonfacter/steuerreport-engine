@@ -15,14 +15,16 @@ JUPITER_PROGRAM_IDS = {
 def fetch_solana_wallet_preview(
     wallet_address: str,
     rpc_url: str,
+    rpc_fallback_urls: list[str] | None,
     timeout_seconds: int,
     max_signatures: int,
     max_transactions: int,
     aggregate_jupiter: bool = True,
     jupiter_window_seconds: int = 2,
 ) -> dict[str, Any]:
+    endpoints = _resolve_rpc_endpoints(primary=rpc_url, fallbacks=rpc_fallback_urls)
     signatures_payload = _solana_rpc(
-        rpc_url=rpc_url,
+        rpc_url=endpoints,
         timeout_seconds=timeout_seconds,
         method="getSignaturesForAddress",
         params=[wallet_address, {"limit": max_signatures}],
@@ -38,7 +40,7 @@ def fetch_solana_wallet_preview(
 
     for signature in signatures:
         tx_payload = _solana_rpc(
-            rpc_url=rpc_url,
+            rpc_url=endpoints,
             timeout_seconds=timeout_seconds,
             method="getTransaction",
             params=[signature, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
@@ -56,6 +58,7 @@ def fetch_solana_wallet_preview(
     return {
         "wallet_address": wallet_address,
         "rpc_url": rpc_url,
+        "rpc_endpoints": endpoints,
         "signature_count": len(signatures),
         "count": len(rows),
         "rows": rows,
@@ -64,21 +67,35 @@ def fetch_solana_wallet_preview(
 
 
 def _solana_rpc(
-    rpc_url: str,
+    rpc_url: str | list[str],
     timeout_seconds: int,
     method: str,
     params: list[Any],
 ) -> Any:
     payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+    endpoints = [rpc_url] if isinstance(rpc_url, str) else list(rpc_url)
+    last_error = "unknown"
     with httpx.Client(timeout=timeout_seconds) as client:
-        response = client.post(rpc_url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-    if not isinstance(data, dict):
-        raise ValueError("solana_rpc_invalid_response")
-    if data.get("error"):
-        raise ValueError(f"solana_rpc_error:{data['error']}")
-    return data.get("result")
+        for endpoint in endpoints:
+            try:
+                response = client.post(endpoint, json=payload)
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                # Öffentliche RPCs liefern häufig 429/403; nächster Fallback-Endpunkt wird versucht.
+                if status_code in {403, 429}:
+                    last_error = f"{status_code} on {endpoint}"
+                    continue
+                raise
+            if not isinstance(data, dict):
+                last_error = f"invalid_payload on {endpoint}"
+                continue
+            if data.get("error"):
+                last_error = f"rpc_error on {endpoint}: {data['error']}"
+                continue
+            return data.get("result")
+    raise ValueError(f"solana_rpc_all_endpoints_failed:{last_error}")
 
 
 def _map_transaction_rows(wallet_address: str, signature: str, tx: dict[str, Any]) -> list[dict[str, Any]]:
@@ -388,6 +405,22 @@ def _to_epoch_seconds(value: Any) -> int | None:
         return int(parsed.timestamp())
     except ValueError:
         return None
+
+
+def _resolve_rpc_endpoints(primary: str, fallbacks: list[str] | None) -> list[str]:
+    defaults = [
+        "https://solana-rpc.publicnode.com",
+        "https://api.mainnet-beta.solana.com",
+    ]
+    candidates = [primary, *(fallbacks or []), *defaults]
+    normalized: list[str] = []
+    for item in candidates:
+        value = str(item).strip()
+        if not value:
+            continue
+        if value not in normalized:
+            normalized.append(value)
+    return normalized
 
 
 def _classify_defi_label(tx: dict[str, Any]) -> str:

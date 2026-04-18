@@ -85,6 +85,7 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - Jupiter Multi-Hop Aggregation (optional): reduziert Sub-Events auf `swap_out_aggregated` + `swap_in_aggregated`
     und ignoriert Intermediary-Tokens in der Vorschau.
   - Heuristisches DeFi-Labeling pro Transaktion/Event (`swap`, `lp`, `staking`, `claim`, `unknown`).
+  - RPC-Fallbacks: bei `429/403` wird automatisch auf alternative Endpunkte gewechselt.
   - Dashboard-Maske in Schritt 1 zum direkten Testen mit Wallet-Adresse und RPC-URL
 
 ## Compliance & Qualität

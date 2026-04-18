@@ -196,6 +196,7 @@ def test_solana_wallet_preview_endpoint_success_with_monkeypatched_service(monke
         SolanaWalletPreviewRequest(
             wallet_address="11111111111111111111111111111111",
             rpc_url="https://rpc.test",
+            rpc_fallback_urls=[],
         )
     )
     assert response.status == "success"
@@ -237,6 +238,7 @@ def test_solana_import_confirm_persists_preview_rows(monkeypatch) -> None:
         SolanaImportConfirmRequest(
             wallet_address="11111111111111111111111111111111",
             rpc_url="https://rpc.test",
+            rpc_fallback_urls=[],
             source_name="solana_wallet_import",
         )
     )

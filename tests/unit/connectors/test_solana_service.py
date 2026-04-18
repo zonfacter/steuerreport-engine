@@ -43,6 +43,7 @@ def test_fetch_solana_wallet_preview_maps_sol_and_token_rows(monkeypatch) -> Non
     result = fetch_solana_wallet_preview(
         wallet_address="wallet-1",
         rpc_url="https://rpc.test",
+        rpc_fallback_urls=[],
         timeout_seconds=10,
         max_signatures=10,
         max_transactions=10,
@@ -91,6 +92,7 @@ def test_fetch_solana_wallet_preview_aggregates_jupiter_multihop(monkeypatch) ->
     result = fetch_solana_wallet_preview(
         wallet_address="wallet-1",
         rpc_url="https://rpc.test",
+        rpc_fallback_urls=[],
         timeout_seconds=10,
         max_signatures=10,
         max_transactions=10,
@@ -133,6 +135,7 @@ def test_fetch_solana_wallet_preview_labels_staking_from_logs(monkeypatch) -> No
     result = fetch_solana_wallet_preview(
         wallet_address="wallet-1",
         rpc_url="https://rpc.test",
+        rpc_fallback_urls=[],
         timeout_seconds=10,
         max_signatures=10,
         max_transactions=10,

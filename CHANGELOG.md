@@ -86,6 +86,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Intermediary-Tokens werden für aggregierte Swaps ausgeblendet.
 - Solana DeFi-Labeling ergänzt:
   - heuristische Klassifikation je Transaktion/Event in `swap`, `lp`, `staking`, `claim`, `unknown`.
+- Solana RPC-Fallback ergänzt:
+  - neue Request-Option `rpc_fallback_urls` in Preview/Import
+  - automatischer Endpoint-Wechsel bei HTTP `429`/`403` für robustere öffentliche RPC-Nutzung.
 - CI-Stabilisierung:
   - Golden-Fixtures für `DE-2024`, `DE-2025`, `DE-2026` ergänzt (`tests/fixtures/golden/*.json`)
   - `scripts/verify_integrity.py` prüft jetzt Dateien/JSON-Struktur und erzeugt deterministische Hash-Ausgabe.

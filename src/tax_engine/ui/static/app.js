@@ -244,6 +244,10 @@ function cexPayload() {
 function solanaPayload() {
   const walletAddress = el("solWallet").value.trim();
   const rpcUrl = el("solRpc").value.trim() || "https://api.mainnet-beta.solana.com";
+  const fallbackRaw = el("solRpcFallbacks").value.trim();
+  const fallbackUrls = fallbackRaw
+    ? fallbackRaw.split(",").map((s) => s.trim()).filter((s) => s.length > 0)
+    : [];
   const maxSignatures = Number(el("solMaxSignatures").value || "100");
   const maxTransactions = Number(el("solMaxTransactions").value || "50");
   const aggregateJupiter = el("solAggregateJupiter").value === "true";
@@ -254,6 +258,7 @@ function solanaPayload() {
   return {
     wallet_address: walletAddress,
     rpc_url: rpcUrl,
+    rpc_fallback_urls: fallbackUrls,
     max_signatures: maxSignatures,
     max_transactions: maxTransactions,
     aggregate_jupiter: aggregateJupiter,

@@ -525,6 +525,7 @@ def connectors_solana_wallet_preview(payload: SolanaWalletPreviewRequest) -> Sta
         result = fetch_solana_wallet_preview(
             wallet_address=payload.wallet_address,
             rpc_url=payload.rpc_url,
+            rpc_fallback_urls=payload.rpc_fallback_urls,
             timeout_seconds=payload.timeout_seconds,
             max_signatures=payload.max_signatures,
             max_transactions=payload.max_transactions,
@@ -556,6 +557,7 @@ def connectors_solana_wallet_preview(payload: SolanaWalletPreviewRequest) -> Sta
         payload={
             "wallet_address": payload.wallet_address,
             "rpc_url": payload.rpc_url,
+            "rpc_fallback_count": len(payload.rpc_fallback_urls),
             "ok": True,
             "rows": result.get("count", 0),
             "aggregate_jupiter": payload.aggregate_jupiter,
@@ -583,6 +585,7 @@ def connectors_solana_import_confirm(payload: SolanaImportConfirmRequest) -> Sta
         preview = fetch_solana_wallet_preview(
             wallet_address=payload.wallet_address,
             rpc_url=payload.rpc_url,
+            rpc_fallback_urls=payload.rpc_fallback_urls,
             timeout_seconds=payload.timeout_seconds,
             max_signatures=payload.max_signatures,
             max_transactions=payload.max_transactions,
@@ -621,6 +624,7 @@ def connectors_solana_import_confirm(payload: SolanaImportConfirmRequest) -> Sta
         payload={
             "wallet_address": payload.wallet_address,
             "rpc_url": payload.rpc_url,
+            "rpc_fallback_count": len(payload.rpc_fallback_urls),
             "source_name": source_name,
             "fetched_rows": len(rows),
             "inserted_events": import_result["inserted_events"],
