@@ -71,6 +71,11 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Bitget: signierte Deposit-/Withdrawal-Records und Spot-Fills
   - Coinbase Exchange: signierte Account-Ledger- und Fill-Abfragen
 - Signatur-Handling und Credentials-Validierung für Binance, Bitget und Coinbase Exchange ergänzt.
+- CEX-Import-Bridge ergänzt:
+  - `POST /api/v1/connectors/cex/import-confirm`
+  - zieht API-Transaktionen und persistiert diese direkt als `raw_events` via bestehender Import-Pipeline.
+- Dashboard-Importschritt erweitert:
+  - CEX-Eingabemaske für Verify, Balances Preview, Transactions Preview und API-Import-Confirm.
 - CI-Stabilisierung:
   - Golden-Fixtures für `DE-2024`, `DE-2025`, `DE-2026` ergänzt (`tests/fixtures/golden/*.json`)
   - `scripts/verify_integrity.py` prüft jetzt Dateien/JSON-Struktur und erzeugt deterministische Hash-Ausgabe.

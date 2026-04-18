@@ -62,6 +62,8 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - `POST /api/v1/connectors/cex/balances-preview`
 - Read-Only-Transaktions-Vorschau:
   - `POST /api/v1/connectors/cex/transactions-preview`
+- Direkter API-Import in `raw_events`:
+  - `POST /api/v1/connectors/cex/import-confirm`
 - Unterstützte CEX im ersten API-Schnitt:
   - Binance
   - Bitget (mit Passphrase)
@@ -70,6 +72,7 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - Binance: Deposits + Withdrawals (signierte API-Abfrage)
   - Bitget: Deposit-/Withdrawal-Records + Spot-Fills (signierte API-Abfrage)
   - Coinbase Exchange: Accounts-Ledger + Fills (signierte API-Abfrage)
+- Dashboard: In Schritt 1 existiert jetzt eine CEX-Importmaske für Verify/Preview/Import ohne manuelles Copy-Paste.
 
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).

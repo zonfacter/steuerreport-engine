@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from tax_engine.connectors import (
     CexBalancesPreviewRequest,
+    CexImportConfirmRequest,
     CexTransactionsPreviewRequest,
     CexVerifyRequest,
     fetch_cex_balance_preview,
@@ -437,6 +438,74 @@ def connectors_cex_transactions_preview(payload: CexTransactionsPreviewRequest) 
         trace_id=trace_id,
         status="success",
         data=result,
+        errors=[],
+        warnings=warnings if isinstance(warnings, list) else [],
+    )
+
+
+@app.post("/api/v1/connectors/cex/import-confirm", response_model=StandardResponse, tags=["connectors"])
+def connectors_cex_import_confirm(payload: CexImportConfirmRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    try:
+        preview = fetch_cex_transactions_preview(
+            connector_id=payload.connector_id,
+            api_key=payload.api_key,
+            api_secret=payload.api_secret,
+            passphrase=payload.passphrase,
+            timeout_seconds=payload.timeout_seconds,
+            max_rows=payload.max_rows,
+            start_time_ms=payload.start_time_ms,
+            end_time_ms=payload.end_time_ms,
+        )
+    except Exception as exc:
+        write_audit(
+            trace_id=trace_id,
+            action="connectors.cex.import_confirm",
+            payload={
+                "connector_id": payload.connector_id,
+                "api_key_masked": mask_api_key(payload.api_key),
+                "ok": False,
+                "exception": str(exc),
+            },
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "connector_error", "message": str(exc)}],
+            warnings=[],
+        )
+
+    rows = preview.get("rows", [])
+    if not isinstance(rows, list):
+        rows = []
+
+    source_name = payload.source_name or f"{payload.connector_id.lower()}_api_import"
+    import_result = confirm_import(source_name=source_name, rows=rows)
+    warnings = preview.get("warnings", [])
+
+    write_audit(
+        trace_id=trace_id,
+        action="connectors.cex.import_confirm",
+        payload={
+            "connector_id": payload.connector_id,
+            "api_key_masked": mask_api_key(payload.api_key),
+            "source_name": source_name,
+            "fetched_rows": len(rows),
+            "inserted_events": import_result["inserted_events"],
+            "duplicate_events": import_result["duplicate_events"],
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "connector_id": payload.connector_id,
+            "source_name": source_name,
+            "fetched_rows": len(rows),
+            "preview_count": preview.get("count", len(rows)),
+            "import_result": import_result,
+        },
         errors=[],
         warnings=warnings if isinstance(warnings, list) else [],
     )

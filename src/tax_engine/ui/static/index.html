@@ -38,6 +38,32 @@
           <button id="btnImport" class="btn-primary">Import Confirm</button>
         </div>
         <textarea id="eventsJson" rows="16"></textarea>
+
+        <h3>CEX API Import</h3>
+        <p class="muted">Read-only Preview und Direktimport aus Binance/Bitget/Coinbase in <code>raw_events</code>.</p>
+        <div class="row">
+          <label>Connector
+            <select id="cexConnector">
+              <option value="binance">binance</option>
+              <option value="bitget">bitget</option>
+              <option value="coinbase">coinbase</option>
+            </select>
+          </label>
+          <label>Start ms<input id="cexStartMs" type="number" placeholder="optional" /></label>
+          <label>Ende ms<input id="cexEndMs" type="number" placeholder="optional" /></label>
+          <label>Max Rows<input id="cexMaxRows" type="number" value="200" /></label>
+        </div>
+        <div class="row">
+          <input id="cexApiKey" placeholder="API Key" />
+          <input id="cexApiSecret" placeholder="API Secret" />
+          <input id="cexPassphrase" placeholder="Passphrase (Bitget/Coinbase)" />
+        </div>
+        <div class="row">
+          <button id="btnCexVerify">CEX Verify</button>
+          <button id="btnCexBalances">Balances Preview</button>
+          <button id="btnCexTxPreview">Transactions Preview</button>
+          <button id="btnCexImport" class="btn-primary">Import Confirm (API)</button>
+        </div>
       </section>
 
       <section class="card step-panel hidden" data-panel="2">

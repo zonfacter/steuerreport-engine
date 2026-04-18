@@ -1,4 +1,9 @@
-from .models import CexBalancesPreviewRequest, CexTransactionsPreviewRequest, CexVerifyRequest
+from .models import (
+    CexBalancesPreviewRequest,
+    CexImportConfirmRequest,
+    CexTransactionsPreviewRequest,
+    CexVerifyRequest,
+)
 from .service import (
     build_binance_signature,
     build_bitget_signature,
@@ -11,6 +16,7 @@ from .service import (
 
 __all__ = [
     "CexBalancesPreviewRequest",
+    "CexImportConfirmRequest",
     "CexTransactionsPreviewRequest",
     "CexVerifyRequest",
     "build_binance_signature",

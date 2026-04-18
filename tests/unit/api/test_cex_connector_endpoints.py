@@ -4,11 +4,13 @@ import importlib
 
 from tax_engine.api.app import (
     connectors_cex_balances_preview,
+    connectors_cex_import_confirm,
     connectors_cex_transactions_preview,
     connectors_cex_verify,
 )
 from tax_engine.connectors.models import (
     CexBalancesPreviewRequest,
+    CexImportConfirmRequest,
     CexTransactionsPreviewRequest,
     CexVerifyRequest,
 )
@@ -111,3 +113,46 @@ def test_cex_transactions_preview_endpoint_success_with_monkeypatched_service(
     assert response.status == "success"
     assert response.data["count"] == 1
     assert response.data["rows"][0]["event_type"] == "deposit"
+
+
+def test_cex_import_confirm_persists_preview_rows(monkeypatch) -> None:
+    _reset_store()
+    app_module = importlib.import_module("tax_engine.api.app")
+
+    def _fake_fetch(**kwargs):
+        return {
+            "connector_id": kwargs["connector_id"],
+            "count": 1,
+            "rows": [
+                {
+                    "timestamp_utc": "2026-01-01T00:00:00+00:00",
+                    "asset": "USDT",
+                    "quantity": "100",
+                    "price": "",
+                    "fee": "0",
+                    "fee_asset": "",
+                    "side": "in",
+                    "event_type": "deposit",
+                    "tx_id": "tx-1",
+                    "source": "binance_api",
+                    "raw_row": {"txId": "tx-1"},
+                }
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(app_module, "fetch_cex_transactions_preview", _fake_fetch)
+
+    response = connectors_cex_import_confirm(
+        CexImportConfirmRequest(
+            connector_id="binance",
+            api_key="abcd12345678",
+            api_secret="secret",
+            passphrase=None,
+            max_rows=100,
+            source_name="binance_api_import",
+        )
+    )
+    assert response.status == "success"
+    assert response.data["fetched_rows"] == 1
+    assert response.data["import_result"]["inserted_events"] == 1

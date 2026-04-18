@@ -219,6 +219,28 @@ function parseEventsJson() {
   return parsed;
 }
 
+function cexPayload() {
+  const connectorId = el("cexConnector").value.trim();
+  const apiKey = el("cexApiKey").value.trim();
+  const apiSecret = el("cexApiSecret").value.trim();
+  const passphrase = el("cexPassphrase").value.trim();
+  const startRaw = el("cexStartMs").value.trim();
+  const endRaw = el("cexEndMs").value.trim();
+  const maxRows = Number(el("cexMaxRows").value || "200");
+  if (!connectorId || !apiKey || !apiSecret) {
+    throw new Error("Connector, API Key und API Secret sind erforderlich.");
+  }
+  return {
+    connector_id: connectorId,
+    api_key: apiKey,
+    api_secret: apiSecret,
+    passphrase: passphrase || null,
+    max_rows: maxRows,
+    start_time_ms: startRaw ? Number(startRaw) : null,
+    end_time_ms: endRaw ? Number(endRaw) : null,
+  };
+}
+
 async function pingApi() {
   const res = await callApi("/api/v1/health");
   setApiState(!!(res && res.status === "success"));
@@ -260,6 +282,52 @@ function init() {
       if (data?.status === "success") switchStep(2);
     } catch (error) {
       showToast(`Import abgebrochen: ${error.message}`, "err");
+    }
+  });
+
+  el("btnCexVerify").addEventListener("click", async (e) => {
+    try {
+      const payload = cexPayload();
+      await callApi("/api/v1/connectors/cex/verify", "POST", payload, e.currentTarget);
+    } catch (error) {
+      showToast(`CEX Verify abgebrochen: ${error.message}`, "err");
+    }
+  });
+
+  el("btnCexBalances").addEventListener("click", async (e) => {
+    try {
+      const payload = cexPayload();
+      const data = await callApi("/api/v1/connectors/cex/balances-preview", "POST", payload, e.currentTarget);
+      if (data?.data?.rows) {
+        el("eventsJson").value = JSON.stringify(data.data.rows, null, 2);
+      }
+    } catch (error) {
+      showToast(`Balances Preview abgebrochen: ${error.message}`, "err");
+    }
+  });
+
+  el("btnCexTxPreview").addEventListener("click", async (e) => {
+    try {
+      const payload = cexPayload();
+      const data = await callApi("/api/v1/connectors/cex/transactions-preview", "POST", payload, e.currentTarget);
+      if (data?.data?.rows) {
+        el("eventsJson").value = JSON.stringify(data.data.rows, null, 2);
+      }
+    } catch (error) {
+      showToast(`Transactions Preview abgebrochen: ${error.message}`, "err");
+    }
+  });
+
+  el("btnCexImport").addEventListener("click", async (e) => {
+    try {
+      const payload = cexPayload();
+      payload.source_name = `${payload.connector_id}_api_import`;
+      const data = await callApi("/api/v1/connectors/cex/import-confirm", "POST", payload, e.currentTarget);
+      if (data?.status === "success") {
+        switchStep(2);
+      }
+    } catch (error) {
+      showToast(`CEX Import abgebrochen: ${error.message}`, "err");
     }
   });
 
