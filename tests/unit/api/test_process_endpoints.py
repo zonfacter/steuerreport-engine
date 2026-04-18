@@ -78,6 +78,22 @@ def test_worker_run_next_completes_queued_job() -> None:
                     "price_eur": "120",
                     "fee_eur": "0.4",
                 },
+                {
+                    "timestamp": "2026-03-01T12:00:00Z",
+                    "position_id": "d1",
+                    "asset": "ETH",
+                    "event_type": "derivative_open",
+                    "collateral_eur": "300",
+                    "fee_eur": "2",
+                },
+                {
+                    "timestamp": "2026-03-03T12:00:00Z",
+                    "position_id": "d1",
+                    "asset": "ETH",
+                    "event_type": "close",
+                    "proceeds_eur": "250",
+                    "fee_eur": "1",
+                },
             ],
         )
     )
@@ -95,10 +111,15 @@ def test_worker_run_next_completes_queued_job() -> None:
     assert result.data["progress"] == 100
     assert result.data["result_summary"] is not None
     assert result.data["result_summary"]["processed_events"] == 2
+    assert result.data["result_summary"]["derivatives"]["processed_events"] == 2
     assert result.data["tax_line_count"] == 1
+    assert result.data["derivative_line_count"] == 1
     tax_lines = STORE.get_tax_lines(job_id)
+    derivative_lines = STORE.get_derivative_lines(job_id)
     assert len(tax_lines) == 1
+    assert len(derivative_lines) == 1
     assert tax_lines[0]["asset"] == "BTC"
+    assert derivative_lines[0]["asset"] == "ETH"
     assert status.data["status"] == "completed"
 
 

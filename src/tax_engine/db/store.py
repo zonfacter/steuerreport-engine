@@ -325,6 +325,91 @@ class SQLiteImportStore:
             for row in rows
         ]
 
+    def replace_derivative_lines(self, job_id: str, derivative_lines: list[dict[str, Any]]) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM derivative_lines WHERE job_id = ?", (job_id,))
+            for idx, line in enumerate(derivative_lines, start=1):
+                conn.execute(
+                    """
+                    INSERT INTO derivative_lines (
+                        job_id,
+                        line_no,
+                        position_id,
+                        asset,
+                        event_type,
+                        open_timestamp_utc,
+                        close_timestamp_utc,
+                        collateral_eur,
+                        proceeds_eur,
+                        fees_eur,
+                        funding_eur,
+                        gain_loss_eur,
+                        loss_bucket,
+                        source_event_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        job_id,
+                        idx,
+                        str(line["position_id"]),
+                        str(line["asset"]),
+                        str(line["event_type"]),
+                        str(line["open_timestamp_utc"]),
+                        str(line["close_timestamp_utc"]),
+                        str(line["collateral_eur"]),
+                        str(line["proceeds_eur"]),
+                        str(line["fees_eur"]),
+                        str(line["funding_eur"]),
+                        str(line["gain_loss_eur"]),
+                        str(line["loss_bucket"]),
+                        str(line["source_event_id"]),
+                    ),
+                )
+            conn.commit()
+
+    def get_derivative_lines(self, job_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    line_no,
+                    position_id,
+                    asset,
+                    event_type,
+                    open_timestamp_utc,
+                    close_timestamp_utc,
+                    collateral_eur,
+                    proceeds_eur,
+                    fees_eur,
+                    funding_eur,
+                    gain_loss_eur,
+                    loss_bucket,
+                    source_event_id
+                FROM derivative_lines
+                WHERE job_id = ?
+                ORDER BY line_no ASC
+                """,
+                (job_id,),
+            ).fetchall()
+        return [
+            {
+                "line_no": int(row["line_no"]),
+                "position_id": row["position_id"],
+                "asset": row["asset"],
+                "event_type": row["event_type"],
+                "open_timestamp_utc": row["open_timestamp_utc"],
+                "close_timestamp_utc": row["close_timestamp_utc"],
+                "collateral_eur": row["collateral_eur"],
+                "proceeds_eur": row["proceeds_eur"],
+                "fees_eur": row["fees_eur"],
+                "funding_eur": row["funding_eur"],
+                "gain_loss_eur": row["gain_loss_eur"],
+                "loss_bucket": row["loss_bucket"],
+                "source_event_id": row["source_event_id"],
+            }
+            for row in rows
+        ]
+
     def get_processing_job(self, job_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -359,6 +444,7 @@ class SQLiteImportStore:
             "error_message": row["error_message"],
             "result_summary": json.loads(row["result_json"]) if row["result_json"] else None,
             "tax_line_count": self.count_tax_lines(row["job_id"]),
+            "derivative_line_count": self.count_derivative_lines(row["job_id"]),
             "created_at_utc": row["created_at_utc"],
             "updated_at_utc": row["updated_at_utc"],
         }
@@ -371,8 +457,17 @@ class SQLiteImportStore:
             ).fetchone()
         return int(row["cnt"])
 
+    def count_derivative_lines(self, job_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM derivative_lines WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return int(row["cnt"])
+
     def reset_for_tests(self) -> None:
         with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM derivative_lines")
             conn.execute("DELETE FROM tax_lines")
             conn.execute("DELETE FROM processing_queue")
             conn.execute("DELETE FROM audit_trail")

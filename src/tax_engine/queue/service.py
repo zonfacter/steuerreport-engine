@@ -4,6 +4,7 @@ import json
 from typing import Any
 from uuid import uuid4
 
+from tax_engine.core.derivatives import process_derivatives_for_year
 from tax_engine.core.processor import process_events_for_year
 from tax_engine.ingestion.store import STORE
 from tax_engine.integrity import config_fingerprint
@@ -62,11 +63,15 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         )
         processing_result = process_events_for_year(raw_events=raw_events, tax_year=claimed["tax_year"])
         tax_lines = processing_result.pop("tax_lines")
+        derivative_result = process_derivatives_for_year(raw_events=raw_events, tax_year=claimed["tax_year"])
+        derivative_lines = derivative_result.pop("lines")
 
         if simulate_fail:
             raise RuntimeError("Simulated worker error")
 
         STORE.replace_tax_lines(job_id=job_id, tax_lines=tax_lines)
+        STORE.replace_derivative_lines(job_id=job_id, derivative_lines=derivative_lines)
+        processing_result["derivatives"] = derivative_result
 
         STORE.update_processing_job_state(
             job_id=job_id,

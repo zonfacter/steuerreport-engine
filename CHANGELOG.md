@@ -37,6 +37,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Persistenz für berechnete `tax_lines` pro Job ergänzt.
 - Worker speichert nun neben Summary auch FIFO-Tax-Lines in SQLite.
 - Unit-Tests für FIFO-Matching, Haltedauer und Short-Sell-Fallback ergänzt.
+- `DerivativesManager` als separates Core-Modul ergänzt (Open/Close/Liquidation inkl. Negative-Equity).
+- Persistenz für `derivative_lines` pro Job ergänzt.
+- Worker schreibt jetzt Spot- und Derivate-Ergebnisse inklusive Verlusttopf-Summary.
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.

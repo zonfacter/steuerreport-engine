@@ -56,7 +56,27 @@ CREATE TABLE IF NOT EXISTS tax_lines (
     FOREIGN KEY(job_id) REFERENCES processing_queue(job_id)
 );
 
+CREATE TABLE IF NOT EXISTS derivative_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    line_no INTEGER NOT NULL,
+    position_id TEXT NOT NULL,
+    asset TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    open_timestamp_utc TEXT NOT NULL,
+    close_timestamp_utc TEXT NOT NULL,
+    collateral_eur TEXT NOT NULL,
+    proceeds_eur TEXT NOT NULL,
+    fees_eur TEXT NOT NULL,
+    funding_eur TEXT NOT NULL,
+    gain_loss_eur TEXT NOT NULL,
+    loss_bucket TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    FOREIGN KEY(job_id) REFERENCES processing_queue(job_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_raw_events_source_file_id ON raw_events(source_file_id);
 CREATE INDEX IF NOT EXISTS idx_audit_trace_id ON audit_trail(trace_id);
 CREATE INDEX IF NOT EXISTS idx_processing_queue_status ON processing_queue(status);
 CREATE INDEX IF NOT EXISTS idx_tax_lines_job_id ON tax_lines(job_id);
+CREATE INDEX IF NOT EXISTS idx_derivative_lines_job_id ON derivative_lines(job_id);
