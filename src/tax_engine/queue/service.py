@@ -36,3 +36,41 @@ def create_processing_job(payload: ProcessRunRequest) -> dict[str, Any]:
 def get_processing_job(job_id: str) -> dict[str, Any] | None:
     return STORE.get_processing_job(job_id)
 
+
+def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
+    claimed = STORE.claim_next_queued_job()
+    if claimed is None:
+        return None
+
+    job_id = claimed["job_id"]
+    STORE.update_processing_job_state(
+        job_id=job_id,
+        status="running",
+        progress=35,
+        current_step="fifo_matching",
+    )
+    STORE.update_processing_job_state(
+        job_id=job_id,
+        status="running",
+        progress=70,
+        current_step="tax_aggregation",
+    )
+
+    if simulate_fail:
+        STORE.update_processing_job_state(
+            job_id=job_id,
+            status="failed",
+            progress=70,
+            current_step="failed",
+            error_message="Simulated worker error",
+        )
+    else:
+        STORE.update_processing_job_state(
+            job_id=job_id,
+            status="completed",
+            progress=100,
+            current_step="completed",
+            error_message=None,
+        )
+
+    return STORE.get_processing_job(job_id)

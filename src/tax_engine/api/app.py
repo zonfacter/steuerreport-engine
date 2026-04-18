@@ -16,7 +16,13 @@ from tax_engine.ingestion import (
     normalize_preview,
     write_audit,
 )
-from tax_engine.queue import ProcessRunRequest, create_processing_job, get_processing_job
+from tax_engine.queue import (
+    ProcessRunRequest,
+    WorkerRunNextRequest,
+    create_processing_job,
+    get_processing_job,
+    run_next_queued_job,
+)
 
 
 class StandardResponse(BaseModel):
@@ -153,3 +159,33 @@ def process_status(job_id: str) -> StandardResponse:
         payload={"job_id": job_id, "found": True, "status": job["status"]},
     )
     return StandardResponse(trace_id=trace_id, status="success", data=job, errors=[], warnings=[])
+
+
+@app.post("/api/v1/process/worker/run-next", response_model=StandardResponse, tags=["process"])
+def process_worker_run_next(payload: WorkerRunNextRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    processed = run_next_queued_job(simulate_fail=payload.simulate_fail)
+    if processed is None:
+        write_audit(
+            trace_id=trace_id,
+            action="process.worker.run_next",
+            payload={"processed_job": False},
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="success",
+            data={},
+            errors=[],
+            warnings=[{"code": "no_queued_job", "message": "No queued job available"}],
+        )
+
+    write_audit(
+        trace_id=trace_id,
+        action="process.worker.run_next",
+        payload={
+            "processed_job": True,
+            "job_id": processed["job_id"],
+            "status": processed["status"],
+        },
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=processed, errors=[], warnings=[])

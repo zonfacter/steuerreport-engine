@@ -19,10 +19,38 @@ class SQLiteImportStore:
                 return
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
                 schema_sql = (Path(__file__).with_name("migration_v1.sql")).read_text(encoding="utf-8")
                 conn.executescript(schema_sql)
+                self._ensure_column(
+                    conn=conn,
+                    table_name="processing_queue",
+                    column_name="current_step",
+                    column_ddl="TEXT NOT NULL DEFAULT ''",
+                )
+                self._ensure_column(
+                    conn=conn,
+                    table_name="processing_queue",
+                    column_name="error_message",
+                    column_ddl="TEXT",
+                )
                 conn.commit()
             self._initialized = True
+
+    @staticmethod
+    def _ensure_column(
+        conn: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        column_ddl: str,
+    ) -> None:
+        existing_columns = {
+            row["name"]
+            for row in conn.execute(f"PRAGMA table_info({table_name})")
+        }
+        if column_name in existing_columns:
+            return
+        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_ddl}")
 
     def _connect(self) -> sqlite3.Connection:
         self.initialize()
@@ -114,27 +142,81 @@ class SQLiteImportStore:
                     config_hash,
                     status,
                     progress,
+                    current_step,
+                    error_message,
                     created_at_utc,
                     updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (job_id, tax_year, ruleset_id, config_hash, status, progress, now_utc, now_utc),
+                (
+                    job_id,
+                    tax_year,
+                    ruleset_id,
+                    config_hash,
+                    status,
+                    progress,
+                    "queued",
+                    None,
+                    now_utc,
+                    now_utc,
+                ),
             )
             conn.commit()
 
-    def update_processing_job_status(self, job_id: str, status: str, progress: int) -> bool:
+    def update_processing_job_state(
+        self,
+        job_id: str,
+        status: str,
+        progress: int,
+        current_step: str,
+        error_message: str | None = None,
+    ) -> bool:
         now_utc = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             cur = conn.execute(
                 """
                 UPDATE processing_queue
-                SET status = ?, progress = ?, updated_at_utc = ?
+                SET
+                    status = ?,
+                    progress = ?,
+                    current_step = ?,
+                    error_message = ?,
+                    updated_at_utc = ?
                 WHERE job_id = ?
                 """,
-                (status, progress, now_utc, job_id),
+                (status, progress, current_step, error_message, now_utc, job_id),
             )
             conn.commit()
             return cur.rowcount == 1
+
+    def claim_next_queued_job(self) -> dict[str, Any] | None:
+        now_utc = datetime.now(UTC).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT job_id
+                FROM processing_queue
+                WHERE status = 'queued'
+                ORDER BY created_at_utc ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            if row is None:
+                conn.commit()
+                return None
+
+            job_id = str(row["job_id"])
+            conn.execute(
+                """
+                UPDATE processing_queue
+                SET status = ?, progress = ?, current_step = ?, updated_at_utc = ?
+                WHERE job_id = ?
+                """,
+                ("running", 10, "load_events", now_utc, job_id),
+            )
+            conn.commit()
+            return self.get_processing_job(job_id)
 
     def get_processing_job(self, job_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -147,6 +229,8 @@ class SQLiteImportStore:
                     config_hash,
                     status,
                     progress,
+                    current_step,
+                    error_message,
                     created_at_utc,
                     updated_at_utc
                 FROM processing_queue
@@ -163,6 +247,8 @@ class SQLiteImportStore:
             "config_hash": row["config_hash"],
             "status": row["status"],
             "progress": int(row["progress"]),
+            "current_step": row["current_step"],
+            "error_message": row["error_message"],
             "created_at_utc": row["created_at_utc"],
             "updated_at_utc": row["updated_at_utc"],
         }

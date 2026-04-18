@@ -11,3 +11,6 @@ class ProcessRunRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     dry_run: bool = Field(default=False)
 
+
+class WorkerRunNextRequest(BaseModel):
+    simulate_fail: bool = Field(default=False)

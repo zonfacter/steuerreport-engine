@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS processing_queue (
     config_hash TEXT NOT NULL,
     status TEXT NOT NULL,
     progress INTEGER NOT NULL,
+    current_step TEXT NOT NULL DEFAULT '',
+    error_message TEXT,
     created_at_utc TEXT NOT NULL,
     updated_at_utc TEXT NOT NULL
 );

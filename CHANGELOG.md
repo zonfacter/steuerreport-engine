@@ -28,6 +28,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - `GET /api/v1/process/status/{job_id}`
 - SQLite-Queue-Tabelle `processing_queue` inkl. Job-Lifecycle-Basis ergänzt.
 - Queue-Service und Unit-Tests für Run/Status ergänzt.
+- Worker-Endpoint ergänzt:
+  - `POST /api/v1/process/worker/run-next`
+- Job-Lifecycle erweitert: `queued -> running -> completed/failed` mit `current_step` und `error_message`.
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.
