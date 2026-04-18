@@ -16,6 +16,7 @@ from tax_engine.ingestion import (
     normalize_preview,
     write_audit,
 )
+from tax_engine.queue import ProcessRunRequest, create_processing_job, get_processing_job
 
 
 class StandardResponse(BaseModel):
@@ -109,3 +110,46 @@ def import_confirm(payload: ConfirmImportRequest) -> StandardResponse:
         },
     )
     return StandardResponse(trace_id=trace_id, status="success", data=result, errors=[], warnings=[])
+
+
+@app.post("/api/v1/process/run", response_model=StandardResponse, tags=["process"])
+def process_run(payload: ProcessRunRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    job = create_processing_job(payload)
+    write_audit(
+        trace_id=trace_id,
+        action="process.run",
+        payload={
+            "job_id": job["job_id"],
+            "tax_year": payload.tax_year,
+            "ruleset_id": payload.ruleset_id,
+            "dry_run": payload.dry_run,
+        },
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=job, errors=[], warnings=[])
+
+
+@app.get("/api/v1/process/status/{job_id}", response_model=StandardResponse, tags=["process"])
+def process_status(job_id: str) -> StandardResponse:
+    trace_id = str(uuid4())
+    job = get_processing_job(job_id)
+    if job is None:
+        write_audit(
+            trace_id=trace_id,
+            action="process.status",
+            payload={"job_id": job_id, "found": False},
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "job_not_found", "message": f"Job not found: {job_id}"}],
+            warnings=[],
+        )
+
+    write_audit(
+        trace_id=trace_id,
+        action="process.status",
+        payload={"job_id": job_id, "found": True, "status": job["status"]},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=job, errors=[], warnings=[])

@@ -25,6 +25,17 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     payload_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS processing_queue (
+    job_id TEXT PRIMARY KEY,
+    tax_year INTEGER NOT NULL,
+    ruleset_id TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    status TEXT NOT NULL,
+    progress INTEGER NOT NULL,
+    created_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_raw_events_source_file_id ON raw_events(source_file_id);
 CREATE INDEX IF NOT EXISTS idx_audit_trace_id ON audit_trail(trace_id);
-
+CREATE INDEX IF NOT EXISTS idx_processing_queue_status ON processing_queue(status);

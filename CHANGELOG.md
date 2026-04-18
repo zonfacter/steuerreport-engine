@@ -23,6 +23,11 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Unit-Tests für Ruleset, Integrität, Parser und Importendpunkte ergänzt.
 - Persistente SQLite-Importspeicherung ergänzt (`source_files`, `raw_events`, `audit_trail`).
 - Schema-Migration `migration_v1.sql` für Etappe-1-Import-Persistenz ergänzt.
+- Prozess-Queue-Endpunkte ergänzt:
+  - `POST /api/v1/process/run`
+  - `GET /api/v1/process/status/{job_id}`
+- SQLite-Queue-Tabelle `processing_queue` inkl. Job-Lifecycle-Basis ergänzt.
+- Queue-Service und Unit-Tests für Run/Status ergänzt.
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.
