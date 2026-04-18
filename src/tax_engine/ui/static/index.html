@@ -74,6 +74,13 @@
         <div class="row">
           <label>Max Signatures<input id="solMaxSignatures" type="number" value="100" /></label>
           <label>Max Transactions<input id="solMaxTransactions" type="number" value="50" /></label>
+          <label>Jupiter Aggregation
+            <select id="solAggregateJupiter">
+              <option value="true" selected>an</option>
+              <option value="false">aus</option>
+            </select>
+          </label>
+          <label>Window (s)<input id="solJupiterWindow" type="number" value="2" /></label>
           <button id="btnSolPreview">Solana Preview</button>
           <button id="btnSolImport" class="btn-primary">Solana Import Confirm</button>
         </div>

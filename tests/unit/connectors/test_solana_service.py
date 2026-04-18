@@ -51,3 +51,51 @@ def test_fetch_solana_wallet_preview_maps_sol_and_token_rows(monkeypatch) -> Non
     assert result["count"] == 2
     assert any(row["asset"] == "SOL" for row in result["rows"])
     assert any(row["asset"] == "MINT-A" for row in result["rows"])
+
+
+def test_fetch_solana_wallet_preview_aggregates_jupiter_multihop(monkeypatch) -> None:
+    def _fake_rpc(**kwargs):
+        method = kwargs["method"]
+        if method == "getSignaturesForAddress":
+            return [{"signature": "sig-1"}]
+        if method == "getTransaction":
+            return {
+                "blockTime": 1704067200,
+                "transaction": {
+                    "message": {
+                        "accountKeys": [{"pubkey": "wallet-1"}, {"pubkey": "other"}],
+                    }
+                },
+                "meta": {
+                    "fee": 5000,
+                    "preBalances": [1000000000, 0],
+                    "postBalances": [1000000000, 0],
+                    "preTokenBalances": [
+                        {"owner": "wallet-1", "mint": "SOL-MINT", "uiTokenAmount": {"uiAmountString": "10"}},
+                        {"owner": "wallet-1", "mint": "USDC-MINT", "uiTokenAmount": {"uiAmountString": "0"}},
+                        {"owner": "wallet-1", "mint": "JUP-MINT", "uiTokenAmount": {"uiAmountString": "0"}},
+                    ],
+                    "postTokenBalances": [
+                        {"owner": "wallet-1", "mint": "SOL-MINT", "uiTokenAmount": {"uiAmountString": "8"}},
+                        {"owner": "wallet-1", "mint": "USDC-MINT", "uiTokenAmount": {"uiAmountString": "1"}},
+                        {"owner": "wallet-1", "mint": "JUP-MINT", "uiTokenAmount": {"uiAmountString": "0.5"}},
+                    ],
+                },
+            }
+        return None
+
+    monkeypatch.setattr("tax_engine.connectors.solana_service._solana_rpc", _fake_rpc)
+
+    result = fetch_solana_wallet_preview(
+        wallet_address="wallet-1",
+        rpc_url="https://rpc.test",
+        timeout_seconds=10,
+        max_signatures=10,
+        max_transactions=10,
+        aggregate_jupiter=True,
+        jupiter_window_seconds=2,
+    )
+    assert result["count"] == 2
+    event_types = {row["event_type"] for row in result["rows"]}
+    assert "swap_out_aggregated" in event_types
+    assert "swap_in_aggregated" in event_types

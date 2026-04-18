@@ -49,6 +49,8 @@ class SolanaWalletPreviewRequest(BaseModel):
     timeout_seconds: int = Field(default=20, ge=3, le=120)
     max_signatures: int = Field(default=100, ge=1, le=1000)
     max_transactions: int = Field(default=50, ge=1, le=500)
+    aggregate_jupiter: bool = Field(default=True)
+    jupiter_window_seconds: int = Field(default=2, ge=1, le=30)
 
 
 class SolanaImportConfirmRequest(BaseModel):
@@ -57,4 +59,6 @@ class SolanaImportConfirmRequest(BaseModel):
     timeout_seconds: int = Field(default=20, ge=3, le=120)
     max_signatures: int = Field(default=100, ge=1, le=1000)
     max_transactions: int = Field(default=50, ge=1, le=500)
+    aggregate_jupiter: bool = Field(default=True)
+    jupiter_window_seconds: int = Field(default=2, ge=1, le=30)
     source_name: str | None = Field(default=None)

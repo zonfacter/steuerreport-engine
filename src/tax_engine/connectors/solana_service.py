@@ -13,6 +13,8 @@ def fetch_solana_wallet_preview(
     timeout_seconds: int,
     max_signatures: int,
     max_transactions: int,
+    aggregate_jupiter: bool = True,
+    jupiter_window_seconds: int = 2,
 ) -> dict[str, Any]:
     signatures_payload = _solana_rpc(
         rpc_url=rpc_url,
@@ -41,6 +43,9 @@ def fetch_solana_wallet_preview(
             continue
         tx_rows = _map_transaction_rows(wallet_address=wallet_address, signature=signature, tx=tx_payload)
         rows.extend(tx_rows)
+
+    if aggregate_jupiter:
+        rows = _aggregate_jupiter_rows(rows=rows, window_seconds=jupiter_window_seconds)
 
     rows.sort(key=lambda r: str(r.get("timestamp_utc") or ""))
     return {
@@ -198,6 +203,105 @@ def _map_token_balance_diffs(
     return rows
 
 
+def _aggregate_jupiter_rows(rows: list[dict[str, Any]], window_seconds: int) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    passthrough: list[dict[str, Any]] = []
+
+    for row in rows:
+        tx_id = str(row.get("tx_id") or "")
+        if tx_id:
+            group_key = f"tx:{tx_id}"
+        else:
+            ts = _to_epoch_seconds(row.get("timestamp_utc"))
+            if ts is None:
+                passthrough.append(row)
+                continue
+            bucket = ts // max(window_seconds, 1)
+            group_key = f"time:{bucket}"
+        grouped.setdefault(group_key, []).append(row)
+
+    aggregated_rows: list[dict[str, Any]] = []
+
+    for group_rows in grouped.values():
+        token_rows = [
+            r for r in group_rows if str(r.get("event_type", "")).lower() == "token_transfer"
+        ]
+        if not token_rows:
+            aggregated_rows.extend(group_rows)
+            continue
+
+        out_by_asset: dict[str, Decimal] = {}
+        in_by_asset: dict[str, Decimal] = {}
+        fee_total = Decimal("0")
+        tx_id = str(group_rows[0].get("tx_id") or "")
+        timestamp_utc = group_rows[0].get("timestamp_utc")
+        source = group_rows[0].get("source", "solana_rpc")
+
+        for row in group_rows:
+            fee_total += _to_decimal(row.get("fee", "0"))
+            if str(row.get("event_type", "")).lower() != "token_transfer":
+                continue
+            asset = str(row.get("asset", "")).upper()
+            qty = _to_decimal(row.get("quantity", "0"))
+            side = str(row.get("side", "")).lower()
+            if side == "out":
+                out_by_asset[asset] = out_by_asset.get(asset, Decimal("0")) + qty
+            elif side == "in":
+                in_by_asset[asset] = in_by_asset.get(asset, Decimal("0")) + qty
+
+        # Nur aggregieren, wenn sowohl Input als auch Output existieren.
+        if not out_by_asset or not in_by_asset:
+            aggregated_rows.extend(group_rows)
+            continue
+
+        out_asset, out_qty = max(out_by_asset.items(), key=lambda item: item[1])
+        in_asset, in_qty = max(in_by_asset.items(), key=lambda item: item[1])
+
+        raw_summary = {
+            "jupiter_aggregated": True,
+            "window_seconds": window_seconds,
+            "aggregated_sub_events": len(group_rows),
+            "from_asset": out_asset,
+            "from_quantity": out_qty.to_eng_string(),
+            "to_asset": in_asset,
+            "to_quantity": in_qty.to_eng_string(),
+        }
+
+        aggregated_rows.append(
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": out_asset,
+                "quantity": out_qty.to_eng_string(),
+                "price": "",
+                "fee": fee_total.to_eng_string(),
+                "fee_asset": "SOL",
+                "side": "out",
+                "event_type": "swap_out_aggregated",
+                "tx_id": tx_id,
+                "source": source,
+                "raw_row": raw_summary,
+            }
+        )
+        aggregated_rows.append(
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": in_asset,
+                "quantity": in_qty.to_eng_string(),
+                "price": "",
+                "fee": "0",
+                "fee_asset": "",
+                "side": "in",
+                "event_type": "swap_in_aggregated",
+                "tx_id": tx_id,
+                "source": source,
+                "raw_row": raw_summary,
+            }
+        )
+
+    aggregated_rows.extend(passthrough)
+    return aggregated_rows
+
+
 def _token_ui_amount(item: dict[str, Any]) -> Decimal:
     ui_amount = item.get("uiTokenAmount", {})
     if not isinstance(ui_amount, dict):
@@ -251,3 +355,21 @@ def _to_utc_iso(value: Any) -> str | None:
         return parsed.astimezone(UTC).isoformat()
     except ValueError:
         return raw
+
+
+def _to_epoch_seconds(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)) or str(value).isdigit():
+        ts = int(str(value))
+        if ts > 9999999999:
+            return ts // 1000
+        return ts
+    raw = str(value)
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return int(parsed.timestamp())
+    except ValueError:
+        return None

@@ -528,6 +528,8 @@ def connectors_solana_wallet_preview(payload: SolanaWalletPreviewRequest) -> Sta
             timeout_seconds=payload.timeout_seconds,
             max_signatures=payload.max_signatures,
             max_transactions=payload.max_transactions,
+            aggregate_jupiter=payload.aggregate_jupiter,
+            jupiter_window_seconds=payload.jupiter_window_seconds,
         )
     except Exception as exc:
         write_audit(
@@ -556,6 +558,8 @@ def connectors_solana_wallet_preview(payload: SolanaWalletPreviewRequest) -> Sta
             "rpc_url": payload.rpc_url,
             "ok": True,
             "rows": result.get("count", 0),
+            "aggregate_jupiter": payload.aggregate_jupiter,
+            "jupiter_window_seconds": payload.jupiter_window_seconds,
         },
     )
     warnings = result.get("warnings", [])
@@ -582,6 +586,8 @@ def connectors_solana_import_confirm(payload: SolanaImportConfirmRequest) -> Sta
             timeout_seconds=payload.timeout_seconds,
             max_signatures=payload.max_signatures,
             max_transactions=payload.max_transactions,
+            aggregate_jupiter=payload.aggregate_jupiter,
+            jupiter_window_seconds=payload.jupiter_window_seconds,
         )
     except Exception as exc:
         write_audit(
@@ -619,6 +625,8 @@ def connectors_solana_import_confirm(payload: SolanaImportConfirmRequest) -> Sta
             "fetched_rows": len(rows),
             "inserted_events": import_result["inserted_events"],
             "duplicate_events": import_result["duplicate_events"],
+            "aggregate_jupiter": payload.aggregate_jupiter,
+            "jupiter_window_seconds": payload.jupiter_window_seconds,
         },
     )
     return StandardResponse(

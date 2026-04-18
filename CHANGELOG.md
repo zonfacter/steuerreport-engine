@@ -81,6 +81,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - `POST /api/v1/connectors/solana/import-confirm`
   - RPC-Flow (`getSignaturesForAddress`, `getTransaction`) mit kanonischem Event-Mapping und Direktimport in `raw_events`.
 - Dashboard-Importschritt erweitert um Solana-Block (Wallet-Adresse, RPC, Preview, Import).
+- Jupiter-Aggregation für Solana-Import ergänzt:
+  - optionale Multi-Hop-Zusammenfassung auf `swap_out_aggregated` / `swap_in_aggregated`
+  - Intermediary-Tokens werden für aggregierte Swaps ausgeblendet.
 - CI-Stabilisierung:
   - Golden-Fixtures für `DE-2024`, `DE-2025`, `DE-2026` ergänzt (`tests/fixtures/golden/*.json`)
   - `scripts/verify_integrity.py` prüft jetzt Dateien/JSON-Struktur und erzeugt deterministische Hash-Ausgabe.

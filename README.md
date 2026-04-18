@@ -82,6 +82,8 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - Signatures via `getSignaturesForAddress`
   - Transaction-Details via `getTransaction` (jsonParsed)
   - Mapping in kanonische Events (`sol_transfer`, `token_transfer`, Fallback `solana_tx`)
+  - Jupiter Multi-Hop Aggregation (optional): reduziert Sub-Events auf `swap_out_aggregated` + `swap_in_aggregated`
+    und ignoriert Intermediary-Tokens in der Vorschau.
   - Dashboard-Maske in Schritt 1 zum direkten Testen mit Wallet-Adresse und RPC-URL
 
 ## Compliance & Qualität

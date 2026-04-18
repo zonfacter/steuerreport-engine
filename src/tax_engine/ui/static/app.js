@@ -246,6 +246,8 @@ function solanaPayload() {
   const rpcUrl = el("solRpc").value.trim() || "https://api.mainnet-beta.solana.com";
   const maxSignatures = Number(el("solMaxSignatures").value || "100");
   const maxTransactions = Number(el("solMaxTransactions").value || "50");
+  const aggregateJupiter = el("solAggregateJupiter").value === "true";
+  const jupiterWindowSeconds = Number(el("solJupiterWindow").value || "2");
   if (!walletAddress) {
     throw new Error("Wallet Address ist erforderlich.");
   }
@@ -254,6 +256,8 @@ function solanaPayload() {
     rpc_url: rpcUrl,
     max_signatures: maxSignatures,
     max_transactions: maxTransactions,
+    aggregate_jupiter: aggregateJupiter,
+    jupiter_window_seconds: jupiterWindowSeconds,
   };
 }
 
