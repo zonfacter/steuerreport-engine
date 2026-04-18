@@ -6,6 +6,11 @@ from typing import Any
 
 import httpx
 
+JUPITER_PROGRAM_IDS = {
+    "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB",
+    "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5NtJmQJ",
+}
+
 
 def fetch_solana_wallet_preview(
     wallet_address: str,
@@ -83,6 +88,7 @@ def _map_transaction_rows(wallet_address: str, signature: str, tx: dict[str, Any
     transaction = tx.get("transaction", {}) if isinstance(tx.get("transaction"), dict) else {}
     message = transaction.get("message", {}) if isinstance(transaction.get("message"), dict) else {}
     account_keys = message.get("accountKeys", [])
+    defi_label = _classify_defi_label(tx)
 
     wallet_index = _find_wallet_index(wallet_address=wallet_address, account_keys=account_keys)
     fee_lamports = _to_decimal(meta.get("fee", 0))
@@ -109,6 +115,7 @@ def _map_transaction_rows(wallet_address: str, signature: str, tx: dict[str, Any
                         "fee_asset": "SOL",
                         "side": "in" if diff_sol > 0 else "out",
                         "event_type": "sol_transfer",
+                        "defi_label": defi_label,
                         "tx_id": signature,
                         "source": "solana_rpc",
                         "raw_row": tx,
@@ -120,6 +127,7 @@ def _map_transaction_rows(wallet_address: str, signature: str, tx: dict[str, Any
         signature=signature,
         timestamp_utc=timestamp_utc,
         meta=meta,
+        defi_label=defi_label,
         raw_tx=tx,
     )
     rows.extend(token_rows)
@@ -135,6 +143,7 @@ def _map_transaction_rows(wallet_address: str, signature: str, tx: dict[str, Any
                 "fee_asset": "SOL",
                 "side": "neutral",
                 "event_type": "solana_tx",
+                "defi_label": defi_label,
                 "tx_id": signature,
                 "source": "solana_rpc",
                 "raw_row": tx,
@@ -148,6 +157,7 @@ def _map_token_balance_diffs(
     signature: str,
     timestamp_utc: str | None,
     meta: dict[str, Any],
+    defi_label: str,
     raw_tx: dict[str, Any],
 ) -> list[dict[str, Any]]:
     pre = meta.get("preTokenBalances", [])
@@ -195,6 +205,7 @@ def _map_token_balance_diffs(
                 "fee_asset": "",
                 "side": "in" if diff > 0 else "out",
                 "event_type": "token_transfer",
+                "defi_label": defi_label,
                 "tx_id": signature,
                 "source": "solana_rpc",
                 "raw_row": raw_tx,
@@ -236,6 +247,8 @@ def _aggregate_jupiter_rows(rows: list[dict[str, Any]], window_seconds: int) -> 
         tx_id = str(group_rows[0].get("tx_id") or "")
         timestamp_utc = group_rows[0].get("timestamp_utc")
         source = group_rows[0].get("source", "solana_rpc")
+        labels = {str(r.get("defi_label", "unknown")) for r in group_rows}
+        group_label = "swap" if "swap" in labels else next(iter(labels), "unknown")
 
         for row in group_rows:
             fee_total += _to_decimal(row.get("fee", "0"))
@@ -277,6 +290,7 @@ def _aggregate_jupiter_rows(rows: list[dict[str, Any]], window_seconds: int) -> 
                 "fee_asset": "SOL",
                 "side": "out",
                 "event_type": "swap_out_aggregated",
+                "defi_label": group_label,
                 "tx_id": tx_id,
                 "source": source,
                 "raw_row": raw_summary,
@@ -292,6 +306,7 @@ def _aggregate_jupiter_rows(rows: list[dict[str, Any]], window_seconds: int) -> 
                 "fee_asset": "",
                 "side": "in",
                 "event_type": "swap_in_aggregated",
+                "defi_label": group_label,
                 "tx_id": tx_id,
                 "source": source,
                 "raw_row": raw_summary,
@@ -373,3 +388,92 @@ def _to_epoch_seconds(value: Any) -> int | None:
         return int(parsed.timestamp())
     except ValueError:
         return None
+
+
+def _classify_defi_label(tx: dict[str, Any]) -> str:
+    tokens = _collect_classification_tokens(tx)
+    if any(token in JUPITER_PROGRAM_IDS for token in tokens):
+        return "swap"
+    if any(k in token for token in tokens for k in ("swap", "route", "exactin", "exactout")):
+        return "swap"
+    if any(
+        k in token
+        for token in tokens
+        for k in ("liquidity", "amm", "whirlpool", "raydium", "orca", "addliquidity", "removeliquidity")
+    ):
+        return "lp"
+    if any(
+        k in token
+        for token in tokens
+        for k in ("stake", "unstake", "delegate", "deactivate", "validator")
+    ):
+        return "staking"
+    if any(
+        k in token
+        for token in tokens
+        for k in ("claim", "harvest", "collectreward", "reward", "airdrop")
+    ):
+        return "claim"
+    return "unknown"
+
+
+def _collect_classification_tokens(tx: dict[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    transaction = tx.get("transaction", {}) if isinstance(tx.get("transaction"), dict) else {}
+    message = transaction.get("message", {}) if isinstance(transaction.get("message"), dict) else {}
+    meta = tx.get("meta", {}) if isinstance(tx.get("meta"), dict) else {}
+
+    for key in message.get("accountKeys", []) if isinstance(message.get("accountKeys"), list) else []:
+        if isinstance(key, dict):
+            pubkey = str(key.get("pubkey", "")).strip()
+            if pubkey:
+                tokens.add(pubkey)
+        else:
+            val = str(key).strip()
+            if val:
+                tokens.add(val)
+
+    for instruction in message.get("instructions", []) if isinstance(message.get("instructions"), list) else []:
+        _collect_instruction_tokens(instruction, tokens)
+
+    for inner in meta.get("innerInstructions", []) if isinstance(meta.get("innerInstructions"), list) else []:
+        if not isinstance(inner, dict):
+            continue
+        instructions = inner.get("instructions", [])
+        if isinstance(instructions, list):
+            for instruction in instructions:
+                _collect_instruction_tokens(instruction, tokens)
+
+    logs = meta.get("logMessages", [])
+    if isinstance(logs, list):
+        for item in logs:
+            value = str(item).strip().lower().replace(" ", "")
+            if value:
+                tokens.add(value)
+
+    normalized: set[str] = set()
+    for token in tokens:
+        normalized.add(token)
+        normalized.add(token.lower().replace(" ", ""))
+    return normalized
+
+
+def _collect_instruction_tokens(instruction: Any, tokens: set[str]) -> None:
+    if not isinstance(instruction, dict):
+        return
+    program_id = str(instruction.get("programId", "")).strip()
+    if program_id:
+        tokens.add(program_id)
+    program = str(instruction.get("program", "")).strip()
+    if program:
+        tokens.add(program)
+    parsed = instruction.get("parsed")
+    if isinstance(parsed, dict):
+        parsed_type = str(parsed.get("type", "")).strip()
+        if parsed_type:
+            tokens.add(parsed_type)
+        info = parsed.get("info")
+        if isinstance(info, dict):
+            for key, value in info.items():
+                tokens.add(str(key))
+                tokens.add(str(value))

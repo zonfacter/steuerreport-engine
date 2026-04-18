@@ -84,6 +84,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Jupiter-Aggregation für Solana-Import ergänzt:
   - optionale Multi-Hop-Zusammenfassung auf `swap_out_aggregated` / `swap_in_aggregated`
   - Intermediary-Tokens werden für aggregierte Swaps ausgeblendet.
+- Solana DeFi-Labeling ergänzt:
+  - heuristische Klassifikation je Transaktion/Event in `swap`, `lp`, `staking`, `claim`, `unknown`.
 - CI-Stabilisierung:
   - Golden-Fixtures für `DE-2024`, `DE-2025`, `DE-2026` ergänzt (`tests/fixtures/golden/*.json`)
   - `scripts/verify_integrity.py` prüft jetzt Dateien/JSON-Struktur und erzeugt deterministische Hash-Ausgabe.

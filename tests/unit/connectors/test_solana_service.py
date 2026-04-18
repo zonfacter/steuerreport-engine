@@ -51,6 +51,7 @@ def test_fetch_solana_wallet_preview_maps_sol_and_token_rows(monkeypatch) -> Non
     assert result["count"] == 2
     assert any(row["asset"] == "SOL" for row in result["rows"])
     assert any(row["asset"] == "MINT-A" for row in result["rows"])
+    assert all("defi_label" in row for row in result["rows"])
 
 
 def test_fetch_solana_wallet_preview_aggregates_jupiter_multihop(monkeypatch) -> None:
@@ -63,6 +64,7 @@ def test_fetch_solana_wallet_preview_aggregates_jupiter_multihop(monkeypatch) ->
                 "blockTime": 1704067200,
                 "transaction": {
                     "message": {
+                        "instructions": [{"programId": "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB"}],
                         "accountKeys": [{"pubkey": "wallet-1"}, {"pubkey": "other"}],
                     }
                 },
@@ -99,3 +101,42 @@ def test_fetch_solana_wallet_preview_aggregates_jupiter_multihop(monkeypatch) ->
     event_types = {row["event_type"] for row in result["rows"]}
     assert "swap_out_aggregated" in event_types
     assert "swap_in_aggregated" in event_types
+    assert all(row["defi_label"] == "swap" for row in result["rows"])
+
+
+def test_fetch_solana_wallet_preview_labels_staking_from_logs(monkeypatch) -> None:
+    def _fake_rpc(**kwargs):
+        method = kwargs["method"]
+        if method == "getSignaturesForAddress":
+            return [{"signature": "sig-1"}]
+        if method == "getTransaction":
+            return {
+                "blockTime": 1704067200,
+                "transaction": {
+                    "message": {
+                        "accountKeys": [{"pubkey": "wallet-1"}],
+                    }
+                },
+                "meta": {
+                    "fee": 5000,
+                    "preBalances": [1000000000],
+                    "postBalances": [900000000],
+                    "logMessages": ["Program log: Stake instruction: Delegate"],
+                    "preTokenBalances": [],
+                    "postTokenBalances": [],
+                },
+            }
+        return None
+
+    monkeypatch.setattr("tax_engine.connectors.solana_service._solana_rpc", _fake_rpc)
+
+    result = fetch_solana_wallet_preview(
+        wallet_address="wallet-1",
+        rpc_url="https://rpc.test",
+        timeout_seconds=10,
+        max_signatures=10,
+        max_transactions=10,
+        aggregate_jupiter=False,
+    )
+    assert result["count"] >= 1
+    assert any(row["defi_label"] == "staking" for row in result["rows"])
