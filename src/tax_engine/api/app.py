@@ -11,6 +11,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from tax_engine.connectors import (
+    CexBalancesPreviewRequest,
+    CexVerifyRequest,
+    fetch_cex_balance_preview,
+    mask_api_key,
+    verify_cex_credentials,
+)
 from tax_engine.ingestion import (
     ConfirmImportRequest,
     ConnectorParseRequest,
@@ -270,6 +277,109 @@ def import_upload_preview(payload: UploadPreviewRequest) -> StandardResponse:
         },
         errors=errors,
         warnings=warnings,
+    )
+
+
+@app.post("/api/v1/connectors/cex/verify", response_model=StandardResponse, tags=["connectors"])
+def connectors_cex_verify(payload: CexVerifyRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    try:
+        result = verify_cex_credentials(
+            connector_id=payload.connector_id,
+            api_key=payload.api_key,
+            api_secret=payload.api_secret,
+            passphrase=payload.passphrase,
+            timeout_seconds=payload.timeout_seconds,
+        )
+    except Exception as exc:
+        write_audit(
+            trace_id=trace_id,
+            action="connectors.cex.verify",
+            payload={
+                "connector_id": payload.connector_id,
+                "api_key_masked": mask_api_key(payload.api_key),
+                "ok": False,
+                "exception": str(exc),
+            },
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "connector_error", "message": str(exc)}],
+            warnings=[],
+        )
+
+    status = "success" if result.get("ok") else "partial"
+    write_audit(
+        trace_id=trace_id,
+        action="connectors.cex.verify",
+        payload={
+            "connector_id": payload.connector_id,
+            "api_key_masked": mask_api_key(payload.api_key),
+            "ok": bool(result.get("ok")),
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status=status,
+        data=result,
+        errors=[],
+        warnings=[],
+    )
+
+
+@app.post(
+    "/api/v1/connectors/cex/balances-preview",
+    response_model=StandardResponse,
+    tags=["connectors"],
+)
+def connectors_cex_balances_preview(payload: CexBalancesPreviewRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    try:
+        result = fetch_cex_balance_preview(
+            connector_id=payload.connector_id,
+            api_key=payload.api_key,
+            api_secret=payload.api_secret,
+            passphrase=payload.passphrase,
+            timeout_seconds=payload.timeout_seconds,
+            max_rows=payload.max_rows,
+        )
+    except Exception as exc:
+        write_audit(
+            trace_id=trace_id,
+            action="connectors.cex.balances_preview",
+            payload={
+                "connector_id": payload.connector_id,
+                "api_key_masked": mask_api_key(payload.api_key),
+                "ok": False,
+                "exception": str(exc),
+            },
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "connector_error", "message": str(exc)}],
+            warnings=[],
+        )
+
+    write_audit(
+        trace_id=trace_id,
+        action="connectors.cex.balances_preview",
+        payload={
+            "connector_id": payload.connector_id,
+            "api_key_masked": mask_api_key(payload.api_key),
+            "ok": True,
+            "rows": result.get("count", 0),
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data=result,
+        errors=[],
+        warnings=[],
     )
 
 

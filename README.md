@@ -56,6 +56,15 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - `POST /api/v1/import/parse-preview` (JSON-Rows -> kanonisches Vorschauformat)
   - `POST /api/v1/import/upload-preview` (Dateiinhalt als Base64 + Dateiname -> Vorschau)
 
+## CEX API (Phase 2 Start)
+- Read-Only-Verbindungsprüfung und Kontostands-Vorschau:
+  - `POST /api/v1/connectors/cex/verify`
+  - `POST /api/v1/connectors/cex/balances-preview`
+- Unterstützte CEX im ersten API-Schnitt:
+  - Binance
+  - Bitget (mit Passphrase)
+  - Coinbase Exchange API (mit Passphrase, nicht Coinbase Advanced Trade)
+
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).
 - Pflicht-Regression über Golden Cases (`DE-2024`, `DE-2025`, `DE-2026`).

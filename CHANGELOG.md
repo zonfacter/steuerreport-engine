@@ -62,6 +62,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - `POST /api/v1/import/upload-preview` (Base64-Dateiinhalt)
 - Connector-Mapping für `binance`, `bitget`, `coinbase`, `pionex`, `blockpit` ergänzt
   (CSV/XLSX-Parsing und Normalisierung ins kanonische Vorschauformat).
+- CEX-API-Start ergänzt (Read-Only):
+  - `POST /api/v1/connectors/cex/verify`
+  - `POST /api/v1/connectors/cex/balances-preview`
+- Signatur-Handling und Credentials-Validierung für Binance, Bitget und Coinbase Exchange ergänzt.
 - UI-Review-Tabellen ergänzt:
   - Filterbare Ansicht für `tax_lines` (Asset/Tax-Status)
   - Filterbare Ansicht für `derivative_lines` (Asset/Event-Typ)

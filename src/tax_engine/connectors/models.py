@@ -1,0 +1,20 @@
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+
+class CexVerifyRequest(BaseModel):
+    connector_id: str = Field(min_length=1)
+    api_key: str = Field(min_length=1)
+    api_secret: str = Field(min_length=1)
+    passphrase: str | None = Field(default=None)
+    timeout_seconds: int = Field(default=15, ge=3, le=60)
+
+
+class CexBalancesPreviewRequest(BaseModel):
+    connector_id: str = Field(min_length=1)
+    api_key: str = Field(min_length=1)
+    api_secret: str = Field(min_length=1)
+    passphrase: str | None = Field(default=None)
+    timeout_seconds: int = Field(default=20, ge=3, le=90)
+    max_rows: int = Field(default=500, ge=1, le=5000)
