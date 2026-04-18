@@ -13,8 +13,10 @@ from pydantic import BaseModel, Field
 
 from tax_engine.connectors import (
     CexBalancesPreviewRequest,
+    CexTransactionsPreviewRequest,
     CexVerifyRequest,
     fetch_cex_balance_preview,
+    fetch_cex_transactions_preview,
     mask_api_key,
     verify_cex_credentials,
 )
@@ -380,6 +382,63 @@ def connectors_cex_balances_preview(payload: CexBalancesPreviewRequest) -> Stand
         data=result,
         errors=[],
         warnings=[],
+    )
+
+
+@app.post(
+    "/api/v1/connectors/cex/transactions-preview",
+    response_model=StandardResponse,
+    tags=["connectors"],
+)
+def connectors_cex_transactions_preview(payload: CexTransactionsPreviewRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    try:
+        result = fetch_cex_transactions_preview(
+            connector_id=payload.connector_id,
+            api_key=payload.api_key,
+            api_secret=payload.api_secret,
+            passphrase=payload.passphrase,
+            timeout_seconds=payload.timeout_seconds,
+            max_rows=payload.max_rows,
+            start_time_ms=payload.start_time_ms,
+            end_time_ms=payload.end_time_ms,
+        )
+    except Exception as exc:
+        write_audit(
+            trace_id=trace_id,
+            action="connectors.cex.transactions_preview",
+            payload={
+                "connector_id": payload.connector_id,
+                "api_key_masked": mask_api_key(payload.api_key),
+                "ok": False,
+                "exception": str(exc),
+            },
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "connector_error", "message": str(exc)}],
+            warnings=[],
+        )
+
+    write_audit(
+        trace_id=trace_id,
+        action="connectors.cex.transactions_preview",
+        payload={
+            "connector_id": payload.connector_id,
+            "api_key_masked": mask_api_key(payload.api_key),
+            "ok": True,
+            "rows": result.get("count", 0),
+        },
+    )
+    warnings = result.get("warnings", [])
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data=result,
+        errors=[],
+        warnings=warnings if isinstance(warnings, list) else [],
     )
 
 

@@ -153,6 +153,41 @@ def fetch_cex_balance_preview(
     raise ValueError("unsupported_connector")
 
 
+def fetch_cex_transactions_preview(
+    connector_id: str,
+    api_key: str,
+    api_secret: str,
+    passphrase: str | None,
+    timeout_seconds: int,
+    max_rows: int,
+    start_time_ms: int | None,
+    end_time_ms: int | None,
+) -> dict[str, Any]:
+    connector = connector_id.lower().strip()
+    if connector == "binance":
+        return _binance_transactions_preview(
+            api_key=api_key,
+            api_secret=api_secret,
+            timeout_seconds=timeout_seconds,
+            max_rows=max_rows,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+        )
+    if connector in {"bitget", "coinbase"}:
+        return {
+            "connector_id": connector,
+            "count": 0,
+            "rows": [],
+            "warnings": [
+                {
+                    "code": "not_implemented",
+                    "message": f"{connector} transactions preview folgt im nächsten Connector-Release",
+                }
+            ],
+        }
+    raise ValueError("unsupported_connector")
+
+
 def _verify_binance(api_key: str, api_secret: str, timeout_seconds: int) -> dict[str, Any]:
     payload = _binance_account_payload(api_key, api_secret, timeout_seconds)
     return {
@@ -215,6 +250,112 @@ def _binance_account_payload(api_key: str, api_secret: str, timeout_seconds: int
     if not isinstance(payload, dict):
         raise ValueError("binance_invalid_payload")
     return payload
+
+
+def _binance_signed_get(
+    path: str,
+    api_key: str,
+    api_secret: str,
+    timeout_seconds: int,
+    params: dict[str, str] | None = None,
+) -> Any:
+    base_params = {"timestamp": str(int(time.time() * 1000)), "recvWindow": "5000"}
+    if params:
+        base_params.update(params)
+    query = urlencode(base_params)
+    signature = build_binance_signature(query, api_secret)
+    signed_query = f"{query}&signature={signature}"
+    url = f"https://api.binance.com{path}?{signed_query}"
+    headers = {"X-MBX-APIKEY": api_key}
+    return _safe_get_json(url=url, headers=headers, timeout_seconds=timeout_seconds)
+
+
+def _binance_transactions_preview(
+    api_key: str,
+    api_secret: str,
+    timeout_seconds: int,
+    max_rows: int,
+    start_time_ms: int | None,
+    end_time_ms: int | None,
+) -> dict[str, Any]:
+    params: dict[str, str] = {}
+    if start_time_ms is not None:
+        params["startTime"] = str(start_time_ms)
+    if end_time_ms is not None:
+        params["endTime"] = str(end_time_ms)
+    params["limit"] = str(min(max_rows, 1000))
+
+    deposits_payload = _binance_signed_get(
+        path="/sapi/v1/capital/deposit/hisrec",
+        api_key=api_key,
+        api_secret=api_secret,
+        timeout_seconds=timeout_seconds,
+        params=params,
+    )
+    withdrawals_payload = _binance_signed_get(
+        path="/sapi/v1/capital/withdraw/history",
+        api_key=api_key,
+        api_secret=api_secret,
+        timeout_seconds=timeout_seconds,
+        params=params,
+    )
+
+    if not isinstance(deposits_payload, list) or not isinstance(withdrawals_payload, list):
+        raise ValueError("binance_transactions_invalid_payload")
+
+    rows: list[dict[str, Any]] = []
+
+    for item in deposits_payload:
+        insert_time = int(item.get("insertTime", 0) or 0)
+        event_time = datetime.fromtimestamp(insert_time / 1000, tz=UTC).isoformat() if insert_time else None
+        rows.append(
+            {
+                "timestamp_utc": event_time,
+                "asset": str(item.get("coin", "")).upper(),
+                "quantity": _to_decimal(item.get("amount", "0")).to_eng_string(),
+                "price": "",
+                "fee": "0",
+                "fee_asset": "",
+                "side": "in",
+                "event_type": "deposit",
+                "tx_id": str(item.get("txId", "")),
+                "source": "binance_api",
+                "raw_row": item,
+            }
+        )
+
+    for item in withdrawals_payload:
+        apply_time_raw = str(item.get("applyTime", ""))
+        withdrawal_time: str | None = None
+        try:
+            # Binance liefert hier normalerweise UTC-String, den Python ISO-Parser versteht.
+            parsed_time = datetime.fromisoformat(apply_time_raw.replace("Z", "+00:00"))
+            if parsed_time.tzinfo is None:
+                parsed_time = parsed_time.replace(tzinfo=UTC)
+            withdrawal_time = parsed_time.astimezone(UTC).isoformat()
+        except ValueError:
+            withdrawal_time = apply_time_raw
+        amount = _to_decimal(item.get("amount", "0"))
+        fee = _to_decimal(item.get("transactionFee", "0"))
+        rows.append(
+            {
+                "timestamp_utc": withdrawal_time,
+                "asset": str(item.get("coin", "")).upper(),
+                "quantity": amount.to_eng_string(),
+                "price": "",
+                "fee": fee.to_eng_string(),
+                "fee_asset": str(item.get("coin", "")).upper(),
+                "side": "out",
+                "event_type": "withdrawal",
+                "tx_id": str(item.get("txId", "")),
+                "source": "binance_api",
+                "raw_row": item,
+            }
+        )
+
+    rows.sort(key=lambda r: str(r.get("timestamp_utc") or ""))
+    limited_rows = rows[:max_rows]
+    return {"connector_id": "binance", "count": len(limited_rows), "rows": limited_rows}
 
 
 def _bitget_assets_payload(
