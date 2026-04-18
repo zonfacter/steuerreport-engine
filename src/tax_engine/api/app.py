@@ -16,8 +16,11 @@ from tax_engine.connectors import (
     CexImportConfirmRequest,
     CexTransactionsPreviewRequest,
     CexVerifyRequest,
+    SolanaImportConfirmRequest,
+    SolanaWalletPreviewRequest,
     fetch_cex_balance_preview,
     fetch_cex_transactions_preview,
+    fetch_solana_wallet_preview,
     mask_api_key,
     verify_cex_credentials,
 )
@@ -501,6 +504,129 @@ def connectors_cex_import_confirm(payload: CexImportConfirmRequest) -> StandardR
         status="success",
         data={
             "connector_id": payload.connector_id,
+            "source_name": source_name,
+            "fetched_rows": len(rows),
+            "preview_count": preview.get("count", len(rows)),
+            "import_result": import_result,
+        },
+        errors=[],
+        warnings=warnings if isinstance(warnings, list) else [],
+    )
+
+
+@app.post(
+    "/api/v1/connectors/solana/wallet-preview",
+    response_model=StandardResponse,
+    tags=["connectors"],
+)
+def connectors_solana_wallet_preview(payload: SolanaWalletPreviewRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    try:
+        result = fetch_solana_wallet_preview(
+            wallet_address=payload.wallet_address,
+            rpc_url=payload.rpc_url,
+            timeout_seconds=payload.timeout_seconds,
+            max_signatures=payload.max_signatures,
+            max_transactions=payload.max_transactions,
+        )
+    except Exception as exc:
+        write_audit(
+            trace_id=trace_id,
+            action="connectors.solana.wallet_preview",
+            payload={
+                "wallet_address": payload.wallet_address,
+                "rpc_url": payload.rpc_url,
+                "ok": False,
+                "exception": str(exc),
+            },
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "connector_error", "message": str(exc)}],
+            warnings=[],
+        )
+
+    write_audit(
+        trace_id=trace_id,
+        action="connectors.solana.wallet_preview",
+        payload={
+            "wallet_address": payload.wallet_address,
+            "rpc_url": payload.rpc_url,
+            "ok": True,
+            "rows": result.get("count", 0),
+        },
+    )
+    warnings = result.get("warnings", [])
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data=result,
+        errors=[],
+        warnings=warnings if isinstance(warnings, list) else [],
+    )
+
+
+@app.post(
+    "/api/v1/connectors/solana/import-confirm",
+    response_model=StandardResponse,
+    tags=["connectors"],
+)
+def connectors_solana_import_confirm(payload: SolanaImportConfirmRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    try:
+        preview = fetch_solana_wallet_preview(
+            wallet_address=payload.wallet_address,
+            rpc_url=payload.rpc_url,
+            timeout_seconds=payload.timeout_seconds,
+            max_signatures=payload.max_signatures,
+            max_transactions=payload.max_transactions,
+        )
+    except Exception as exc:
+        write_audit(
+            trace_id=trace_id,
+            action="connectors.solana.import_confirm",
+            payload={
+                "wallet_address": payload.wallet_address,
+                "rpc_url": payload.rpc_url,
+                "ok": False,
+                "exception": str(exc),
+            },
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "connector_error", "message": str(exc)}],
+            warnings=[],
+        )
+
+    rows = preview.get("rows", [])
+    if not isinstance(rows, list):
+        rows = []
+
+    source_name = payload.source_name or "solana_wallet_api_import"
+    import_result = confirm_import(source_name=source_name, rows=rows)
+    warnings = preview.get("warnings", [])
+    write_audit(
+        trace_id=trace_id,
+        action="connectors.solana.import_confirm",
+        payload={
+            "wallet_address": payload.wallet_address,
+            "rpc_url": payload.rpc_url,
+            "source_name": source_name,
+            "fetched_rows": len(rows),
+            "inserted_events": import_result["inserted_events"],
+            "duplicate_events": import_result["duplicate_events"],
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "wallet_address": payload.wallet_address,
+            "rpc_url": payload.rpc_url,
             "source_name": source_name,
             "fetched_rows": len(rows),
             "preview_count": preview.get("count", len(rows)),

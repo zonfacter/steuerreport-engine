@@ -64,6 +64,19 @@
           <button id="btnCexTxPreview">Transactions Preview</button>
           <button id="btnCexImport" class="btn-primary">Import Confirm (API)</button>
         </div>
+
+        <h3>Solana / Phantom Wallet Import</h3>
+        <p class="muted">Liest On-Chain-Transaktionen per Solana RPC und importiert sie direkt in <code>raw_events</code>.</p>
+        <div class="row">
+          <input id="solWallet" placeholder="Wallet Address (Phantom)" />
+          <input id="solRpc" value="https://api.mainnet-beta.solana.com" />
+        </div>
+        <div class="row">
+          <label>Max Signatures<input id="solMaxSignatures" type="number" value="100" /></label>
+          <label>Max Transactions<input id="solMaxTransactions" type="number" value="50" /></label>
+          <button id="btnSolPreview">Solana Preview</button>
+          <button id="btnSolImport" class="btn-primary">Solana Import Confirm</button>
+        </div>
       </section>
 
       <section class="card step-panel hidden" data-panel="2">

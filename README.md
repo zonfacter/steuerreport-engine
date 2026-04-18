@@ -74,6 +74,16 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
   - Coinbase Exchange: Accounts-Ledger + Fills (signierte API-Abfrage)
 - Dashboard: In Schritt 1 existiert jetzt eine CEX-Importmaske für Verify/Preview/Import ohne manuelles Copy-Paste.
 
+## Solana / Phantom API (Phase 2)
+- Wallet-Preview und Direktimport:
+  - `POST /api/v1/connectors/solana/wallet-preview`
+  - `POST /api/v1/connectors/solana/import-confirm`
+- Funktionsumfang:
+  - Signatures via `getSignaturesForAddress`
+  - Transaction-Details via `getTransaction` (jsonParsed)
+  - Mapping in kanonische Events (`sol_transfer`, `token_transfer`, Fallback `solana_tx`)
+  - Dashboard-Maske in Schritt 1 zum direkten Testen mit Wallet-Adresse und RPC-URL
+
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).
 - Pflicht-Regression über Golden Cases (`DE-2024`, `DE-2025`, `DE-2026`).

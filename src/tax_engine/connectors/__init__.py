@@ -3,6 +3,8 @@ from .models import (
     CexImportConfirmRequest,
     CexTransactionsPreviewRequest,
     CexVerifyRequest,
+    SolanaImportConfirmRequest,
+    SolanaWalletPreviewRequest,
 )
 from .service import (
     build_binance_signature,
@@ -13,12 +15,16 @@ from .service import (
     mask_api_key,
     verify_cex_credentials,
 )
+from .solana_service import fetch_solana_wallet_preview
 
 __all__ = [
     "CexBalancesPreviewRequest",
     "CexImportConfirmRequest",
     "CexTransactionsPreviewRequest",
     "CexVerifyRequest",
+    "SolanaImportConfirmRequest",
+    "SolanaWalletPreviewRequest",
+    "fetch_solana_wallet_preview",
     "build_binance_signature",
     "build_bitget_signature",
     "build_coinbase_signature",

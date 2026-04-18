@@ -241,6 +241,22 @@ function cexPayload() {
   };
 }
 
+function solanaPayload() {
+  const walletAddress = el("solWallet").value.trim();
+  const rpcUrl = el("solRpc").value.trim() || "https://api.mainnet-beta.solana.com";
+  const maxSignatures = Number(el("solMaxSignatures").value || "100");
+  const maxTransactions = Number(el("solMaxTransactions").value || "50");
+  if (!walletAddress) {
+    throw new Error("Wallet Address ist erforderlich.");
+  }
+  return {
+    wallet_address: walletAddress,
+    rpc_url: rpcUrl,
+    max_signatures: maxSignatures,
+    max_transactions: maxTransactions,
+  };
+}
+
 async function pingApi() {
   const res = await callApi("/api/v1/health");
   setApiState(!!(res && res.status === "success"));
@@ -328,6 +344,31 @@ function init() {
       }
     } catch (error) {
       showToast(`CEX Import abgebrochen: ${error.message}`, "err");
+    }
+  });
+
+  el("btnSolPreview").addEventListener("click", async (e) => {
+    try {
+      const payload = solanaPayload();
+      const data = await callApi("/api/v1/connectors/solana/wallet-preview", "POST", payload, e.currentTarget);
+      if (data?.data?.rows) {
+        el("eventsJson").value = JSON.stringify(data.data.rows, null, 2);
+      }
+    } catch (error) {
+      showToast(`Solana Preview abgebrochen: ${error.message}`, "err");
+    }
+  });
+
+  el("btnSolImport").addEventListener("click", async (e) => {
+    try {
+      const payload = solanaPayload();
+      payload.source_name = "solana_wallet_api_import";
+      const data = await callApi("/api/v1/connectors/solana/import-confirm", "POST", payload, e.currentTarget);
+      if (data?.status === "success") {
+        switchStep(2);
+      }
+    } catch (error) {
+      showToast(`Solana Import abgebrochen: ${error.message}`, "err");
     }
   });
 
