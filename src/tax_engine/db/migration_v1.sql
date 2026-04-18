@@ -39,6 +39,24 @@ CREATE TABLE IF NOT EXISTS processing_queue (
     updated_at_utc TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS tax_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    line_no INTEGER NOT NULL,
+    asset TEXT NOT NULL,
+    qty TEXT NOT NULL,
+    buy_timestamp_utc TEXT NOT NULL,
+    sell_timestamp_utc TEXT NOT NULL,
+    cost_basis_eur TEXT NOT NULL,
+    proceeds_eur TEXT NOT NULL,
+    gain_loss_eur TEXT NOT NULL,
+    hold_days INTEGER NOT NULL,
+    tax_status TEXT NOT NULL,
+    source_event_id TEXT NOT NULL,
+    FOREIGN KEY(job_id) REFERENCES processing_queue(job_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_raw_events_source_file_id ON raw_events(source_file_id);
 CREATE INDEX IF NOT EXISTS idx_audit_trace_id ON audit_trail(trace_id);
 CREATE INDEX IF NOT EXISTS idx_processing_queue_status ON processing_queue(status);
+CREATE INDEX IF NOT EXISTS idx_tax_lines_job_id ON tax_lines(job_id);

@@ -60,10 +60,13 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             progress=70,
             current_step="core_processing",
         )
-        result_summary = process_events_for_year(raw_events=raw_events, tax_year=claimed["tax_year"])
+        processing_result = process_events_for_year(raw_events=raw_events, tax_year=claimed["tax_year"])
+        tax_lines = processing_result.pop("tax_lines")
 
         if simulate_fail:
             raise RuntimeError("Simulated worker error")
+
+        STORE.replace_tax_lines(job_id=job_id, tax_lines=tax_lines)
 
         STORE.update_processing_job_state(
             job_id=job_id,
@@ -71,7 +74,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             progress=100,
             current_step="completed",
             error_message=None,
-            result_json=json.dumps(result_summary, sort_keys=True, separators=(",", ":")),
+            result_json=json.dumps(processing_result, sort_keys=True, separators=(",", ":")),
         )
     except Exception as exc:
         STORE.update_processing_job_state(

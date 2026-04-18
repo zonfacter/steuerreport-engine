@@ -33,6 +33,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Job-Lifecycle erweitert: `queued -> running -> completed/failed` mit `current_step` und `error_message`.
 - Worker verarbeitet jetzt echte Eventdaten aus `raw_events` und erzeugt `result_summary` pro Job.
 - Queue-Persistenz erweitert um `result_json` (im Status als `result_summary` sichtbar).
+- Deque-basierte FIFO-Spot-Engine mit `Decimal` implementiert (inkl. Buy/Sell-Fee-Handling).
+- Persistenz für berechnete `tax_lines` pro Job ergänzt.
+- Worker speichert nun neben Summary auch FIFO-Tax-Lines in SQLite.
+- Unit-Tests für FIFO-Matching, Haltedauer und Short-Sell-Fallback ergänzt.
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.

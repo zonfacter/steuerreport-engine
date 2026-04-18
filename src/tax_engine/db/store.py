@@ -248,6 +248,83 @@ class SQLiteImportStore:
             for row in rows
         ]
 
+    def replace_tax_lines(self, job_id: str, tax_lines: list[dict[str, Any]]) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM tax_lines WHERE job_id = ?", (job_id,))
+            for idx, line in enumerate(tax_lines, start=1):
+                conn.execute(
+                    """
+                    INSERT INTO tax_lines (
+                        job_id,
+                        line_no,
+                        asset,
+                        qty,
+                        buy_timestamp_utc,
+                        sell_timestamp_utc,
+                        cost_basis_eur,
+                        proceeds_eur,
+                        gain_loss_eur,
+                        hold_days,
+                        tax_status,
+                        source_event_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        job_id,
+                        idx,
+                        str(line["asset"]),
+                        str(line["qty"]),
+                        str(line["buy_timestamp_utc"]),
+                        str(line["sell_timestamp_utc"]),
+                        str(line["cost_basis_eur"]),
+                        str(line["proceeds_eur"]),
+                        str(line["gain_loss_eur"]),
+                        int(line["hold_days"]),
+                        str(line["tax_status"]),
+                        str(line["source_event_id"]),
+                    ),
+                )
+            conn.commit()
+
+    def get_tax_lines(self, job_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    line_no,
+                    asset,
+                    qty,
+                    buy_timestamp_utc,
+                    sell_timestamp_utc,
+                    cost_basis_eur,
+                    proceeds_eur,
+                    gain_loss_eur,
+                    hold_days,
+                    tax_status,
+                    source_event_id
+                FROM tax_lines
+                WHERE job_id = ?
+                ORDER BY line_no ASC
+                """,
+                (job_id,),
+            ).fetchall()
+        return [
+            {
+                "line_no": int(row["line_no"]),
+                "asset": row["asset"],
+                "qty": row["qty"],
+                "buy_timestamp_utc": row["buy_timestamp_utc"],
+                "sell_timestamp_utc": row["sell_timestamp_utc"],
+                "cost_basis_eur": row["cost_basis_eur"],
+                "proceeds_eur": row["proceeds_eur"],
+                "gain_loss_eur": row["gain_loss_eur"],
+                "hold_days": int(row["hold_days"]),
+                "tax_status": row["tax_status"],
+                "source_event_id": row["source_event_id"],
+            }
+            for row in rows
+        ]
+
     def get_processing_job(self, job_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
@@ -281,12 +358,22 @@ class SQLiteImportStore:
             "current_step": row["current_step"],
             "error_message": row["error_message"],
             "result_summary": json.loads(row["result_json"]) if row["result_json"] else None,
+            "tax_line_count": self.count_tax_lines(row["job_id"]),
             "created_at_utc": row["created_at_utc"],
             "updated_at_utc": row["updated_at_utc"],
         }
 
+    def count_tax_lines(self, job_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM tax_lines WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+        return int(row["cnt"])
+
     def reset_for_tests(self) -> None:
         with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM tax_lines")
             conn.execute("DELETE FROM processing_queue")
             conn.execute("DELETE FROM audit_trail")
             conn.execute("DELETE FROM raw_events")

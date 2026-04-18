@@ -61,7 +61,24 @@ def test_worker_run_next_completes_queued_job() -> None:
     import_confirm(
         ConfirmImportRequest(
             source_name="test.csv",
-            rows=[{"timestamp": "2026-01-01T12:00:00Z", "asset": "BTC", "side": "buy", "amount": "1"}],
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "BTC",
+                    "side": "buy",
+                    "amount": "1",
+                    "price_eur": "100",
+                    "fee_eur": "1",
+                },
+                {
+                    "timestamp": "2026-02-01T12:00:00Z",
+                    "asset": "BTC",
+                    "side": "sell",
+                    "amount": "0.4",
+                    "price_eur": "120",
+                    "fee_eur": "0.4",
+                },
+            ],
         )
     )
     created = process_run(
@@ -77,7 +94,11 @@ def test_worker_run_next_completes_queued_job() -> None:
     assert result.data["status"] == "completed"
     assert result.data["progress"] == 100
     assert result.data["result_summary"] is not None
-    assert result.data["result_summary"]["processed_events"] == 1
+    assert result.data["result_summary"]["processed_events"] == 2
+    assert result.data["tax_line_count"] == 1
+    tax_lines = STORE.get_tax_lines(job_id)
+    assert len(tax_lines) == 1
+    assert tax_lines[0]["asset"] == "BTC"
     assert status.data["status"] == "completed"
 
 
