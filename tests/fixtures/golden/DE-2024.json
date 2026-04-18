@@ -1,0 +1,11 @@
+{
+  "jurisdiction": "DE",
+  "tax_year": 2024,
+  "case_id": "golden-minimal-2024",
+  "input_hash": "placeholder",
+  "expected": {
+    "tax_lines_count": 0,
+    "derivative_lines_count": 0,
+    "summary": {}
+  }
+}

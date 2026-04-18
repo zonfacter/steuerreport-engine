@@ -32,7 +32,9 @@ jobs:
           pip install pip-audit ruff mypy pytest pytest-cov
 
       - name: Dependency Audit
-        run: pip-audit
+        run: |
+          # Deterministischer Audit gegen deklarierte Abhängigkeiten, nicht gegen zufällige Runner-Systempakete.
+          pip-audit -r requirements.txt -r requirements-dev.txt
 
       - name: Static Analysis
         run: |

@@ -71,6 +71,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Bitget: signierte Deposit-/Withdrawal-Records und Spot-Fills
   - Coinbase Exchange: signierte Account-Ledger- und Fill-Abfragen
 - Signatur-Handling und Credentials-Validierung für Binance, Bitget und Coinbase Exchange ergänzt.
+- CI-Stabilisierung:
+  - Golden-Fixtures für `DE-2024`, `DE-2025`, `DE-2026` ergänzt (`tests/fixtures/golden/*.json`)
+  - `scripts/verify_integrity.py` prüft jetzt Dateien/JSON-Struktur und erzeugt deterministische Hash-Ausgabe.
+  - Dependency-Audit im Workflow auf deklarierte Requirements umgestellt (`pip-audit -r requirements*.txt`).
 - UI-Review-Tabellen ergänzt:
   - Filterbare Ansicht für `tax_lines` (Asset/Tax-Status)
   - Filterbare Ansicht für `derivative_lines` (Asset/Event-Typ)
