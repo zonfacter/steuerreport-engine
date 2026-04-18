@@ -21,12 +21,21 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
 2. Development-Abhängigkeiten installieren: `make install-dev`
 3. Tests ausführen: `make test`
 4. Integritätsprüfung starten: `make verify`
+5. End-to-End Smoke-Test (ohne Serverstart): `make smoke`
 
 ## Developer Commands
 - `make lint` Ruff-Checks
 - `make typecheck` Mypy-Prüfung
 - `make test-cov` Testlauf mit Coverage
 - `make ci` lokaler CI-ähnlicher Sammellauf
+- `make smoke` schneller End-to-End-Flow (Import/Reconcile/Process/Worker)
+
+## UX-Status
+- Aktuell gibt es noch **kein Web-Frontend (Dashboard/UI)**.
+- Derzeit testest du über:
+  - automatisierte Tests (`make test`)
+  - Smoke-Test (`make smoke`)
+  - API direkt (FastAPI/Swagger folgt als nächster Schritt)
 
 ## Compliance & Qualität
 - KI-4-Augen-Prinzip (entkoppelte Prompt-Generierung für Logik und Tests).

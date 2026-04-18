@@ -1,4 +1,4 @@
-.PHONY: install install-dev lint typecheck test test-cov audit verify ci
+.PHONY: install install-dev lint typecheck test test-cov audit verify smoke ci
 
 install:
 	python3 -m pip install -r requirements.txt
@@ -23,5 +23,8 @@ audit:
 
 verify:
 	python3 scripts/verify_integrity.py --all-years
+
+smoke:
+	PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 scripts/smoke_test.py
 
 ci: lint typecheck test-cov verify
