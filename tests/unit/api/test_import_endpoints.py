@@ -10,9 +10,7 @@ from tax_engine.ingestion.store import STORE
 
 
 def _reset_store() -> None:
-    STORE.source_files.clear()
-    STORE.raw_events.clear()
-    STORE.audit_trail.clear()
+    STORE.reset_for_tests()
 
 
 def test_detect_format_endpoint_returns_numeric_and_datetime_fields() -> None:
@@ -57,4 +55,4 @@ def test_confirm_endpoint_deduplicates_events_and_writes_audit() -> None:
     assert first.data["inserted_events"] == 1
     assert second.data["inserted_events"] == 0
     assert second.data["duplicate_events"] == 1
-    assert len(STORE.audit_trail) == 2
+    assert STORE.count_audit_entries() == 2

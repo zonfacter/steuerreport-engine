@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+import os
+from pathlib import Path
 
-from .models import AuditEntry
-
-
-@dataclass(slots=True)
-class InMemoryImportStore:
-    source_files: dict[str, dict[str, Any]] = field(default_factory=dict)
-    raw_events: dict[str, dict[str, Any]] = field(default_factory=dict)
-    audit_trail: list[AuditEntry] = field(default_factory=list)
-
-    def write_audit(self, entry: AuditEntry) -> None:
-        self.audit_trail.append(entry)
+from tax_engine.db import SQLiteImportStore
 
 
-STORE = InMemoryImportStore()
+def _resolve_db_path() -> Path:
+    configured = os.getenv("STEUERREPORT_DB_PATH")
+    if configured:
+        return Path(configured)
+    return Path("/tmp/steuerreport/steuerreport.db")
 
+
+STORE = SQLiteImportStore(db_path=_resolve_db_path())

@@ -109,15 +109,12 @@ def normalize_preview(
 def confirm_import(source_name: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     source_payload = {"source_name": source_name, "rows": rows}
     source_file_id = event_fingerprint(source_payload)
-    created_source = False
-    if source_file_id not in STORE.source_files:
-        STORE.source_files[source_file_id] = {
-            "source_file_id": source_file_id,
-            "source_name": source_name,
-            "source_hash": source_file_id,
-            "row_count": len(rows),
-        }
-        created_source = True
+    created_source = STORE.upsert_source_file(
+        source_file_id=source_file_id,
+        source_name=source_name,
+        source_hash=source_file_id,
+        row_count=len(rows),
+    )
 
     inserted_events = 0
     duplicate_events = 0
@@ -132,16 +129,16 @@ def confirm_import(source_name: str, rows: list[dict[str, Any]]) -> dict[str, An
             }
         )
         event_ids.append(unique_event_id)
-        if unique_event_id in STORE.raw_events:
+        inserted = STORE.insert_raw_event(
+            unique_event_id=unique_event_id,
+            source_file_id=source_file_id,
+            row_index=idx,
+            payload_json=canonical_json(row),
+        )
+        if inserted:
+            inserted_events += 1
+        else:
             duplicate_events += 1
-            continue
-        STORE.raw_events[unique_event_id] = {
-            "unique_event_id": unique_event_id,
-            "source_file_id": source_file_id,
-            "row_index": idx,
-            "payload": canonical_json(row),
-        }
-        inserted_events += 1
 
     return {
         "source_file_id": source_file_id,
@@ -153,4 +150,10 @@ def confirm_import(source_name: str, rows: list[dict[str, Any]]) -> dict[str, An
 
 
 def write_audit(trace_id: str, action: str, payload: dict[str, Any]) -> None:
-    STORE.write_audit(AuditEntry.create(trace_id=trace_id, action=action, payload=payload))
+    entry = AuditEntry.create(trace_id=trace_id, action=action, payload=payload)
+    STORE.write_audit(
+        trace_id=entry.trace_id,
+        action=entry.action,
+        event_time_utc=entry.event_time_utc,
+        payload_json=canonical_json(entry.payload),
+    )

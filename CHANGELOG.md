@@ -21,8 +21,11 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - `POST /api/v1/import/confirm`
 - Ingestion-Pipeline mit Decimal-/Datetime-Parsing, Subunit-Umrechnung und Audit-Trail ergänzt.
 - Unit-Tests für Ruleset, Integrität, Parser und Importendpunkte ergänzt.
+- Persistente SQLite-Importspeicherung ergänzt (`source_files`, `raw_events`, `audit_trail`).
+- Schema-Migration `migration_v1.sql` für Etappe-1-Import-Persistenz ergänzt.
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.
 - CI-Workflow installiert Dev-Abhängigkeiten aus `requirements-dev.txt` (Fallback auf `requirements.txt`).
 - API-Health-Test auf stabilen Contract-Test umgestellt.
+- Ingestion-Store von In-Memory auf SQLite umgestellt (Standardpfad: `/tmp/steuerreport/steuerreport.db`).
