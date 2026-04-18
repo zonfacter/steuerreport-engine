@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS processing_queue (
     progress INTEGER NOT NULL,
     current_step TEXT NOT NULL DEFAULT '',
     error_message TEXT,
+    result_json TEXT,
     created_at_utc TEXT NOT NULL,
     updated_at_utc TEXT NOT NULL
 );

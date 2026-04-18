@@ -31,6 +31,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Worker-Endpoint ergänzt:
   - `POST /api/v1/process/worker/run-next`
 - Job-Lifecycle erweitert: `queued -> running -> completed/failed` mit `current_step` und `error_message`.
+- Worker verarbeitet jetzt echte Eventdaten aus `raw_events` und erzeugt `result_summary` pro Job.
+- Queue-Persistenz erweitert um `result_json` (im Status als `result_summary` sichtbar).
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.

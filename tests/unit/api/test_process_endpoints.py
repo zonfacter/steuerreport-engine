@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from tax_engine.api.app import process_run, process_status, process_worker_run_next
+from tax_engine.api.app import (
+    import_confirm,
+    process_run,
+    process_status,
+    process_worker_run_next,
+)
+from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
 from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
 
@@ -52,6 +58,12 @@ def test_process_status_returns_error_for_unknown_job() -> None:
 
 def test_worker_run_next_completes_queued_job() -> None:
     _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="test.csv",
+            rows=[{"timestamp": "2026-01-01T12:00:00Z", "asset": "BTC", "side": "buy", "amount": "1"}],
+        )
+    )
     created = process_run(
         ProcessRunRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={}, dry_run=False)
     )
@@ -64,6 +76,8 @@ def test_worker_run_next_completes_queued_job() -> None:
     assert result.data["job_id"] == job_id
     assert result.data["status"] == "completed"
     assert result.data["progress"] == 100
+    assert result.data["result_summary"] is not None
+    assert result.data["result_summary"]["processed_events"] == 1
     assert status.data["status"] == "completed"
 
 

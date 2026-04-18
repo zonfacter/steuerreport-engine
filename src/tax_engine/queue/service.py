@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import uuid4
 
+from tax_engine.core.processor import process_events_for_year
 from tax_engine.ingestion.store import STORE
 from tax_engine.integrity import config_fingerprint
 
@@ -43,34 +45,42 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         return None
 
     job_id = claimed["job_id"]
-    STORE.update_processing_job_state(
-        job_id=job_id,
-        status="running",
-        progress=35,
-        current_step="fifo_matching",
-    )
-    STORE.update_processing_job_state(
-        job_id=job_id,
-        status="running",
-        progress=70,
-        current_step="tax_aggregation",
-    )
-
-    if simulate_fail:
+    try:
         STORE.update_processing_job_state(
             job_id=job_id,
-            status="failed",
-            progress=70,
-            current_step="failed",
-            error_message="Simulated worker error",
+            status="running",
+            progress=35,
+            current_step="load_events",
         )
-    else:
+        raw_events = STORE.list_raw_events()
+
+        STORE.update_processing_job_state(
+            job_id=job_id,
+            status="running",
+            progress=70,
+            current_step="core_processing",
+        )
+        result_summary = process_events_for_year(raw_events=raw_events, tax_year=claimed["tax_year"])
+
+        if simulate_fail:
+            raise RuntimeError("Simulated worker error")
+
         STORE.update_processing_job_state(
             job_id=job_id,
             status="completed",
             progress=100,
             current_step="completed",
             error_message=None,
+            result_json=json.dumps(result_summary, sort_keys=True, separators=(",", ":")),
+        )
+    except Exception as exc:
+        STORE.update_processing_job_state(
+            job_id=job_id,
+            status="failed",
+            progress=70,
+            current_step="failed",
+            error_message=str(exc),
+            result_json=None,
         )
 
     return STORE.get_processing_job(job_id)

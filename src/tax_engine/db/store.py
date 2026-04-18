@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,6 +33,12 @@ class SQLiteImportStore:
                     conn=conn,
                     table_name="processing_queue",
                     column_name="error_message",
+                    column_ddl="TEXT",
+                )
+                self._ensure_column(
+                    conn=conn,
+                    table_name="processing_queue",
+                    column_name="result_json",
                     column_ddl="TEXT",
                 )
                 conn.commit()
@@ -144,9 +151,10 @@ class SQLiteImportStore:
                     progress,
                     current_step,
                     error_message,
+                    result_json,
                     created_at_utc,
                     updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -156,6 +164,7 @@ class SQLiteImportStore:
                     status,
                     progress,
                     "queued",
+                    None,
                     None,
                     now_utc,
                     now_utc,
@@ -170,6 +179,7 @@ class SQLiteImportStore:
         progress: int,
         current_step: str,
         error_message: str | None = None,
+        result_json: str | None = None,
     ) -> bool:
         now_utc = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
@@ -181,10 +191,11 @@ class SQLiteImportStore:
                     progress = ?,
                     current_step = ?,
                     error_message = ?,
+                    result_json = ?,
                     updated_at_utc = ?
                 WHERE job_id = ?
                 """,
-                (status, progress, current_step, error_message, now_utc, job_id),
+                (status, progress, current_step, error_message, result_json, now_utc, job_id),
             )
             conn.commit()
             return cur.rowcount == 1
@@ -210,13 +221,32 @@ class SQLiteImportStore:
             conn.execute(
                 """
                 UPDATE processing_queue
-                SET status = ?, progress = ?, current_step = ?, updated_at_utc = ?
+                SET status = ?, progress = ?, current_step = ?, error_message = NULL, result_json = NULL, updated_at_utc = ?
                 WHERE job_id = ?
                 """,
                 ("running", 10, "load_events", now_utc, job_id),
             )
             conn.commit()
             return self.get_processing_job(job_id)
+
+    def list_raw_events(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT unique_event_id, source_file_id, row_index, payload_json
+                FROM raw_events
+                ORDER BY source_file_id ASC, row_index ASC
+                """
+            ).fetchall()
+        return [
+            {
+                "unique_event_id": row["unique_event_id"],
+                "source_file_id": row["source_file_id"],
+                "row_index": int(row["row_index"]),
+                "payload": json.loads(row["payload_json"]),
+            }
+            for row in rows
+        ]
 
     def get_processing_job(self, job_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -231,6 +261,7 @@ class SQLiteImportStore:
                     progress,
                     current_step,
                     error_message,
+                    result_json,
                     created_at_utc,
                     updated_at_utc
                 FROM processing_queue
@@ -249,6 +280,7 @@ class SQLiteImportStore:
             "progress": int(row["progress"]),
             "current_step": row["current_step"],
             "error_message": row["error_message"],
+            "result_summary": json.loads(row["result_json"]) if row["result_json"] else None,
             "created_at_utc": row["created_at_utc"],
             "updated_at_utc": row["updated_at_utc"],
         }
