@@ -43,6 +43,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Revisions-UX ergänzt:
   - Steuer-Tab kann einen aktuellen Lauf gegen ein zweites Ruleset vergleichen.
   - Snapshot-Erstellung aus der Oberfläche ergänzt, inklusive Notizfeld für Nachprüfungsstände.
+- CI-Security-Fix:
+  - FastAPI/Starlette/Cryptography Constraints angehoben, damit `pip-audit` bekannte CVEs in GitHub Actions nicht mehr blockiert.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.
