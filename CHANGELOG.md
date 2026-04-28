@@ -50,6 +50,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Core-Tests für `tax_domains` ergänzt, damit §22-/EÜR-/Data-Credit-/Derivate-Summen regressionssicher geprüft werden.
   - Core-Tests für `reconciliation` ergänzt, damit Transfer-Erkennung, Time-Window-Matching und Fee-Toleranz abgesichert sind.
   - API-Coverage-Tests für Rulesets, Export, Integrity/Snapshots, Compliance-Klassifikation und Review-Gates ergänzt.
+- API-Refactoring:
+  - Report-/Export-Helfer für JSON/CSV/PDF und 100-Seiten-PDF-Splitting aus `api/app.py` in `api/reporting.py` ausgelagert.
+  - Bestehende interne `_build_*`-Imports bleiben kompatibel, damit Endpunkte und Tests ohne API-Vertragsbruch weiterlaufen.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.
