@@ -2083,7 +2083,7 @@ function renderYearlyAssetActivity(activity) {
   const selectedYear = (el("yearlyYearFilter")?.value || "").trim();
   const selectedSources = selectedYearlySources(sourceBreakdown, rows);
   const sourceFilterActive = selectedSources.active;
-  const mode = (el("yearlyScaleMode")?.value || "eur").trim();
+  const mode = (el("yearlyScaleMode")?.value || "events").trim();
   const yearRows = selectedYear ? rows.filter((row) => String(row.year || "") === selectedYear) : rows;
   const sourceRows = sourceFilterActive ? yearRows.filter((row) => selectedSources.values.has(String(row.source || "unknown"))) : yearRows;
   const visibleRows = filter
@@ -2371,12 +2371,12 @@ function yearlyMetricValue(item, mode) {
 }
 
 function yearlyMetricLabel(mode) {
-  if (mode === "usd") return "Wirtschaftlicher Wert USD";
-  if (mode === "trading_usd") return "Trading/Swap-Volumen USD";
-  if (mode === "trading_eur") return "Trading/Swap-Volumen EUR";
+  if (mode === "usd") return "Bewertungsvolumen USD";
+  if (mode === "trading_usd") return "Dedupliziertes Swap-/Handelsvolumen USD";
+  if (mode === "trading_eur") return "Dedupliziertes Swap-/Handelsvolumen EUR";
   if (mode === "events") return "Transaktionen";
   if (mode === "quantity_log") return "Menge normalisiert (log10)";
-  return "Wirtschaftlicher Wert EUR";
+  return "Bewertungsvolumen EUR";
 }
 
 function formatYearlyMetric(value, mode) {

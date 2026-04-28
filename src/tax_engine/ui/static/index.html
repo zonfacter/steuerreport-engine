@@ -729,22 +729,22 @@
             </div>
           </div>
           <div class="card quick-card">
-            <h4>Jahresübersicht: Transaktionen, Volumen und Mengen</h4>
-            <p class="muted">Das ist keine Portfolio-Wertentwicklung. Reine Transfers/Deposits/Withdrawals werden wertseitig nicht als Umsatz gezählt, bleiben aber als Mengenbewegung sichtbar.</p>
+            <h4>Jahresübersicht: Aktivität, Volumen und Mengen</h4>
+            <p class="muted">Wichtig: EUR-Volumen ist Handels-/Bewertungsvolumen, kein Gewinn und kein steuerliches Ergebnis. Gewinne stehen erst nach dem Steuerlauf im Bereich Steuer / Anlage SO.</p>
             <div class="row">
               <label>Jahr
                 <select id="yearlyYearFilter">
                   <option value="">Alle Jahre</option>
                 </select>
               </label>
-              <label>Skalierung
+              <label>Kennzahl
                 <select id="yearlyScaleMode">
-                  <option value="eur" selected>Wirtschaftlicher Wert EUR</option>
-                  <option value="usd">Wirtschaftlicher Wert USD</option>
-                  <option value="trading_eur">Trading/Swap-Volumen EUR</option>
-                  <option value="trading_usd">Trading/Swap-Volumen USD</option>
+                  <option value="events" selected>Transaktionen</option>
+                  <option value="trading_eur">Dedupliziertes Swap-/Handelsvolumen EUR</option>
+                  <option value="trading_usd">Dedupliziertes Swap-/Handelsvolumen USD</option>
+                  <option value="eur">Bewertungsvolumen EUR</option>
+                  <option value="usd">Bewertungsvolumen USD</option>
                   <option value="quantity_log">Menge normalisiert (log10)</option>
-                  <option value="events">Transaktionen</option>
                 </select>
               </label>
               <label>Asset-Filter<input id="yearlyAssetFilter" placeholder="z. B. SOL, IOT, HNT" /></label>
