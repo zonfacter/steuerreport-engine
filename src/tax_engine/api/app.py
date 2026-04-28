@@ -72,6 +72,35 @@ from tax_engine.api.rulesets import (
 from tax_engine.api.rulesets import (
     router as rulesets_router,
 )
+from tax_engine.api.wallet_groups import (
+    append_wallet_snapshot as _append_wallet_snapshot,
+)
+from tax_engine.api.wallet_groups import (
+    decimal_to_plain as _decimal_to_plain,
+)
+from tax_engine.api.wallet_groups import (
+    filter_wallet_snapshots as _filter_wallet_snapshots,
+)
+from tax_engine.api.wallet_groups import (
+    load_wallet_groups as _load_wallet_groups,
+)
+from tax_engine.api.wallet_groups import (
+    load_wallet_snapshots as _load_wallet_snapshots,
+)
+from tax_engine.api.wallet_groups import (
+    normalize_wallet_addresses as _normalize_wallet_addresses,
+)
+from tax_engine.api.wallet_groups import (
+    resolve_wallets_from_group as _resolve_wallets_from_group,
+)
+from tax_engine.api.wallet_groups import (
+    router as wallet_groups_router,
+)
+from tax_engine.api.wallet_groups import (
+    wallet_groups_delete,
+    wallet_groups_list,
+    wallet_groups_upsert,
+)
 from tax_engine.connectors import (
     CexBalancesPreviewRequest,
     CexImportConfirmRequest,
@@ -85,8 +114,6 @@ from tax_engine.connectors import (
     SolanaImportConfirmRequest,
     SolanaRpcProbeRequest,
     SolanaWalletPreviewRequest,
-    WalletGroupDeleteRequest,
-    WalletGroupUpsertRequest,
     fetch_cex_balance_preview,
     fetch_cex_transactions_preview,
     fetch_solana_wallet_balances,
@@ -142,7 +169,14 @@ __all__ = [
     "TokenAliasDeleteRequest",
     "TokenAliasUpsertRequest",
     "_build_solana_backfill_status",
+    "_append_wallet_snapshot",
+    "_decimal_to_plain",
+    "_filter_wallet_snapshots",
     "_format_ruleset_row",
+    "_load_wallet_groups",
+    "_load_wallet_snapshots",
+    "_normalize_wallet_addresses",
+    "_resolve_wallets_from_group",
     "_run_systemctl",
     "_tail_file",
     "_to_iso_date",
@@ -161,6 +195,9 @@ __all__ = [
     "ruleset_get",
     "ruleset_list",
     "ruleset_upsert",
+    "wallet_groups_delete",
+    "wallet_groups_list",
+    "wallet_groups_upsert",
 ]
 
 
@@ -225,6 +262,7 @@ app = FastAPI(
 )
 app.include_router(admin_router)
 app.include_router(rulesets_router)
+app.include_router(wallet_groups_router)
 
 
 @app.exception_handler(RequestValidationError)
@@ -765,96 +803,6 @@ def portfolio_lot_aging(as_of_utc: str | None = None, asset: str | None = None) 
         payload={"as_of_utc": as_of.isoformat(), "asset_filter": asset_filter, "lot_count": snapshot.get("lot_count", 0)},
     )
     return StandardResponse(trace_id=trace_id, status="success", data=snapshot, errors=[], warnings=[])
-
-
-@app.get("/api/v1/wallet-groups", response_model=StandardResponse, tags=["wallet-groups"])
-def wallet_groups_list() -> StandardResponse:
-    trace_id = str(uuid4())
-    groups = _load_wallet_groups()
-    write_audit(
-        trace_id=trace_id,
-        action="wallet_groups.list",
-        payload={"count": len(groups)},
-    )
-    return StandardResponse(
-        trace_id=trace_id,
-        status="success",
-        data={"count": len(groups), "groups": groups},
-        errors=[],
-        warnings=[],
-    )
-
-
-@app.post("/api/v1/wallet-groups/upsert", response_model=StandardResponse, tags=["wallet-groups"])
-def wallet_groups_upsert(payload: WalletGroupUpsertRequest) -> StandardResponse:
-    trace_id = str(uuid4())
-    groups = _load_wallet_groups()
-    normalized_wallets = _normalize_wallet_addresses(payload.wallet_addresses)
-    if not normalized_wallets:
-        return StandardResponse(
-            trace_id=trace_id,
-            status="error",
-            data={},
-            errors=[{"code": "wallet_addresses_empty", "message": "Mindestens eine Wallet-Adresse erforderlich."}],
-            warnings=[],
-        )
-
-    group_id = (payload.group_id or "").strip() or str(uuid4())
-    name = payload.name.strip()
-    description = (payload.description or "").strip()
-    updated = False
-    for group in groups:
-        if str(group.get("group_id", "")) == group_id:
-            group["name"] = name
-            group["wallet_addresses"] = normalized_wallets
-            group["description"] = description
-            updated = True
-            break
-
-    if not updated:
-        groups.append(
-            {
-                "group_id": group_id,
-                "name": name,
-                "wallet_addresses": normalized_wallets,
-                "description": description,
-            }
-        )
-
-    put_admin_setting("runtime.wallet_groups", groups, is_secret=False)
-    write_audit(
-        trace_id=trace_id,
-        action="wallet_groups.upsert",
-        payload={"group_id": group_id, "wallet_count": len(normalized_wallets), "updated": updated},
-    )
-    return StandardResponse(
-        trace_id=trace_id,
-        status="success",
-        data={"group_id": group_id, "updated": updated, "groups": groups},
-        errors=[],
-        warnings=[],
-    )
-
-
-@app.post("/api/v1/wallet-groups/delete", response_model=StandardResponse, tags=["wallet-groups"])
-def wallet_groups_delete(payload: WalletGroupDeleteRequest) -> StandardResponse:
-    trace_id = str(uuid4())
-    groups = _load_wallet_groups()
-    remaining = [group for group in groups if str(group.get("group_id", "")) != payload.group_id]
-    deleted = len(remaining) != len(groups)
-    put_admin_setting("runtime.wallet_groups", remaining, is_secret=False)
-    write_audit(
-        trace_id=trace_id,
-        action="wallet_groups.delete",
-        payload={"group_id": payload.group_id, "deleted": deleted},
-    )
-    return StandardResponse(
-        trace_id=trace_id,
-        status="success",
-        data={"deleted": deleted, "count": len(remaining), "groups": remaining},
-        errors=[],
-        warnings=[],
-    )
 
 
 @app.post("/api/v1/import/detect-format", response_model=StandardResponse, tags=["import"])
@@ -3982,16 +3930,6 @@ def _format_yearly_source_breakdown(buckets: dict[tuple[int, str], dict[str, Any
     return rows
 
 
-def _decimal_to_plain(value: Decimal) -> str:
-    # Keine wissenschaftliche Notation in der UI (z. B. 1E+9).
-    text = format(value, "f")
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    if text in {"-0", ""}:
-        return "0"
-    return text
-
-
 def _extract_year(ts_raw: str) -> int | None:
     value = str(ts_raw).strip()
     if len(value) < 4:
@@ -4003,128 +3941,6 @@ def _extract_year(ts_raw: str) -> int | None:
     if year < 2009 or year > 2100:
         return None
     return year
-
-
-def _normalize_wallet_addresses(values: list[str]) -> list[str]:
-    normalized: list[str] = []
-    for value in values:
-        item = str(value).strip()
-        if not item:
-            continue
-        if item not in normalized:
-            normalized.append(item)
-    return normalized
-
-
-def _load_wallet_groups() -> list[dict[str, Any]]:
-    row = STORE.get_setting("runtime.wallet_groups")
-    if row is None:
-        return []
-    try:
-        raw = json.loads(str(row.get("value_json", "[]")))
-    except Exception:
-        return []
-    if not isinstance(raw, list):
-        return []
-    groups: list[dict[str, Any]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        group_id = str(item.get("group_id") or "").strip()
-        name = str(item.get("name") or "").strip()
-        wallets_raw = item.get("wallet_addresses", [])
-        if not isinstance(wallets_raw, list):
-            wallets_raw = []
-        wallets = _normalize_wallet_addresses([str(v) for v in wallets_raw])
-        if not group_id or not name:
-            continue
-        groups.append(
-            {
-                "group_id": group_id,
-                "name": name,
-                "wallet_addresses": wallets,
-                "description": str(item.get("description") or "").strip(),
-            }
-        )
-    return groups
-
-
-def _resolve_wallets_from_group(group_id: str | None, payload_wallets: list[str]) -> list[str]:
-    wallets = _normalize_wallet_addresses(payload_wallets)
-    if wallets:
-        return wallets
-    if not group_id:
-        return []
-    groups = _load_wallet_groups()
-    for group in groups:
-        if str(group.get("group_id", "")) == group_id:
-            values = group.get("wallet_addresses", [])
-            if isinstance(values, list):
-                return _normalize_wallet_addresses([str(v) for v in values])
-    return []
-
-
-def _load_wallet_snapshots() -> list[dict[str, Any]]:
-    row = STORE.get_setting("runtime.dashboard.wallet_snapshots")
-    if row is None:
-        return []
-    try:
-        raw = json.loads(str(row.get("value_json", "[]")))
-    except Exception:
-        return []
-    if not isinstance(raw, list):
-        return []
-    points: list[dict[str, Any]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        scope = str(item.get("scope", "")).strip()
-        entity_id = str(item.get("entity_id", "")).strip()
-        ts = str(item.get("timestamp_utc", "")).strip()
-        if scope not in {"wallet", "group"} or not entity_id or not ts:
-            continue
-        points.append(
-            {
-                "scope": scope,
-                "entity_id": entity_id,
-                "timestamp_utc": ts,
-                "total_estimated_usd": str(item.get("total_estimated_usd", "")),
-                "sol_balance": str(item.get("sol_balance", "")),
-            }
-        )
-    points.sort(key=lambda p: str(p.get("timestamp_utc", "")))
-    return points
-
-
-def _append_wallet_snapshot(scope: str, entity_id: str, total_estimated_usd: str, sol_balance: str) -> None:
-    if scope not in {"wallet", "group"}:
-        return
-    eid = str(entity_id).strip()
-    if not eid:
-        return
-    points = _load_wallet_snapshots()
-    points.append(
-        {
-            "scope": scope,
-            "entity_id": eid,
-            "timestamp_utc": datetime.now(UTC).isoformat(),
-            "total_estimated_usd": str(total_estimated_usd or ""),
-            "sol_balance": str(sol_balance or ""),
-        }
-    )
-    # Ringpuffer: letzte 2000 Punkte behalten
-    if len(points) > 2000:
-        points = points[-2000:]
-    put_admin_setting("runtime.dashboard.wallet_snapshots", points, is_secret=False)
-
-
-def _filter_wallet_snapshots(scope: str, entity_id: str) -> list[dict[str, Any]]:
-    points = _load_wallet_snapshots()
-    scoped = [point for point in points if str(point.get("scope")) == scope]
-    eid = str(entity_id).strip()
-    if not eid:
-        return scoped[-300:]
-    return [point for point in scoped if str(point.get("entity_id", "")) == eid][-300:]
 
 
 def _normalize_mint(value: str) -> str:

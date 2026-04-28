@@ -57,6 +57,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - `api/app.py` registriert den Ruleset-Router und re-exportiert die bisherigen Namen für Test-/Import-Kompatibilität.
   - Admin-Endpunkte für Settings, Runtime-Config, Solana-Backfill-Service, Token-Aliases, Ignored Tokens und CEX-Credential-Load in `api/admin.py` ausgelagert.
   - Admin-Router-Tests erweitert, damit Service-Aktionen, Token-Aliases, Fehlerpfade und Loader-Kantenfälle regressionssicher bleiben.
+  - Wallet-Gruppen-Endpunkte und gemeinsame Wallet-Snapshot-Helfer in `api/wallet_groups.py` ausgelagert.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.
