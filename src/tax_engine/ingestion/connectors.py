@@ -5,6 +5,8 @@ import io
 import json
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from .parser import parse_datetime_value, parse_decimal_value
@@ -25,7 +27,7 @@ CONNECTOR_SPECS: dict[str, ConnectorSpec] = {
         label="Binance",
         modes=("csv", "xlsx", "api_planned"),
         aliases={
-            "timestamp": ("timestamp", "time", "date", "utc_time", "date(utc)", "datetime", "created time"),
+            "timestamp": ("timestamp", "time", "date", "utc_time", "date(utc)", "date(utc+2)", "datetime", "created time"),
             "asset": ("asset", "coin", "baseasset", "currency", "symbol", "base asset"),
             "quantity": ("amount", "qty", "quantity", "executed", "filled", "size", "change"),
             "price": ("price", "avgprice", "average", "avg price", "deal price"),
@@ -161,6 +163,42 @@ CONNECTOR_SPECS: dict[str, ConnectorSpec] = {
             "sell_value_usd": ("sellValueUSD", "sell value usd"),
         },
     ),
+    "heliumtracker": ConnectorSpec(
+        connector_id="heliumtracker",
+        label="HeliumTracker Advanced Report",
+        modes=("csv",),
+        aliases={
+            "timestamp": ("date",),
+            "hotspot": ("hotspot name",),
+            "hnt_amount": ("mining rewards hnt",),
+            "iot_amount": ("mining rewards iot",),
+            "mobile_amount": ("mining rewards mobile",),
+            "hnt_commission": ("commissions hnt",),
+            "iot_commission": ("commissions iot",),
+            "mobile_commission": ("commissions mobile",),
+            "hnt_usd": ("hnt (usd)",),
+            "hnt_eur": ("hnt (eur)",),
+        },
+    ),
+    "helium_legacy_raw": ConnectorSpec(
+        connector_id="helium_legacy_raw",
+        label="Helium Legacy Raw Export",
+        modes=("csv",),
+        aliases={
+            "timestamp": ("date",),
+            "type": ("type",),
+            "tx_id": ("transaction_hash",),
+            "hnt_amount": ("hnt_amount",),
+            "hnt_fee": ("hnt_fee",),
+            "mobile_amount": ("mobile_amount",),
+            "usd_oracle_price": ("usd_oracle_price",),
+            "usd_amount": ("usd_amount",),
+            "usd_fee": ("usd_fee",),
+            "payer": ("payer",),
+            "payee": ("payee",),
+            "block": ("block",),
+        },
+    ),
 }
 
 
@@ -200,6 +238,7 @@ def _normalize_binance_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -
     tx_id_raw = _get_value(row, spec.aliases["tx_id"])
     network_raw = _get_value(row, spec.aliases.get("network", tuple()))
     address_raw = _get_value(row, spec.aliases.get("address", tuple()))
+    source_name = str(row.get("__source_name") or row.get("__file_name") or "").lower()
 
     timestamp_utc: str | None = None
     if timestamp_raw is not None:
@@ -209,6 +248,8 @@ def _normalize_binance_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -
             timestamp_utc = str(timestamp_raw)
         else:
             timestamp_utc = parsed_ts
+            if _get_value(row, ("date(utc+2)",)) is not None and timestamp_utc is not None:
+                timestamp_utc = _shift_iso_timestamp(timestamp_utc, hours=-2)
 
     def _num(value: Any, field: str) -> str:
         if value is None:
@@ -265,6 +306,42 @@ def _normalize_binance_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -
         )
         return out_rows, warnings
 
+    market_raw = _get_value(row, ("market",))
+    if market_raw is not None and side_raw is not None:
+        market = str(market_raw).upper().strip()
+        base_asset, quote_asset = _split_binance_market(market)
+        trade_side = str(side_raw).strip().lower()
+        price_raw = _get_value(row, spec.aliases["price"])
+        amount_raw = _get_value(row, spec.aliases["quantity"])
+        total_raw = _get_value(row, ("total",))
+        fee_raw = _get_value(row, spec.aliases["fee"])
+        fee_asset_raw = _get_value(row, spec.aliases["fee_asset"])
+        tx_id = str(tx_id_raw).strip() if tx_id_raw is not None and str(tx_id_raw).strip() else f"binance-trade-{idx}"
+        if base_asset and quote_asset and amount_raw is not None and total_raw is not None:
+            if trade_side == "buy":
+                legs = ((quote_asset, total_raw, "out"), (base_asset, amount_raw, "in"))
+            else:
+                legs = ((base_asset, amount_raw, "out"), (quote_asset, total_raw, "in"))
+            for leg_asset, leg_amount, leg_side in legs:
+                out_rows.append(
+                    {
+                        "timestamp_utc": timestamp_utc,
+                        "asset": leg_asset,
+                        "quantity": _num(leg_amount, "amount"),
+                        "price": _num(price_raw, "price"),
+                        "fee": _num(fee_raw, "fee") if leg_side == "in" else "",
+                        "fee_asset": str(fee_asset_raw).upper() if fee_asset_raw is not None and leg_side == "in" else "",
+                        "side": leg_side,
+                        "event_type": "trade",
+                        "tx_id": f"{tx_id}:{leg_side}:{leg_asset}",
+                        "network": str(network_raw) if network_raw is not None else "",
+                        "address": str(address_raw) if address_raw is not None else "",
+                        "source": "binance",
+                        "raw_row": row,
+                    }
+                )
+            return out_rows, warnings
+
     asset_raw = _get_value(row, spec.aliases["asset"])
     quantity_raw = _get_value(row, spec.aliases["quantity"])
     price_raw = _get_value(row, spec.aliases["price"])
@@ -285,6 +362,13 @@ def _normalize_binance_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -
         elif parsed_qty > 0:
             inferred_side = "in"
     side = str(side_raw).strip().lower() if side_raw is not None else inferred_side
+    if "withdraw" in source_name:
+        side = "out"
+    elif "deposit" in source_name or "einzahlung" in source_name:
+        side = "in"
+    event_type = str(event_type_raw).lower() if event_type_raw is not None else ""
+    if not event_type and ("withdraw" in source_name or "deposit" in source_name or "einzahlung" in source_name):
+        event_type = "withdrawal" if side == "out" else "deposit"
 
     out_rows.append(
         {
@@ -295,7 +379,7 @@ def _normalize_binance_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -
             "fee": _num(fee_raw, "fee"),
             "fee_asset": str(fee_asset_raw).upper() if fee_asset_raw is not None else "",
             "side": side,
-            "event_type": str(event_type_raw).lower() if event_type_raw is not None else "",
+            "event_type": event_type,
             "tx_id": str(tx_id_raw) if tx_id_raw is not None else "",
             "network": str(network_raw) if network_raw is not None else "",
             "address": str(address_raw) if address_raw is not None else "",
@@ -304,6 +388,29 @@ def _normalize_binance_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -
         }
     )
     return out_rows, warnings
+
+
+def _split_binance_market(market: str) -> tuple[str, str]:
+    for quote in ("USDT", "USDC", "BUSD", "FDUSD", "TUSD", "EUR", "BTC", "ETH", "BNB"):
+        if market.endswith(quote) and len(market) > len(quote):
+            return market[: -len(quote)], quote
+    return "", ""
+
+
+def _shift_iso_timestamp(value: str, *, hours: int) -> str:
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return (dt + timedelta(hours=hours)).astimezone(UTC).isoformat()
+
+
+def _infer_wallet_from_source_name(source_name: str) -> str:
+    # Deutsche Kommentare: Legacy-Dateinamen enthalten häufig die betrachtete Wallet-Adresse.
+    match = re.search(r"(1[1-9A-HJ-NP-Za-km-z]{30,}|[1-9A-HJ-NP-Za-km-z]{32,})", source_name)
+    return match.group(1) if match else ""
 
 
 def _normalize_blockpit_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -394,8 +501,6 @@ def _normalize_blockpit_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) 
                 "raw_row": row,
             }
         )
-    if not out_rows:
-        warnings.append({"row": str(idx), "code": "row_not_mappable"})
     return out_rows, warnings
 
 
@@ -744,6 +849,129 @@ def _extract_helium_counterparty(comment: str) -> str:
     return match.group(1) if match else ""
 
 
+def _normalize_heliumtracker_row(
+    spec: ConnectorSpec,
+    row: dict[str, Any],
+    idx: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    warnings: list[dict[str, str]] = []
+    timestamp_raw = _get_value(row, spec.aliases["timestamp"])
+    timestamp_utc = ""
+    if timestamp_raw is not None:
+        parsed_ts, ts_error = parse_datetime_value(timestamp_raw)
+        if ts_error:
+            warnings.append({"row": str(idx), "code": ts_error, "field": "date"})
+            timestamp_utc = str(timestamp_raw)
+        else:
+            timestamp_utc = parsed_ts or ""
+    hotspot = str(_get_value(row, spec.aliases["hotspot"]) or "").strip()
+
+    def _decimal(value: Any, field: str) -> Decimal | None:
+        parsed, parse_error = parse_decimal_value(value)
+        if parse_error:
+            warnings.append({"row": str(idx), "code": parse_error, "field": field})
+            return None
+        return parsed
+
+    out_rows: list[dict[str, Any]] = []
+    for asset, amount_alias, commission_alias in (
+        ("HNT", "hnt_amount", "hnt_commission"),
+        ("IOT", "iot_amount", "iot_commission"),
+        ("MOBILE", "mobile_amount", "mobile_commission"),
+    ):
+        qty = _decimal(_get_value(row, spec.aliases[amount_alias]), amount_alias)
+        if qty is None or qty == 0:
+            continue
+        price_usd_value = _decimal(_get_value(row, spec.aliases.get("hnt_usd", tuple())), "hnt_usd") if asset == "HNT" else None
+        price_eur_value = _decimal(_get_value(row, spec.aliases.get("hnt_eur", tuple())), "hnt_eur") if asset == "HNT" else None
+        price_usd = price_usd_value.to_eng_string() if price_usd_value is not None else ""
+        price_eur = price_eur_value.to_eng_string() if price_eur_value is not None else ""
+        out_rows.append(
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": asset,
+                "quantity": qty.to_eng_string(),
+                "price_usd": price_usd,
+                "price_eur": price_eur,
+                "side": "in",
+                "event_type": "mining_reward",
+                "tax_category": "INCOME_SO",
+                "tx_id": f"heliumtracker:{hotspot}:{timestamp_raw}:{asset}",
+                "gateway_name": hotspot,
+                "source": "heliumtracker",
+                "raw_row": row,
+            }
+        )
+        commission = _decimal(_get_value(row, spec.aliases[commission_alias]), commission_alias)
+        if commission is not None and commission != 0:
+            out_rows.append(
+                {
+                    "timestamp_utc": timestamp_utc,
+                    "asset": asset,
+                    "quantity": commission.to_eng_string(),
+                    "price_usd": price_usd,
+                    "price_eur": price_eur,
+                    "side": "out",
+                    "event_type": "mining_commission",
+                    "tx_id": f"heliumtracker:{hotspot}:{timestamp_raw}:{asset}:commission",
+                    "gateway_name": hotspot,
+                    "source": "heliumtracker",
+                    "raw_row": row,
+                }
+            )
+    return out_rows, warnings
+
+
+def _normalize_helium_legacy_raw_row(
+    spec: ConnectorSpec,
+    row: dict[str, Any],
+    idx: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    warnings: list[dict[str, str]] = []
+    timestamp_raw = _get_value(row, spec.aliases["timestamp"])
+    parsed_ts, ts_error = parse_datetime_value(timestamp_raw)
+    timestamp_utc = str(timestamp_raw) if ts_error else parsed_ts
+    if ts_error:
+        warnings.append({"row": str(idx), "code": ts_error, "field": "date"})
+    qty, qty_error = parse_decimal_value(_get_value(row, spec.aliases["hnt_amount"]))
+    if qty_error or qty is None or qty == 0:
+        warnings.append({"row": str(idx), "code": qty_error or "row_not_mappable", "field": "hnt_amount"})
+        return [], warnings
+    fee, fee_error = parse_decimal_value(_get_value(row, spec.aliases["hnt_fee"]))
+    fee = fee or Decimal("0")
+    if fee_error:
+        warnings.append({"row": str(idx), "code": fee_error, "field": "hnt_fee"})
+    value_usd, usd_error = parse_decimal_value(_get_value(row, spec.aliases["usd_amount"]))
+    if usd_error:
+        warnings.append({"row": str(idx), "code": usd_error, "field": "usd_amount"})
+    payer = str(_get_value(row, spec.aliases["payer"]) or "").strip()
+    payee = str(_get_value(row, spec.aliases["payee"]) or "").strip()
+    tx_id = str(_get_value(row, spec.aliases["tx_id"]) or f"helium-legacy-raw-{idx}").strip()
+    source_name = str(row.get("__source_name") or row.get("__file_name") or "")
+    wallet_address = _infer_wallet_from_source_name(source_name)
+    side = "in" if wallet_address and payee == wallet_address else "out" if wallet_address and payer == wallet_address else "out"
+    return [
+        {
+            "timestamp_utc": timestamp_utc,
+            "asset": "HNT",
+            "quantity": abs(qty).to_eng_string(),
+            "fee": abs(fee).to_eng_string(),
+            "fee_asset": "HNT" if fee and fee > 0 else "",
+            "value_usd": value_usd.to_eng_string() if value_usd is not None else "",
+            "side": side,
+            "event_type": "legacy_transfer",
+            "tx_id": tx_id,
+            "wallet_address": wallet_address,
+            "from_wallet": payer,
+            "to_wallet": payee,
+            "counterparty_wallet": payee if side == "out" else payer,
+            "legacy_chain": "helium_l1",
+            "source": "helium_legacy_raw",
+            "raw_row": row,
+        }
+    ], warnings
+
+
 def normalize_connector_rows(
     connector_id: str,
     rows: list[dict[str, Any]],
@@ -776,6 +1004,16 @@ def normalize_connector_rows(
             continue
         if connector_id.lower() == "helium_legacy_cointracking":
             row_items, row_warnings = _normalize_helium_legacy_cointracking_row(spec, row, idx)
+            warnings.extend(row_warnings)
+            normalized_rows.extend(row_items)
+            continue
+        if connector_id.lower() == "heliumtracker":
+            row_items, row_warnings = _normalize_heliumtracker_row(spec, row, idx)
+            warnings.extend(row_warnings)
+            normalized_rows.extend(row_items)
+            continue
+        if connector_id.lower() == "helium_legacy_raw":
+            row_items, row_warnings = _normalize_helium_legacy_raw_row(spec, row, idx)
             warnings.extend(row_warnings)
             normalized_rows.extend(row_items)
             continue

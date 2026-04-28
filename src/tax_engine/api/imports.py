@@ -48,6 +48,10 @@ _BULK_IMPORT_EXTENSIONS = {".csv", ".txt", ".json", ".xls", ".xlsx"}
 
 def detect_connector_from_filename(file_path: Path) -> str | None:
     name = file_path.name.lower()
+    if name.startswith("heliumtracker-report-advanced"):
+        return "heliumtracker"
+    if "helium-staking wallet" in name and "raw" in name:
+        return "helium_legacy_raw"
     if "helium" in name and "cointracking" in name:
         return "helium_legacy_cointracking"
     if "blockpit" in name:
@@ -69,9 +73,13 @@ def detect_connector_from_filename(file_path: Path) -> str | None:
 
 def detect_connector_from_source_name(source_name: str) -> str:
     normalized = str(source_name or "").lower()
+    if "heliumtracker-report-advanced" in normalized:
+        return "heliumtracker"
+    if "helium-staking wallet" in normalized and "raw" in normalized:
+        return "helium_legacy_raw"
     if "helium_legacy_cointracking" in normalized or ("helium" in normalized and "cointracking" in normalized):
         return "helium_legacy_cointracking"
-    for connector in ("binance", "bitget", "coinbase", "pionex", "blockpit", "heliumgeek", "solana"):
+    for connector in ("binance", "bitget", "coinbase", "pionex", "blockpit", "heliumgeek", "heliumtracker", "solana"):
         if connector in normalized:
             return connector
     if normalized.startswith("wallet.") and "month" in normalized:
@@ -284,6 +292,9 @@ def import_upload_preview(payload: UploadPreviewRequest) -> StandardResponse:
 
     try:
         rows, file_warnings = parse_upload_file(payload.filename, content)
+        for row in rows:
+            row["__source_name"] = payload.filename
+            row["__file_name"] = payload.filename
     except ValueError as exc:
         write_audit(
             trace_id=trace_id,
@@ -378,6 +389,9 @@ def import_bulk_folder(payload: BulkFolderImportRequest) -> StandardResponse:
             continue
         try:
             raw_rows, parse_warnings = parse_upload_file(file_path.name, file_path.read_bytes())
+            for raw_row in raw_rows:
+                raw_row["__source_name"] = file_path.name
+                raw_row["__file_name"] = file_path.name
             normalized_rows, map_warnings, errors = normalize_connector_rows(
                 connector_id=connector_id,
                 rows=raw_rows,
