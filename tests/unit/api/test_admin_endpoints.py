@@ -29,6 +29,7 @@ from tax_engine.api.app import (
     admin_token_aliases_upsert,
     dashboard_overview,
     dashboard_role_override,
+    dashboard_transaction_search,
     portfolio_helium_legacy_transfers,
 )
 from tax_engine.ingestion.service import confirm_import
@@ -85,6 +86,54 @@ def test_dashboard_role_override_and_overview() -> None:
     role = overview_resp.data.get("role_detection", {})
     assert role.get("override_mode") == "business"
     assert role.get("effective_mode") == "business"
+
+
+def test_dashboard_transaction_search_filters_wallet_tx_and_asset() -> None:
+    _reset_store()
+    rows = [
+        {
+            "timestamp_utc": "2024-11-23T05:43:01+00:00",
+            "asset": "USDC",
+            "quantity": "9999.989803",
+            "side": "out",
+            "event_type": "swap_out_aggregated",
+            "source": "solana_rpc",
+            "tx_id": "tx-search-1",
+            "wallet_address": "wallet-main-123",
+            "raw_row": {"from_asset": "USDC", "to_asset": "JUP", "jupiter_aggregated": True},
+        },
+        {
+            "timestamp_utc": "2024-11-23T05:43:01+00:00",
+            "asset": "JUP",
+            "quantity": "8524.295277",
+            "side": "in",
+            "event_type": "swap_in_aggregated",
+            "source": "solana_rpc",
+            "tx_id": "tx-search-1",
+            "wallet_address": "wallet-main-123",
+            "raw_row": {"from_asset": "USDC", "to_asset": "JUP", "jupiter_aggregated": True},
+        },
+        {
+            "timestamp_utc": "2025-01-01T00:00:00+00:00",
+            "asset": "HNT",
+            "quantity": "1",
+            "side": "in",
+            "event_type": "mining_reward",
+            "source": "heliumgeek",
+            "tx_id": "reward-search-1",
+            "gateway_address": "gateway-1",
+        },
+    ]
+    confirm_import("transaction-search-test", rows)
+
+    response = dashboard_transaction_search(year=2024, wallet="wallet-main", asset="JUP", tx_id="tx-search-1")
+
+    assert response.status == "success"
+    found = response.data["rows"]
+    assert len(found) == 1
+    assert found[0]["symbol"] == "JUP"
+    assert found[0]["wallet_address"] == "wallet-main-123"
+    assert found[0]["tx_id"] == "tx-search-1"
 
 
 def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_for_all_assets() -> None:

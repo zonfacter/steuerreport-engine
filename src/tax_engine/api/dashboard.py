@@ -278,6 +278,63 @@ def _decorate_wallet_groups_with_sources(groups: list[dict[str, Any]], by_source
     return decorated
 
 
+@router.get("/api/v1/dashboard/transaction-search", response_model=StandardResponse, tags=["dashboard"])
+def dashboard_transaction_search(
+    q: str | None = None,
+    year: int | None = None,
+    source: str | None = None,
+    asset: str | None = None,
+    wallet: str | None = None,
+    event_type: str | None = None,
+    tx_id: str | None = None,
+    limit: int = 100,
+) -> StandardResponse:
+    trace_id = str(uuid4())
+    runtime_fx = _runtime_usd_to_eur_rate()
+    rows: list[dict[str, Any]] = []
+    safe_limit = min(max(int(limit), 1), 500)
+    for row in STORE.list_raw_events():
+        payload = row.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        if not _transaction_matches_filters(
+            payload=payload,
+            query=q,
+            year=year,
+            source=source,
+            asset=asset,
+            wallet=wallet,
+            event_type=event_type,
+            tx_id=tx_id,
+        ):
+            continue
+        rows.append(_format_transaction_search_row(row=row, payload=payload, runtime_fx=runtime_fx))
+        if len(rows) >= safe_limit:
+            break
+    write_audit(
+        trace_id=trace_id,
+        action="dashboard.transaction_search",
+        payload={
+            "q": q or "",
+            "year": year,
+            "source": source or "",
+            "asset": asset or "",
+            "wallet": _mask_identifier(wallet or ""),
+            "event_type": event_type or "",
+            "tx_id": _mask_identifier(tx_id or ""),
+            "limit": safe_limit,
+            "returned": len(rows),
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={"rows": rows, "count": len(rows), "limit": safe_limit},
+        errors=[],
+        warnings=[],
+    )
+
+
 @router.get("/api/v1/portfolio/integrations", response_model=StandardResponse, tags=["dashboard"])
 def portfolio_integrations() -> StandardResponse:
     trace_id = str(uuid4())
@@ -1305,6 +1362,145 @@ def _format_yearly_source_breakdown(buckets: dict[tuple[int, str], dict[str, Any
         )
     rows.sort(key=lambda item: (int(item["year"]), -int(item["events"]), str(item["source"])))
     return rows
+
+
+def _transaction_matches_filters(
+    payload: dict[str, Any],
+    query: str | None,
+    year: int | None,
+    source: str | None,
+    asset: str | None,
+    wallet: str | None,
+    event_type: str | None,
+    tx_id: str | None,
+) -> bool:
+    if year is not None and _extract_year(str(payload.get("timestamp_utc") or payload.get("timestamp") or "")) != int(year):
+        return False
+    if source and str(source).lower().strip() not in str(payload.get("source") or "").lower():
+        return False
+    if asset:
+        needle = str(asset).lower().strip()
+        meta = _resolve_token_display(str(payload.get("asset") or ""))
+        haystack = f"{payload.get('asset', '')} {meta.get('symbol', '')} {meta.get('name', '')}".lower()
+        if needle not in haystack:
+            return False
+    if event_type and str(event_type).lower().strip() not in str(payload.get("event_type") or "").lower():
+        return False
+    if tx_id:
+        needle = str(tx_id).lower().strip()
+        haystack = f"{payload.get('tx_id', '')} {payload.get('signature', '')}".lower()
+        if needle not in haystack:
+            return False
+    if wallet:
+        needle = str(wallet).lower().strip()
+        if not any(needle in str(value).lower() for value in _wallet_identifiers(payload)):
+            return False
+    if query:
+        needle = str(query).lower().strip()
+        if needle and needle not in _transaction_search_text(payload).lower():
+            return False
+    return True
+
+
+def _format_transaction_search_row(row: dict[str, Any], payload: dict[str, Any], runtime_fx: Decimal) -> dict[str, Any]:
+    asset = str(payload.get("asset") or "").upper()
+    meta = _resolve_token_display(asset)
+    qty = _dashboard_event_quantity(payload)
+    value = _estimate_event_values(payload=payload, asset=asset, quantity=qty, runtime_fx=runtime_fx)
+    raw_row = payload.get("raw_row")
+    return {
+        "unique_event_id": str(row.get("unique_event_id") or ""),
+        "source_file_id": str(row.get("source_file_id") or ""),
+        "row_index": int(row.get("row_index") or 0),
+        "timestamp_utc": str(payload.get("timestamp_utc") or payload.get("timestamp") or ""),
+        "year": _extract_year(str(payload.get("timestamp_utc") or payload.get("timestamp") or "")),
+        "source": str(payload.get("source") or "unknown"),
+        "event_type": str(payload.get("event_type") or "unknown"),
+        "category": _dashboard_event_category(payload),
+        "asset": asset,
+        "symbol": str(meta.get("symbol") or asset),
+        "name": str(meta.get("name") or ""),
+        "quantity": _decimal_to_plain(qty),
+        "side": str(payload.get("side") or ""),
+        "wallet_address": str(payload.get("wallet_address") or ""),
+        "from_wallet": str(payload.get("from_wallet") or ""),
+        "to_wallet": str(payload.get("to_wallet") or ""),
+        "counterparty_wallet": str(payload.get("counterparty_wallet") or ""),
+        "address": str(payload.get("address") or ""),
+        "tx_id": str(payload.get("tx_id") or payload.get("signature") or ""),
+        "fee": str(payload.get("fee") or ""),
+        "fee_asset": str(payload.get("fee_asset") or ""),
+        "value_usd": _decimal_to_plain(value["usd_abs"]),
+        "value_eur": _decimal_to_plain(value["eur_abs"]),
+        "priced": bool(value["priced"]),
+        "defi_label": str(payload.get("defi_label") or ""),
+        "tax_category": str(payload.get("tax_category") or ""),
+        "raw_summary": _summarize_raw_row(raw_row),
+    }
+
+
+def _transaction_search_text(payload: dict[str, Any]) -> str:
+    meta = _resolve_token_display(str(payload.get("asset") or ""))
+    parts = [
+        payload.get("source"),
+        payload.get("event_type"),
+        payload.get("asset"),
+        meta.get("symbol"),
+        meta.get("name"),
+        payload.get("tx_id"),
+        payload.get("signature"),
+        payload.get("wallet_address"),
+        payload.get("from_wallet"),
+        payload.get("to_wallet"),
+        payload.get("counterparty_wallet"),
+        payload.get("address"),
+        payload.get("gateway_address"),
+        payload.get("gateway_name"),
+        payload.get("tax_category"),
+        payload.get("raw_comment"),
+    ]
+    raw_row = payload.get("raw_row")
+    if isinstance(raw_row, dict):
+        parts.extend(str(value) for value in raw_row.values())
+    return " ".join(str(part or "") for part in parts)
+
+
+def _wallet_identifiers(payload: dict[str, Any]) -> list[str]:
+    values = [
+        payload.get("wallet_address"),
+        payload.get("from_wallet"),
+        payload.get("to_wallet"),
+        payload.get("counterparty_wallet"),
+        payload.get("address"),
+        payload.get("gateway_address"),
+    ]
+    raw_row = payload.get("raw_row")
+    if isinstance(raw_row, dict):
+        for key, value in raw_row.items():
+            lowered = str(key).lower()
+            if "wallet" in lowered or "address" in lowered or "account" in lowered:
+                values.append(value)
+    return [str(value) for value in values if value]
+
+
+def _summarize_raw_row(raw_row: Any) -> dict[str, str]:
+    if not isinstance(raw_row, dict):
+        return {}
+    summary: dict[str, str] = {}
+    for key, value in raw_row.items():
+        if value in (None, "", [], {}):
+            continue
+        summary[str(key)] = str(value)
+        if len(summary) >= 12:
+            break
+    return summary
+
+
+def _mask_identifier(value: str) -> str:
+    raw = str(value or "").strip()
+    if len(raw) <= 12:
+        return raw
+    return f"{raw[:6]}...{raw[-4:]}"
 
 
 def _extract_year(ts_raw: str) -> int | None:

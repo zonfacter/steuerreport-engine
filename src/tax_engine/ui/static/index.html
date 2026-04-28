@@ -814,6 +814,38 @@
                 <tbody></tbody>
               </table>
             </div>
+            <div class="card compact-card">
+              <h5>Transaktionssuche mit Wallet-Bezug</h5>
+              <p class="muted">Suche nach TX-ID, Wallet, Asset, Quelle oder Event-Typ. Jede Zeile enthält Source Event ID, Wallet-Felder und Rohdaten-Auszug für Review/Override.</p>
+              <div class="row">
+                <label>Suche<input id="txSearchQ" placeholder="TX, Wallet, JUP, USDC, Bitget..." /></label>
+                <label>Jahr<input id="txSearchYear" placeholder="2024" /></label>
+                <label>Quelle<input id="txSearchSource" placeholder="solana_rpc" /></label>
+                <label>Asset<input id="txSearchAsset" placeholder="JUP" /></label>
+                <label>Wallet<input id="txSearchWallet" placeholder="Wallet-Adresse" /></label>
+                <label>Typ<input id="txSearchType" placeholder="swap" /></label>
+                <button id="btnTxSearch" type="button">Suchen</button>
+              </div>
+              <div class="table-wrap">
+                <table id="transactionSearchTable">
+                  <thead>
+                    <tr>
+                      <th>Zeit</th>
+                      <th>Quelle</th>
+                      <th>Typ</th>
+                      <th>Asset</th>
+                      <th class="num">Menge</th>
+                      <th>Wallet / Gegenwallet</th>
+                      <th>TX</th>
+                      <th class="num">Wert EUR</th>
+                      <th>Source Event ID</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <pre id="transactionSearchDetail" class="log-box">Noch keine Transaktion ausgewählt.</pre>
+            </div>
           </div>
           <div class="grid">
             <div>

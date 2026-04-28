@@ -26,6 +26,7 @@ const state = {
   integrationRows: [],
   importSources: [],
   importJobs: [],
+  transactionSearchRows: [],
   selectedImportJob: null,
   dashboard: null,
   admin: {
@@ -2500,6 +2501,74 @@ function formatValuationCoverage(row) {
   return missing ? `${formatInt(missing)} / ${formatInt(required)}` : `0 / ${formatInt(required)}`;
 }
 
+async function runTransactionSearch(trigger = null) {
+  const params = new URLSearchParams();
+  [
+    ["q", "txSearchQ"],
+    ["year", "txSearchYear"],
+    ["source", "txSearchSource"],
+    ["asset", "txSearchAsset"],
+    ["wallet", "txSearchWallet"],
+    ["event_type", "txSearchType"],
+  ].forEach(([param, id]) => {
+    const value = (el(id)?.value || "").trim();
+    if (value) params.set(param, value);
+  });
+  params.set("limit", "200");
+  const data = await callApi(`/api/v1/dashboard/transaction-search?${params.toString()}`, "GET", null, trigger, true);
+  state.transactionSearchRows = data?.data?.rows ?? [];
+  renderTransactionSearchRows(state.transactionSearchRows);
+}
+
+function renderTransactionSearchRows(rows) {
+  const tbody = el("transactionSearchTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  rows.forEach((row, index) => {
+    const tr = document.createElement("tr");
+    tr.className = "clickable-row";
+    tr.innerHTML = `
+      <td>${row.timestamp_utc || ""}</td>
+      <td>${row.source || ""}</td>
+      <td>${row.event_type || ""}</td>
+      <td>${row.symbol || row.asset || ""}<br><small class="muted">${row.asset || ""}</small></td>
+      <td class="num">${formatQty(row.quantity || 0)}</td>
+      <td>${formatWalletCell(row)}</td>
+      <td><span title="${row.tx_id || ""}">${shortHash(row.tx_id || "")}</span></td>
+      <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
+      <td><span title="${row.unique_event_id || ""}">${shortHash(row.unique_event_id || "")}</span></td>
+    `;
+    tr.addEventListener("click", () => renderTransactionSearchDetail(index));
+    tbody.appendChild(tr);
+  });
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="9">Keine Transaktionen gefunden.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderTransactionSearchDetail(index) {
+  const host = el("transactionSearchDetail");
+  if (!host) return;
+  const row = state.transactionSearchRows[index];
+  host.textContent = row ? JSON.stringify(row, null, 2) : "Keine Transaktion ausgewählt.";
+}
+
+function formatWalletCell(row) {
+  const primary = row.wallet_address || row.address || row.from_wallet || "";
+  const counter = row.counterparty_wallet || row.to_wallet || "";
+  const first = primary ? `<span title="${primary}">${shortHash(primary)}</span>` : "-";
+  const second = counter ? `<br><small class="muted" title="${counter}">Gegen: ${shortHash(counter)}</small>` : "";
+  return `${first}${second}`;
+}
+
+function shortHash(value) {
+  const raw = String(value || "");
+  if (raw.length <= 16) return raw;
+  return `${raw.slice(0, 8)}...${raw.slice(-6)}`;
+}
+
 function formatEventCategory(category) {
   const labels = {
     derivate: "Derivate / Hebel",
@@ -4786,6 +4855,14 @@ async function loadUnmatched() {
   el("yearlySourceFilter")?.addEventListener("change", () => {
     saveYearlySourcePrefs();
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
+  });
+  el("btnTxSearch")?.addEventListener("click", (e) => {
+    runTransactionSearch(e.currentTarget);
+  });
+  ["txSearchQ", "txSearchYear", "txSearchSource", "txSearchAsset", "txSearchWallet", "txSearchType"].forEach((id) => {
+    el(id)?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") runTransactionSearch(e.currentTarget);
+    });
   });
   el("btnYearlySourcesAll")?.addEventListener("click", () => setYearlySourceSelection("all"));
   el("btnYearlySourcesNone")?.addEventListener("click", () => setYearlySourceSelection("none"));
