@@ -50,7 +50,7 @@ def test_wallet_group_upsert_list_delete_roundtrip() -> None:
 
 def test_group_balance_snapshot_aggregates_wallets(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_balances(**kwargs):
         wallet = kwargs["wallet_address"]
@@ -87,7 +87,7 @@ def test_group_balance_snapshot_aggregates_wallets(monkeypatch) -> None:
 
 def test_group_import_confirm_merges_rows(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_preview(**kwargs):
         wallet = kwargs["wallet_address"]
@@ -130,7 +130,7 @@ def test_group_import_confirm_merges_rows(monkeypatch) -> None:
 
 def test_wallet_snapshot_history_tracks_balance_requests(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_balances(**kwargs):
         return {
