@@ -53,6 +53,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - API-Refactoring:
   - Report-/Export-Helfer für JSON/CSV/PDF und 100-Seiten-PDF-Splitting aus `api/app.py` in `api/reporting.py` ausgelagert.
   - Bestehende interne `_build_*`-Imports bleiben kompatibel, damit Endpunkte und Tests ohne API-Vertragsbruch weiterlaufen.
+  - Ruleset-Endpunkte und `RulesetUpsertRequest` in `api/rulesets.py` als eigenen `APIRouter` ausgelagert.
+  - `api/app.py` registriert den Ruleset-Router und re-exportiert die bisherigen Namen für Test-/Import-Kompatibilität.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.
