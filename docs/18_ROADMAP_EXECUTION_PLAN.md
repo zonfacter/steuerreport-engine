@@ -21,6 +21,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - `POST /api/v1/process/preflight` prueft Importdaten, Ruleset, offene High-Issues, unmatched Transfers und Bewertungsabdeckung vor dem Lauf.
 - Die UI fuehrt vor `POST /api/v1/process/run` automatisch einen Preflight aus und blockiert den Steuerlauf bei harten Blockern.
 - Preflight-Blocker und Warnungen verlinken per Guided Action direkt zur passenden Korrekturansicht.
+- Das Import-Aktivitätsprotokoll ist im Import-Hub als eigenes Modul mit Connector-/Statusfilter, Detailauswahl und Wiederholsprung sichtbar.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)
@@ -163,7 +164,6 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 - UI-Angemessenheit bei 30k+ Zeilen: Performance mit virtualisierten Tabellen erforderlich.
 
 ## Nächste konkrete Arbeitspakete (Backlog)
-1. Import-Aktivitätsprotokoll als eigenes UI-Modul mit Details/Wiederholen.
-2. Portfolio-Sets weiter ausbauen: Quellenzuordnung und Set-spezifische Wertkurve.
-3. Lot-Nachvollzug im Export um `transfer_chain_id` erweitern.
-4. Snapshot-Wiederherstellungsvorschau in der UI ergänzen.
+1. Portfolio-Sets weiter ausbauen: Quellenzuordnung und Set-spezifische Wertkurve.
+2. Lot-Nachvollzug im Export um `transfer_chain_id` erweitern.
+3. Snapshot-Wiederherstellungsvorschau in der UI ergänzen.

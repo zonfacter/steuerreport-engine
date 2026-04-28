@@ -233,7 +233,45 @@
           </div>
           <div id="importActivity">
             <h3>Import-Aktivität</h3>
+            <div class="row compact-row">
+              <select id="importJobIntegration">
+                <option value="">Alle Quellen</option>
+                <option value="solana">Solana</option>
+                <option value="binance">Binance</option>
+                <option value="bitget">Bitget</option>
+                <option value="coinbase">Coinbase</option>
+                <option value="blockpit">Blockpit</option>
+                <option value="heliumgeek">HeliumGeek</option>
+                <option value="helium_legacy_cointracking">Helium Legacy</option>
+              </select>
+              <select id="importJobStatus">
+                <option value="">Alle Status</option>
+                <option value="completed">completed</option>
+                <option value="partial">partial</option>
+                <option value="duplicate">duplicate</option>
+                <option value="empty">empty</option>
+              </select>
+              <button id="btnImportJobsRefresh">Aktivitätsprotokoll laden</button>
+            </div>
             <div class="table-wrap">
+              <table id="importJobsTable">
+                <thead>
+                  <tr>
+                    <th>Zeit</th>
+                    <th>Connector</th>
+                    <th>Status</th>
+                    <th class="num">Rows</th>
+                    <th class="num">Imported</th>
+                    <th class="num">Duplikate</th>
+                    <th>Quelle</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div id="importJobDetail" class="notice notice-neutral">Kein Import ausgewählt.</div>
+            <details class="raw-box expert-only">
+              <summary>Source-Dateien Rohübersicht</summary>
               <table id="importSourcesTable">
                 <thead>
                   <tr>
@@ -246,7 +284,7 @@
                 </thead>
                 <tbody></tbody>
               </table>
-            </div>
+            </details>
           </div>
         </div>
         <p class="muted expert-only">Manueller Expert-Import: Events als JSON-Array in <code>raw_events</code> schreiben.</p>

@@ -25,6 +25,8 @@ const state = {
   taxEventOverrides: [],
   integrationRows: [],
   importSources: [],
+  importJobs: [],
+  selectedImportJob: null,
   dashboard: null,
   admin: {
     settings: [],
@@ -1806,6 +1808,70 @@ function renderImportSourcesTable(rows) {
   }
 }
 
+function importJobStatusClass(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "completed") return "status-ok";
+  if (value === "partial") return "status-warn";
+  if (value === "duplicate") return "status-ignored";
+  if (value === "empty") return "status-default";
+  return "status-running";
+}
+
+function renderImportJobsTable(rows) {
+  const tbody = el("importJobsTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (rows || []).forEach((item) => {
+    const tr = document.createElement("tr");
+    const selected = state.selectedImportJob?.job_id && state.selectedImportJob.job_id === item.job_id;
+    tr.classList.toggle("row-selected", !!selected);
+    tr.innerHTML = `
+      <td>${escapeHtml(String(item.started_at_utc || "-").replace("T", " ").slice(0, 16))}</td>
+      <td>${escapeHtml(item.connector || "unknown")}</td>
+      <td><span class="${importJobStatusClass(item.status)}">${escapeHtml(item.status || "")}</span></td>
+      <td class="num">${formatQty(item.rows || 0)}</td>
+      <td class="num">${formatQty(item.inserted_events || 0)}</td>
+      <td class="num">${formatQty(item.duplicates || 0)}</td>
+      <td title="${escapeHtml(item.source_name || "")}">${escapeHtml(String(item.source_name || "").slice(0, 64))}</td>
+    `;
+    tr.addEventListener("click", () => {
+      state.selectedImportJob = item;
+      renderImportJobsTable(state.importJobs);
+      renderImportJobDetail(item);
+    });
+    tbody.appendChild(tr);
+  });
+  if (!(rows || []).length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="7">Noch keine Import-Aktivität für die aktuelle Filterung vorhanden.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderImportJobDetail(item) {
+  const host = el("importJobDetail");
+  if (!host) return;
+  if (!item) {
+    host.className = "notice notice-neutral";
+    host.textContent = "Kein Import ausgewählt.";
+    return;
+  }
+  const sourceName = String(item.source_name || "");
+  const isBulk = sourceName.startsWith("bulk:");
+  host.className = `notice ${item.status === "completed" ? "notice-ok" : item.status === "duplicate" ? "notice-warn" : "notice-neutral"}`;
+  host.innerHTML = `
+    <div><strong>${escapeHtml(item.connector || "unknown")}</strong> · ${escapeHtml(item.status || "")}</div>
+    <div class="muted">Source-ID: ${escapeHtml(item.source_file_id || item.job_id || "-")}</div>
+    <div class="muted">Quelle: ${escapeHtml(sourceName || "-")}</div>
+    <div class="guided-actions">
+      <button class="guided-action" type="button" data-import-detail-action="copy-id">Source-ID kopieren</button>
+      <button class="guided-action" type="button" data-import-detail-action="${isBulk ? "retry-bulk" : "open-connector"}">
+        ${isBulk ? "Bulk-Import erneut öffnen" : "Passende Integration öffnen"}
+      </button>
+    </div>
+  `;
+}
+
 function renderIntegrationMetrics() {
   const intCount = state.integrationRows?.length || 0;
   const intEvents = (state.integrationRows || []).reduce((acc, row) => acc + Number(row.event_count || 0), 0);
@@ -1899,6 +1965,58 @@ async function loadImportSourcesSummary() {
   state.importSources = data.data?.rows ?? [];
   renderImportSourcesTable(state.importSources);
   renderIntegrationMetrics();
+  await loadImportJobs(true);
+}
+
+async function loadImportJobs(silent = true) {
+  const params = new URLSearchParams({ limit: "200", offset: "0" });
+  const integration = String(el("importJobIntegration")?.value || "").trim();
+  const status = String(el("importJobStatus")?.value || "").trim();
+  if (integration) params.set("integration", integration);
+  if (status) params.set("status", status);
+  const data = await callApi(`/api/v1/import/jobs?${params.toString()}`, "GET", null, null, silent);
+  if (data?.status !== "success") return;
+  state.importJobs = data.data?.rows ?? [];
+  if (state.selectedImportJob) {
+    state.selectedImportJob = state.importJobs.find((item) => item.job_id === state.selectedImportJob.job_id) || null;
+  }
+  renderImportJobsTable(state.importJobs);
+  renderImportJobDetail(state.selectedImportJob);
+}
+
+function handleImportJobDetailAction(action) {
+  const item = state.selectedImportJob;
+  if (!item) {
+    showToast("Kein Import ausgewählt.", "warn");
+    return;
+  }
+  if (action === "copy-id") {
+    const value = String(item.source_file_id || item.job_id || "");
+    if (navigator.clipboard && value) {
+      navigator.clipboard.writeText(value);
+      showToast("Source-ID kopiert.", "ok");
+    } else if (value) {
+      showToast(value, "ok");
+    }
+    return;
+  }
+  if (action === "retry-bulk") {
+    openSettingsPanel("bulkSettings", "bulkFolderPath");
+    showToast("Bulk-Import geöffnet. Prüfe Ordner und starte bei Bedarf erneut.", "ok");
+    return;
+  }
+  if (action === "open-connector") {
+    const connector = String(item.connector || "").toLowerCase();
+    if (connector.includes("solana")) {
+      openSettingsPanel("solanaSettings", "solWallet");
+    } else if (["binance", "bitget", "coinbase", "pionex"].some((name) => connector.includes(name))) {
+      openSettingsPanel("cexSettings", "cexConnector");
+      if (el("cexConnector") && connector) el("cexConnector").value = connector;
+    } else {
+      openSettingsPanel("bulkSettings", "bulkFolderPath");
+    }
+    showToast("Passende Import-Konfiguration geöffnet.", "ok");
+  }
 }
 
 function destroyChart(id) {
@@ -3394,6 +3512,8 @@ function init() {
     ["reviewIssueSearch", ""],
     ["reviewIssueStatus", ""],
     ["reviewIssuePageSize", "50"],
+    ["importJobIntegration", ""],
+    ["importJobStatus", ""],
     ["processRunMode", "default"],
     ["processJobStatus", ""],
     ["processJobsAutoRefresh", ""],
@@ -3943,6 +4063,21 @@ function init() {
   el("btnImportSourcesRefresh")?.addEventListener("click", async () => {
     await loadImportSourcesSummary();
     showToast("Importhistorie aktualisiert.", "ok");
+  });
+  el("btnImportJobsRefresh")?.addEventListener("click", async () => {
+    await loadImportJobs(false);
+    showToast("Import-Aktivitätsprotokoll aktualisiert.", "ok");
+  });
+  ["importJobIntegration", "importJobStatus"].forEach((id) => {
+    el(id)?.addEventListener("change", async () => {
+      savePref(`field.${id}`, el(id).value);
+      await loadImportJobs(true);
+    });
+  });
+  el("importJobDetail")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-import-detail-action]");
+    if (!button) return;
+    handleImportJobDetailAction(button.dataset.importDetailAction || "");
   });
 
   el("btnAutoMatch").addEventListener("click", async (e) => {

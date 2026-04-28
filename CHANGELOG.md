@@ -56,6 +56,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Import-Job-Historie nachgezogen:
   - `GET /api/v1/import/jobs` nutzt jetzt persistierte Importquellen statt Prozessjobs.
   - Filter nach `integration` und `status` sowie Header-Felder für Connector, Row Counts, Duplikate und Zeitstempel ergänzt.
+  - UI zeigt das Import-Aktivitätsprotokoll mit Connector-/Statusfilter, Detailpanel, Source-ID-Kopie und Sprung zur passenden Wiederhol- bzw. Connector-Konfiguration.
 - UI-Exportfluss verbessert:
   - Steuer-Tab zeigt verfügbare Report-Artefakte als klickbare JSON/CSV/PDF-Karten.
   - PDF-Teilung und Zeilenanzahl werden direkt in der Oberfläche sichtbar.

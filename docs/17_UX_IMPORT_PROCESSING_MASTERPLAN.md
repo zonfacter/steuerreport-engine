@@ -62,6 +62,7 @@ Jeder Import erzeugt einen Job mit:
 - Live-Status während Laufzeit.
 - Direktaktion: "Details", "Wiederholen", "Abbrechen" (wenn möglich).
 - Filter nach Integration und Status.
+- Umsetzung im Import-Hub: Connector-/Statusfilter, Detailauswahl, Source-ID-Kopie und Wiederholsprung zur passenden Import-Konfiguration.
 
 ### Vollständigkeit und Qualität
 - Quellenspezifische Limit-Hinweise (API-Limits, bekannte Lücken).
