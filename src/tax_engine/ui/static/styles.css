@@ -394,6 +394,17 @@ body {
   color: #fff1c2;
 }
 
+.source-chip-reference {
+  background: rgba(244, 92, 92, 0.08);
+  border-color: rgba(244, 92, 92, 0.28);
+}
+
+.source-chip-reference:has(input:checked) {
+  background: rgba(244, 92, 92, 0.16);
+  border-color: rgba(244, 92, 92, 0.55);
+  color: #ffd0d0;
+}
+
 .source-chip input {
   accent-color: #f3ba2f;
   margin: 0;

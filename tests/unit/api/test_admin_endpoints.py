@@ -89,6 +89,13 @@ def test_dashboard_role_override_and_overview() -> None:
 
 def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_for_all_assets() -> None:
     _reset_store()
+    admin_token_aliases_upsert(
+        TokenAliasUpsertRequest(
+            mint="FAKEUSDCMINT1111111111111111111111111111",
+            symbol="USDC",
+            name="USD Coin Alias",
+        )
+    )
     STORE.upsert_fx_rate("2025-01-01", "SOL", "USD", "100", "test", "2025-01-01")
     STORE.upsert_fx_rate("2025-01-01", "USDT", "USD", "1", "test", "2025-01-01")
     STORE.upsert_fx_rate("2025-01-01", "HNT", "USD", "5", "test", "2025-01-01")
@@ -120,6 +127,24 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
             "event_type": "trade",
             "source": "test",
             "tx_id": "trade-sol-usdt",
+        },
+        {
+            "timestamp_utc": "2025-01-02T01:00:00+00:00",
+            "asset": "SOL",
+            "quantity": "1",
+            "side": "out",
+            "event_type": "trade",
+            "source": "test",
+            "tx_id": "trade-sol-usdc-mint",
+        },
+        {
+            "timestamp_utc": "2025-01-02T01:00:00+00:00",
+            "asset": "FAKEUSDCMINT1111111111111111111111111111",
+            "quantity": "50",
+            "side": "in",
+            "event_type": "trade",
+            "source": "test",
+            "tx_id": "trade-sol-usdc-mint",
         },
         {
             "timestamp_utc": "2025-01-01T02:00:00+00:00",
@@ -175,16 +200,19 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
     totals = {item["year"]: item for item in activity["totals_by_year"]}
     rows_by_asset_source = {(item["asset"], item["source"]): item for item in activity["rows"]}
 
-    assert rows_by_asset_source[("SOL", "test")]["value_usd"] == "200"
+    assert rows_by_asset_source[("SOL", "test")]["value_usd"] == "300"
+    assert rows_by_asset_source[("SOL", "test")]["unpriced_events"] == 0
     assert rows_by_asset_source[("HNT", "test")]["value_usd"] == "115"
     assert rows_by_asset_source[("USDC", "test")]["value_usd"] == "100"
+    assert rows_by_asset_source[("FAKEUSDCMINT1111111111111111111111111111", "test")]["value_usd"] == "50"
     assert rows_by_asset_source[("USDT", "test")]["value_usd"] == "200"
     assert rows_by_asset_source[("USDT", "blockpit")]["value_usd"] == "1000"
-    assert totals[2025]["value_usd"] == "1315"
-    assert totals[2025]["trading_value_usd"] == "1300"
+    assert totals[2025]["value_usd"] == "1415"
+    assert totals[2025]["trading_value_usd"] == "1400"
     breakdown = {(item["year"], item["category"]): item for item in activity["event_breakdown"]}
-    assert breakdown[(2025, "trade_swap")]["events"] == 6
+    assert breakdown[(2025, "trade_swap")]["events"] == 8
     assert breakdown[(2025, "transfer")]["events"] == 1
+    assert breakdown[(2025, "transfer")]["unpriced_events"] == 0
     assert breakdown[(2025, "reward_einkunft")]["events"] == 1
     source_breakdown = {(item["year"], item["source"]): item for item in activity["source_breakdown"]}
     assert source_breakdown[(2025, "blockpit")]["events"] == 2

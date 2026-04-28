@@ -2145,12 +2145,17 @@ function populateYearlySourceFilter(sourceBreakdown, rows) {
   container.innerHTML = "";
   sorted.forEach((source) => {
     const id = `yearly-source-${source.replace(/[^a-z0-9_-]/gi, "-")}`;
+    const checked = current.has(source) ? current.get(source) !== false : !isReferenceImportSource(source);
     const label = document.createElement("label");
     label.className = "source-chip";
+    if (isReferenceImportSource(source)) label.classList.add("source-chip-reference");
     label.setAttribute("for", id);
+    label.title = isReferenceImportSource(source)
+      ? "Referenzimport: getrennt prüfen, nicht ungefiltert mit Primärdaten addieren."
+      : "Primärquelle";
     label.innerHTML = `
-      <input id="${id}" data-yearly-source type="checkbox" value="${source}" ${current.get(source) === false ? "" : "checked"} />
-      <span>${source}</span>
+      <input id="${id}" data-yearly-source type="checkbox" value="${source}" ${checked ? "checked" : ""} />
+      <span>${source}${isReferenceImportSource(source) ? " · Referenz" : ""}</span>
     `;
     container.appendChild(label);
   });
@@ -2396,7 +2401,7 @@ function renderYearlyActivityTable(rows) {
       <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
       <td class="num">${toNumber(row.avg_usd_to_eur || 0).toFixed(4)}</td>
       <td class="num">${formatCurrency(row.trading_value_eur || 0, "EUR")}</td>
-      <td class="num">${formatInt(row.unpriced_events || 0)}</td>
+      <td class="num">${formatValuationCoverage(row)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -2424,7 +2429,7 @@ function renderYearlyEventBreakdownTable(rows) {
       <td class="num">${formatInt(row.events || 0)}</td>
       <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
       <td class="num">${formatCurrency(row.trading_value_eur || 0, "EUR")}</td>
-      <td class="num">${formatInt(row.unpriced_events || 0)}</td>
+      <td class="num">${formatValuationCoverage(row)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -2452,7 +2457,7 @@ function renderYearlySourceBreakdownTable(rows) {
       <td class="num">${formatInt(row.events || 0)}</td>
       <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
       <td class="num">${formatCurrency(row.trading_value_eur || 0, "EUR")}</td>
-      <td class="num">${formatInt(row.unpriced_events || 0)}</td>
+      <td class="num">${formatValuationCoverage(row)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -2461,6 +2466,13 @@ function renderYearlySourceBreakdownTable(rows) {
     tr.innerHTML = '<td colspan="6">Keine Quellen-Aufschlüsselung für die aktuelle Auswahl vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function formatValuationCoverage(row) {
+  const missing = Number(row?.unpriced_events || 0);
+  const required = Number(row?.valuation_required_events || 0);
+  if (!required) return "0";
+  return missing ? `${formatInt(missing)} / ${formatInt(required)}` : `0 / ${formatInt(required)}`;
 }
 
 function formatEventCategory(category) {

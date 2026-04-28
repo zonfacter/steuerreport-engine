@@ -39,6 +39,8 @@ class StandardResponse(BaseModel):
 
 router = APIRouter()
 
+_STABLE_ASSET_SYMBOLS = {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"}
+
 @router.post("/api/v1/dashboard/role-override", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_role_override(payload: DashboardRoleOverrideRequest) -> StandardResponse:
     trace_id = str(uuid4())
@@ -134,6 +136,7 @@ def dashboard_overview() -> StandardResponse:
                     "trading_value_eur": Decimal("0"),
                     "priced_events": 0,
                     "unpriced_events": 0,
+                    "valuation_required_events": 0,
                 },
             )
             bucket["events"] += 1
@@ -159,10 +162,12 @@ def dashboard_overview() -> StandardResponse:
             if _is_trading_volume_event(event_type):
                 bucket["trading_value_usd"] += value["usd_abs"]
                 bucket["trading_value_eur"] += value["eur_abs"]
-            if value["priced"]:
-                bucket["priced_events"] += 1
-            else:
-                bucket["unpriced_events"] += 1
+            if _requires_dashboard_valuation(payload):
+                bucket["valuation_required_events"] += 1
+                if value["priced"]:
+                    bucket["priced_events"] += 1
+                else:
+                    bucket["unpriced_events"] += 1
         if asset and qty != Decimal("0"):
             sign = Decimal("0")
             if side == "in":
@@ -733,12 +738,16 @@ def _estimate_event_values(payload: dict[str, Any], asset: str, quantity: Decima
         eur = price_eur * qty_abs
     if usd <= 0 and price_usd > 0 and qty_abs > 0:
         usd = price_usd * qty_abs
-    if usd <= 0 and asset in {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"}:
+    asset_symbol = _asset_display_symbol(asset)
+    quote_symbol = _asset_display_symbol(quote_asset) if quote_asset else quote_asset
+    if usd <= 0 and _is_stable_asset_symbol(asset_symbol):
         usd = qty_abs
-    if usd <= 0 and quote_asset in {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"} and price > 0 and qty_abs > 0:
+    if usd <= 0 and _is_stable_asset_symbol(quote_symbol) and price > 0 and qty_abs > 0:
         usd = price * qty_abs
     if usd <= 0 and qty_abs > 0:
         cached = _cached_asset_usd_price(asset=asset, rate_date=event_date)
+        if cached <= 0:
+            cached = _cached_asset_usd_price_on_or_before(asset=asset, rate_date=event_date)
         if cached > 0:
             usd = cached * qty_abs
     if eur <= 0 and usd > 0 and fx_rate > 0:
@@ -793,6 +802,8 @@ def _cached_asset_usd_price(asset: str, rate_date: str) -> Decimal:
     candidates = [asset.upper()]
     meta = _resolve_token_display(asset)
     symbol = str(meta.get("symbol") or "").upper().strip()
+    if _is_stable_asset_symbol(symbol) or _is_stable_asset_symbol(candidates[0]):
+        return Decimal("1")
     if symbol and symbol not in candidates:
         candidates.append(symbol)
     for candidate in candidates:
@@ -808,11 +819,11 @@ def _cached_asset_usd_price_on_or_before(asset: str, rate_date: str) -> Decimal:
     if not asset or len(rate_date) < 10:
         return Decimal("0")
     normalized = asset.upper()
-    if normalized in {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"}:
-        return Decimal("1")
     candidates = [normalized]
     meta = _resolve_token_display(normalized)
     symbol = str(meta.get("symbol") or "").upper().strip()
+    if _is_stable_asset_symbol(normalized) or _is_stable_asset_symbol(symbol):
+        return Decimal("1")
     if symbol and symbol not in candidates:
         candidates.append(symbol)
     for candidate in candidates:
@@ -928,6 +939,10 @@ def _is_trading_volume_event(event_type: str) -> bool:
     return any(token in normalized for token in ("trade", "swap", "buy", "sell", "fill", "convert"))
 
 
+def _requires_dashboard_valuation(payload: dict[str, Any]) -> bool:
+    return _is_dashboard_value_event(payload) or _is_trading_volume_event(str(payload.get("event_type") or ""))
+
+
 def _is_dashboard_value_event(payload: dict[str, Any]) -> bool:
     event_type = str(payload.get("event_type") or "").lower().strip()
     if _is_trading_volume_event(event_type):
@@ -982,6 +997,7 @@ def _accumulate_yearly_event_breakdown(
             "trading_value_eur": Decimal("0"),
             "priced_events": 0,
             "unpriced_events": 0,
+            "valuation_required_events": 0,
             "deduped_values": {},
         },
     )
@@ -994,10 +1010,12 @@ def _accumulate_yearly_event_breakdown(
         bucket["trading_value_eur"] += _safe_decimal(value.get("eur_abs"))
     if value_counts or _is_trading_volume_event(str(payload.get("event_type") or "")):
         _accumulate_deduped_bucket_value(bucket, payload, year, value)
-    if value.get("priced"):
-        bucket["priced_events"] += 1
-    else:
-        bucket["unpriced_events"] += 1
+    if _requires_dashboard_valuation(payload):
+        bucket["valuation_required_events"] += 1
+        if value.get("priced"):
+            bucket["priced_events"] += 1
+        else:
+            bucket["unpriced_events"] += 1
 
 
 def _accumulate_yearly_source_breakdown(
@@ -1021,6 +1039,7 @@ def _accumulate_yearly_source_breakdown(
             "trading_value_eur": Decimal("0"),
             "priced_events": 0,
             "unpriced_events": 0,
+            "valuation_required_events": 0,
             "deduped_values": {},
         },
     )
@@ -1033,10 +1052,12 @@ def _accumulate_yearly_source_breakdown(
         bucket["trading_value_eur"] += _safe_decimal(value.get("eur_abs"))
     if value_counts or _is_trading_volume_event(str(payload.get("event_type") or "")):
         _accumulate_deduped_bucket_value(bucket, payload, year, value)
-    if value.get("priced"):
-        bucket["priced_events"] += 1
-    else:
-        bucket["unpriced_events"] += 1
+    if _requires_dashboard_valuation(payload):
+        bucket["valuation_required_events"] += 1
+        if value.get("priced"):
+            bucket["priced_events"] += 1
+        else:
+            bucket["unpriced_events"] += 1
 
 
 def _accumulate_yearly_deduped_value(
@@ -1165,8 +1186,11 @@ def _format_yearly_asset_activity(
                 "trading_value_eur": _decimal_to_plain(bucket["trading_value_eur"]),
                 "priced_events": int(bucket["priced_events"]),
                 "unpriced_events": int(bucket["unpriced_events"]),
+                "valuation_required_events": int(bucket["valuation_required_events"]),
                 "priced_coverage_ratio": _decimal_to_plain(
-                    Decimal(int(bucket["priced_events"])) / Decimal(int(bucket["events"])) if int(bucket["events"]) > 0 else Decimal("0")
+                    Decimal(int(bucket["priced_events"])) / Decimal(int(bucket["valuation_required_events"]))
+                    if int(bucket["valuation_required_events"]) > 0
+                    else Decimal("0")
                 ),
             }
         )
@@ -1251,6 +1275,7 @@ def _format_yearly_event_breakdown(buckets: dict[tuple[int, str], dict[str, Any]
                 "trading_value_eur": _decimal_to_plain(deduped["trading_value_eur"]),
                 "priced_events": int(bucket["priced_events"]),
                 "unpriced_events": int(bucket["unpriced_events"]),
+                "valuation_required_events": int(bucket["valuation_required_events"]),
             }
         )
     rows.sort(key=lambda item: (int(item["year"]), -int(item["events"]), str(item["category"])))
@@ -1275,6 +1300,7 @@ def _format_yearly_source_breakdown(buckets: dict[tuple[int, str], dict[str, Any
                 "trading_value_eur": _decimal_to_plain(deduped["trading_value_eur"]),
                 "priced_events": int(bucket["priced_events"]),
                 "unpriced_events": int(bucket["unpriced_events"]),
+                "valuation_required_events": int(bucket["valuation_required_events"]),
             }
         )
     rows.sort(key=lambda item: (int(item["year"]), -int(item["events"]), str(item["source"])))
@@ -1296,6 +1322,17 @@ def _extract_year(ts_raw: str) -> int | None:
 
 def _normalize_mint(value: str) -> str:
     return str(value or "").strip().upper()
+
+
+def _asset_display_symbol(asset: str) -> str:
+    normalized = _normalize_mint(asset)
+    if not normalized:
+        return ""
+    return str(_resolve_token_display(normalized).get("symbol") or normalized).upper().strip()
+
+
+def _is_stable_asset_symbol(symbol: str) -> bool:
+    return str(symbol or "").upper().strip() in _STABLE_ASSET_SYMBOLS
 
 
 def _load_token_aliases() -> dict[str, dict[str, str]]:
