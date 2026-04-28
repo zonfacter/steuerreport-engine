@@ -49,6 +49,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - CI-Coverage-Fix:
   - Core-Tests für `tax_domains` ergänzt, damit §22-/EÜR-/Data-Credit-/Derivate-Summen regressionssicher geprüft werden.
   - Core-Tests für `reconciliation` ergänzt, damit Transfer-Erkennung, Time-Window-Matching und Fee-Toleranz abgesichert sind.
+  - API-Coverage-Tests für Rulesets, Export, Integrity/Snapshots, Compliance-Klassifikation und Review-Gates ergänzt.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.
