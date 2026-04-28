@@ -2097,7 +2097,11 @@ function renderYearlyAssetActivity(activity) {
   const visibleSourceBreakdown = sourceFilterActive
     ? yearSourceBreakdown.filter((row) => selectedSources.values.has(String(row.source || "unknown")))
     : yearSourceBreakdown;
-  renderYearlyValueTrend(mode, visibleRows, visibleTotals, !!filter || !!selectedYear || sourceFilterActive);
+  renderYearlyValueTrend(mode, visibleRows, visibleTotals, visibleSourceBreakdown, {
+    assetFilterActive: !!filter,
+    yearFilterActive: !!selectedYear,
+    sourceFilterActive,
+  });
   renderPortfolioValueHistory(state.dashboard?.portfolio_value_history ?? [], selectedYear);
   renderYearlyEventBreakdownTable(visibleBreakdown);
   renderYearlySourceBreakdownTable(visibleSourceBreakdown);
@@ -2235,9 +2239,12 @@ function renderYearlySourceSummary(selected = null, total = null, active = null)
   host.textContent = `${sourceSelected}/${sourceTotal} Quellen aktiv${isActive ? " (gefiltert)" : ""}.`;
 }
 
-function renderYearlyValueTrend(mode, rows, totals, hasFilter) {
+function renderYearlyValueTrend(mode, rows, totals, sourceBreakdown, filters = {}) {
   const byYear = new Map();
-  if (hasFilter) {
+  const hasAssetFilter = !!filters.assetFilterActive;
+  const hasSourceFilter = !!filters.sourceFilterActive;
+  const hasYearFilter = !!filters.yearFilterActive;
+  if (hasAssetFilter) {
     rows.forEach((row) => {
       const year = String(row.year || "");
       const current = byYear.get(year) || { year, events: 0, value_usd: 0, value_eur: 0, quantity_abs: 0 };
@@ -2249,8 +2256,20 @@ function renderYearlyValueTrend(mode, rows, totals, hasFilter) {
       current.quantity_abs += Math.abs(toNumber(row.quantity_abs || 0));
       byYear.set(year, current);
     });
+  } else if (hasSourceFilter) {
+    sourceBreakdown.forEach((row) => {
+      const year = String(row.year || "");
+      const current = byYear.get(year) || { year, events: 0, value_usd: 0, value_eur: 0, quantity_abs: 0 };
+      current.events += Number(row.events || 0);
+      current.value_usd += toNumber(row.value_usd || 0);
+      current.value_eur += toNumber(row.value_eur || 0);
+      current.trading_value_usd = (current.trading_value_usd || 0) + toNumber(row.trading_value_usd || 0);
+      current.trading_value_eur = (current.trading_value_eur || 0) + toNumber(row.trading_value_eur || 0);
+      byYear.set(year, current);
+    });
   } else {
     totals.forEach((row) => {
+      if (hasYearFilter && rows.length && !rows.some((visible) => String(visible.year || "") === String(row.year || ""))) return;
       byYear.set(String(row.year || ""), {
         year: String(row.year || ""),
         events: Number(row.events || 0),
