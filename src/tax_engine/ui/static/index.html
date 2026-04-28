@@ -505,9 +505,13 @@
             <label>Ruleset
               <input id="rulesetId" value="DE-2026-v1.0" readonly />
             </label>
+            <button id="btnPreflight">Preflight prüfen</button>
             <button id="btnRun" class="btn-primary tax-run-main">Steuerlauf starten</button>
           </div>
           <div id="taxRunPreview" class="tax-run-preview"></div>
+          <div id="preflightPanel" class="notice notice-neutral">
+            Preflight noch nicht geprüft. Vor dem Steuerlauf werden Importdaten, Ruleset, offene Issues und Transfers geprüft.
+          </div>
         </div>
         <div class="row process-toolbar">
           <label>Auto-Refresh

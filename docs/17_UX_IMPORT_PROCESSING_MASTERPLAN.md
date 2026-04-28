@@ -98,6 +98,8 @@ Ein Portfolio-Set bündelt mehrere Integrationen/Wallets logisch zu einem Gesamt
 - Keine freien Textfelder für `ruleset_id`, `tax_year`, kritische Flags.
 - Nur validierte Optionen aus `/api/v1/process/options`.
 - Vor Start zwingender Preflight.
+- Die UI darf `POST /api/v1/process/run` erst auslösen, wenn `POST /api/v1/process/preflight` keine Blocker liefert.
+- Preflight-Ergebnis wird sichtbar im Steuerlauf angezeigt, inklusive Anzahl Events im Steuerjahr, offene Transfers, High-Issues und Bewertungswarnungen.
 
 ## Preflight-Check (vor jedem Run)
 ### Blocker

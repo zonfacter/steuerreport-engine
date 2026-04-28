@@ -128,6 +128,7 @@ from tax_engine.api.imports import (
 )
 from tax_engine.api.processing import (
     ProcessCompareRulesetsRequest,
+    ProcessPreflightRequest,
     ReportSnapshotCreateRequest,
     audit_tax_line,
     compliance_classification,
@@ -140,6 +141,8 @@ from tax_engine.api.processing import (
     process_derivative_lines,
     process_jobs,
     process_latest,
+    process_options,
+    process_preflight,
     process_run,
     process_status,
     process_tax_domain_summary,
@@ -228,6 +231,7 @@ __all__ = [
     "IgnoredTokenUpsertRequest",
     "IssueStatusUpdateRequest",
     "ProcessCompareRulesetsRequest",
+    "ProcessPreflightRequest",
     "ReportSnapshotCreateRequest",
     "RulesetUpsertRequest",
     "TaxEventOverrideDeleteRequest",
@@ -340,6 +344,8 @@ __all__ = [
     "process_derivative_lines",
     "process_jobs",
     "process_latest",
+    "process_options",
+    "process_preflight",
     "process_run",
     "process_status",
     "process_tax_domain_summary",

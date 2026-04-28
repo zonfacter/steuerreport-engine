@@ -989,6 +989,33 @@ tr.sum-row td {
   border-color: #3a4554;
 }
 
+.notice {
+  margin-top: 14px;
+  border-radius: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+}
+
+.notice-ok {
+  color: #c8f5e5;
+  background: rgba(41, 184, 133, 0.12);
+  border-color: rgba(41, 184, 133, 0.42);
+}
+
+.notice-warn {
+  color: #ffe1a3;
+  background: rgba(240, 184, 77, 0.12);
+  border-color: rgba(240, 184, 77, 0.42);
+}
+
+.notice-error {
+  color: #ffc0c6;
+  background: rgba(224, 93, 103, 0.12);
+  border-color: rgba(224, 93, 103, 0.42);
+}
+
 .action-stack {
   display: grid;
   gap: 8px;

@@ -17,6 +17,9 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - `POST /api/v1/process/compare-rulesets` ist ergänzend zum GET-Endpunkt implementiert.
 - `GET /api/v1/import/jobs` nutzt persistierte Importquellen und unterstützt Filter nach `integration` und `status`.
 - Die UI zeigt Export-Artefakte im Steuer-Tab als klickbare Karten und bietet Ruleset-Vergleich sowie Snapshot-Erstellung an.
+- `GET /api/v1/process/options` liefert validierte Steuerlauf-Optionen fuer den Wizard.
+- `POST /api/v1/process/preflight` prueft Importdaten, Ruleset, offene High-Issues, unmatched Transfers und Bewertungsabdeckung vor dem Lauf.
+- Die UI fuehrt vor `POST /api/v1/process/run` automatisch einen Preflight aus und blockiert den Steuerlauf bei harten Blockern.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)
@@ -159,8 +162,8 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 - UI-Angemessenheit bei 30k+ Zeilen: Performance mit virtualisierten Tabellen erforderlich.
 
 ## Nächste konkrete Arbeitspakete (Backlog)
-1. API-Endpunkte für Integrität + Ruleset-Fullstack.
-2. PDF/CSV/JSON Export inkl. Integrity-Tracking.
-3. Lot-alterungsorientiertes Dashboard.
-4. UX-Wizard und Import/Export-Flow.
-5. Snapshot- & Vergleichsmodus in Core+UI.
+1. Preflight-Guided-Actions je Blocker direkt im Dashboard verlinken.
+2. Import-Aktivitätsprotokoll als eigenes UI-Modul mit Details/Wiederholen.
+3. Portfolio-Sets weiter ausbauen: Quellenzuordnung und Set-spezifische Wertkurve.
+4. Lot-Nachvollzug im Export um `transfer_chain_id` erweitern.
+5. Snapshot-Wiederherstellungsvorschau in der UI ergänzen.

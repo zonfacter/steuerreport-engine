@@ -12,6 +12,8 @@ const state = {
   derivativeLines: [],
   reportFiles: [],
   processingJobs: [],
+  processOptions: null,
+  preflight: null,
   processingJobsLimit: 25,
   processingJobsOffset: 0,
   processingJobsMode: "default",
@@ -132,6 +134,12 @@ function shortText(value, maxLength = 60) {
 function rulesetForYear(year) {
   const y = Number(year || 2026);
   const safeYear = Number.isFinite(y) ? Math.min(Math.max(Math.floor(y), 2020), 2026) : 2026;
+  const ruleset = (state.processOptions?.rulesets || []).find((item) => {
+    const fromYear = Number(String(item.valid_from || "").slice(0, 4));
+    const toYear = Number(String(item.valid_to || "").slice(0, 4));
+    return fromYear <= safeYear && safeYear <= toYear && String(item.jurisdiction || "") === "DE";
+  });
+  if (ruleset?.ruleset_id) return String(ruleset.ruleset_id);
   return `DE-${safeYear}-v1.0`;
 }
 
@@ -149,6 +157,74 @@ function syncTaxRunSelection() {
     <span><strong>SO:</strong> ${exemption}</span>
     <span><strong>Ruleset:</strong> ${ruleset}</span>
   `;
+}
+
+function processRequestPayload() {
+  syncTaxRunSelection();
+  return {
+    tax_year: Number(el("taxYear")?.value || "2026"),
+    ruleset_id: el("rulesetId")?.value.trim() || rulesetForYear(el("taxYear")?.value || "2026"),
+    config: {
+      tax_method: el("taxMethod")?.value || "fifo",
+      calculation_mode: "global",
+      validation_flags: {
+        short_sell_guard: true,
+        transfer_check: true,
+        holding_period_check: true,
+      },
+    },
+  };
+}
+
+function renderPreflight(data) {
+  state.preflight = data || null;
+  const panel = el("preflightPanel");
+  if (!panel) return;
+  const blockers = data?.blockers || [];
+  const warnings = data?.warnings || [];
+  const counts = data?.counts || {};
+  panel.className = `notice ${blockers.length ? "notice-error" : warnings.length ? "notice-warn" : "notice-ok"}`;
+  const status = data?.allow_run ? "Preflight bestanden" : "Preflight blockiert";
+  const details = [
+    `${formatInt(counts.tax_year_events || 0)} Events im Steuerjahr`,
+    `${formatInt(counts.unmatched_transfers || 0)} offene Transfers`,
+    `${formatInt(counts.high_severity_open || 0)} High-Issues`,
+    `${formatInt(counts.unresolved_valuation_events || 0)} Bewertungswarnungen`,
+  ];
+  const blockerHtml = blockers.length
+    ? `<div><strong>Blocker:</strong> ${blockers.map((item) => item.message || item.code).join(" · ")}</div>`
+    : "";
+  const warningHtml = warnings.length
+    ? `<div><strong>Warnungen:</strong> ${warnings.map((item) => item.message || item.code).join(" · ")}</div>`
+    : "";
+  panel.innerHTML = `
+    <div><strong>${status}</strong> · ${details.join(" · ")}</div>
+    ${blockerHtml}
+    ${warningHtml}
+  `;
+}
+
+async function runPreflight(trigger = null, silent = false) {
+  const payload = processRequestPayload();
+  const data = await callApi("/api/v1/process/preflight", "POST", payload, trigger, silent);
+  if (data?.status !== "success") return null;
+  renderPreflight(data.data);
+  return data.data;
+}
+
+async function loadProcessOptions() {
+  const data = await callApi("/api/v1/process/options", "GET", null, null, true);
+  if (data?.status !== "success") return;
+  state.processOptions = data.data;
+  const yearSelect = el("taxYear");
+  if (yearSelect && Array.isArray(data.data?.tax_years)) {
+    const current = yearSelect.value || String(data.data.default_tax_year || "2026");
+    yearSelect.innerHTML = data.data.tax_years
+      .map((year) => `<option value="${year}">${year}</option>`)
+      .join("");
+    yearSelect.value = data.data.tax_years.includes(Number(current)) ? current : String(data.data.default_tax_year || "2026");
+  }
+  syncTaxRunSelection();
 }
 
 function setCsvButtonsDisabled(disabled, reason = "") {
@@ -3297,6 +3373,7 @@ function init() {
     }
   });
   loadDashboard();
+  loadProcessOptions();
   loadWalletGroups();
   loadReviewGates(true);
   loadIntegrationOverview();
@@ -4034,15 +4111,30 @@ async function loadUnmatched() {
     }
   });
 
+  el("btnPreflight")?.addEventListener("click", async (e) => {
+    const result = await runPreflight(e.currentTarget, false);
+    if (result?.allow_run) {
+      showToast("Preflight bestanden. Steuerlauf kann gestartet werden.", "ok");
+    } else if (result) {
+      showToast("Preflight blockiert. Bitte Review-Blocker prüfen.", "warn");
+    }
+  });
+
   el("btnRun").addEventListener("click", async (e) => {
-    syncTaxRunSelection();
+    const preflight = await runPreflight(e.currentTarget, true);
+    if (!preflight?.allow_run) {
+      showToast("Steuerlauf nicht gestartet: Preflight blockiert.", "warn");
+      switchStep(2);
+      return;
+    }
+    const payload = processRequestPayload();
     const data = await callApi(
       "/api/v1/process/run",
       "POST",
       {
-        tax_year: Number(el("taxYear").value || "2026"),
-        ruleset_id: el("rulesetId").value.trim() || "DE-2026-v1.0",
-        config: { tax_method: el("taxMethod")?.value || "fifo" },
+        tax_year: payload.tax_year,
+        ruleset_id: payload.ruleset_id,
+        config: payload.config,
         dry_run: false,
       },
       e.currentTarget

@@ -4,12 +4,15 @@ import asyncio
 
 from tax_engine.api.app import (
     ProcessCompareRulesetsRequest,
+    ProcessPreflightRequest,
     TaxEventOverrideUpsertRequest,
     audit_tax_line,
     import_confirm,
     portfolio_lot_aging,
     process_compare_rulesets_post,
     process_derivative_lines,
+    process_options,
+    process_preflight,
     process_run,
     process_status,
     process_tax_domain_summary,
@@ -69,6 +72,58 @@ def test_process_run_normalizes_de_alias_and_version_from_ui() -> None:
     assert response.data["ruleset_id"] == "DE-2026-v1.0"
     assert response.data["ruleset_version"] == "1.0"
     assert any(item["code"] == "ruleset_resolved" for item in response.warnings)
+
+
+def test_process_options_returns_wizard_choices() -> None:
+    _reset_store()
+
+    response = process_options()
+
+    assert response.status == "success"
+    assert 2026 in response.data["tax_years"]
+    assert any(item["id"] == "fifo" for item in response.data["tax_methods"])
+    assert any(item["id"] == "global" for item in response.data["depot_modes"])
+    assert any(item["ruleset_id"] == "DE-2026-v1.0" for item in response.data["rulesets"])
+
+
+def test_process_preflight_blocks_without_import_data() -> None:
+    _reset_store()
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["allow_run"] is False
+    assert any(item["code"] == "no_import_data" for item in response.data["blockers"])
+
+
+def test_process_preflight_allows_clean_year_with_priced_trade() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="preflight.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "BTC",
+                    "side": "buy",
+                    "amount": "1",
+                    "price_eur": "100",
+                    "event_type": "buy",
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["allow_run"] is True
+    assert response.data["counts"]["tax_year_events"] == 1
+    assert response.data["blockers"] == []
 
 
 def test_process_status_returns_created_job() -> None:

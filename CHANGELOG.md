@@ -34,6 +34,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Legacy-Transfers werden nicht als Spot-Veräußerung behandelt.
   - Neuer Endpoint `GET /api/v1/portfolio/helium-legacy-transfers` gruppiert Gegenwallets mit gesendeten/erhaltenen HNT, Fees, Nettofluss und Beispiel-Transaktionen.
   - UI zeigt die Legacy-HNT-Transferübersicht im Transfer-Review an.
+- Steuerlauf-Wizard vorbereitet:
+  - Neuer Endpoint `GET /api/v1/process/options` liefert validierte Steuerjahre, Rulesets, Steuerverfahren, Depotmodi, Validierungsflags und Standardprofile.
+  - Neuer Endpoint `POST /api/v1/process/preflight` prüft vor dem Steuerlauf Importdaten, Ruleset-Auflösung, offene High-Severity-Issues, unmatched Transfers und Bewertungsabdeckung.
+  - UI führt den Preflight vor dem Steuerlauf automatisch aus und blockiert `process/run`, wenn harte Blocker offen sind.
 - Solana-Importkontrolle erweitert:
   - Admin-Backfill-Status zeigt lokale Solana-Coverage mit Event-/TX-Zahl, Zeitraum und Chain-Start-Indikator.
   - Background-Scanner speichert künftig, ob der RPC-Import den Anfang der Signaturhistorie erreicht hat.

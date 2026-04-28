@@ -24,6 +24,7 @@ from tax_engine.api.reporting import (
 from tax_engine.api.reporting import (
     build_report_file_index as _build_report_file_index,
 )
+from tax_engine.api.review import _build_issue_inbox
 from tax_engine.core.derivatives import process_derivatives_for_year
 from tax_engine.core.processor import process_events_for_year
 from tax_engine.core.tax_domains import build_tax_domain_summary
@@ -37,6 +38,7 @@ from tax_engine.queue import (
     get_processing_job,
     run_next_queued_job,
 )
+from tax_engine.reconciliation import list_unmatched_transfers
 from tax_engine.rulesets import build_default_registry
 
 
@@ -56,6 +58,16 @@ class ProcessCompareRulesetsRequest(BaseModel):
     job_id: str = Field(min_length=1, max_length=200)
     compare_ruleset_id: str = Field(min_length=1, max_length=80)
     compare_ruleset_version: str | None = Field(default=None, min_length=1, max_length=20)
+
+
+class ProcessPreflightRequest(BaseModel):
+    tax_year: int = Field(ge=2020, le=2100)
+    ruleset_id: str = Field(min_length=1, max_length=80)
+    ruleset_version: str | None = Field(default=None, min_length=1, max_length=20)
+    config: dict[str, Any] = Field(default_factory=dict)
+    time_window_seconds: int = Field(default=600, ge=1, le=86400)
+    amount_tolerance_ratio: float = Field(default=0.02, ge=0, le=1)
+    min_confidence: float = Field(default=0.75, ge=0, le=1)
 
 
 router = APIRouter()
@@ -79,6 +91,202 @@ def _safe_decimal(value: Any) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return Decimal("0")
+
+
+def _preflight_needs_valuation(payload: dict[str, Any]) -> bool:
+    event_type = str(payload.get("event_type") or "").lower()
+    side = str(payload.get("side") or "").lower()
+    if any(token in event_type for token in ("transfer", "deposit", "withdraw", "fee")):
+        return False
+    if side not in {"buy", "sell", "in", "out"}:
+        return False
+    if any(token in event_type for token in ("reward", "mining", "staking", "income", "claim", "airdrop")):
+        return True
+    if any(token in event_type for token in ("trade", "swap", "buy", "sell", "convert")):
+        return True
+    return str(payload.get("price") or payload.get("price_eur") or payload.get("value_usd") or payload.get("value_eur") or "").strip() != ""
+
+
+def _preflight_has_valuation(payload: dict[str, Any]) -> bool:
+    for key in ("price_eur", "value_eur", "amount_eur", "income_eur", "proceeds_eur", "cost_basis_eur"):
+        if _safe_decimal(payload.get(key)) > 0:
+            return True
+    if _safe_decimal(payload.get("value_usd")) > 0 or _safe_decimal(payload.get("amount_usd")) > 0:
+        return True
+    if _safe_decimal(payload.get("price_usd")) > 0:
+        return True
+    quote = str(payload.get("quote_asset") or payload.get("fee_asset") or "").upper()
+    if quote in {"USDT", "USDC", "BUSD", "FDUSD", "DAI", "USD"} and _safe_decimal(payload.get("price")) > 0:
+        return True
+    return False
+
+
+@router.get("/api/v1/process/options", response_model=StandardResponse, tags=["process"])
+def process_options() -> StandardResponse:
+    trace_id = str(uuid4())
+    registry = build_default_registry()
+    rulesets = [item.to_dict() for item in registry.list_rulesets(include_pending=True)]
+    years = sorted(
+        {
+            year
+            for item in registry.list_rulesets(include_pending=True)
+            for year in range(item.valid_from.year, item.valid_to.year + 1)
+            if 2020 <= year <= 2100
+        }
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "tax_years": years,
+            "default_tax_year": max(years) if years else 2026,
+            "rulesets": rulesets,
+            "tax_methods": [
+                {
+                    "id": "fifo",
+                    "label": "FIFO",
+                    "description": "First-in-first-out als Projektstandard fuer deutsche Krypto-Berechnung.",
+                    "default": True,
+                }
+            ],
+            "depot_modes": [
+                {"id": "global", "label": "Global FIFO", "default": True},
+                {"id": "depot_separated", "label": "Depot-getrennte FIFO-Pools", "default": False},
+            ],
+            "validation_flags": [
+                {"id": "short_sell_guard", "label": "Short-Sell Guard", "default": True},
+                {"id": "transfer_check", "label": "Transfercheck", "default": True},
+                {"id": "holding_period_check", "label": "Haltefristpruefung", "default": True},
+            ],
+            "profiles": [
+                {"id": "de_private_standard", "label": "DE Privat Standard", "tax_method": "fifo", "depot_mode": "global"},
+                {
+                    "id": "de_trading_derivatives",
+                    "label": "DE Trading + Derivate",
+                    "tax_method": "fifo",
+                    "depot_mode": "global",
+                },
+                {
+                    "id": "de_mining_staking",
+                    "label": "DE Mining/Staking",
+                    "tax_method": "fifo",
+                    "depot_mode": "depot_separated",
+                },
+            ],
+        },
+        errors=[],
+        warnings=[],
+    )
+
+
+@router.post("/api/v1/process/preflight", response_model=StandardResponse, tags=["process"])
+def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    registry = build_default_registry()
+    blockers: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
+
+    try:
+        resolved_ruleset, ruleset_warnings = registry.resolve_for_year(
+            tax_year=payload.tax_year,
+            ruleset_id=payload.ruleset_id,
+            ruleset_version=payload.ruleset_version,
+        )
+        warnings.extend(ruleset_warnings)
+    except ValueError as exc:
+        resolved_ruleset = None
+        blockers.append({"code": "ruleset_not_resolvable", "message": str(exc)})
+
+    raw_events = STORE.list_raw_events()
+    year_events = []
+    unresolved_valuation_events = 0
+    unclassified_events = 0
+    for row in raw_events:
+        item = row.get("payload", {})
+        if not isinstance(item, dict):
+            continue
+        ts_raw = str(item.get("timestamp_utc") or item.get("timestamp") or "")
+        if _extract_year(ts_raw) != payload.tax_year:
+            continue
+        year_events.append(row)
+        event_type = str(item.get("event_type") or "").strip().lower()
+        if not event_type or event_type == "unknown":
+            unclassified_events += 1
+        if _preflight_needs_valuation(item) and not _preflight_has_valuation(item):
+            unresolved_valuation_events += 1
+
+    if not raw_events:
+        blockers.append({"code": "no_import_data", "message": "Keine Importdaten vorhanden."})
+    elif not year_events:
+        blockers.append({"code": "tax_year_no_events", "message": f"Keine Events fuer Steuerjahr {payload.tax_year} vorhanden."})
+
+    issues = _build_issue_inbox()
+    open_high_issues = [
+        item
+        for item in issues
+        if str(item.get("status", "")).lower() in {"open", "in_review"}
+        and str(item.get("severity", "")).lower() == "high"
+    ]
+    if open_high_issues:
+        blockers.append(
+            {
+                "code": "high_severity_issues_open",
+                "message": f"{len(open_high_issues)} High-Severity Issues sind offen.",
+            }
+        )
+
+    unmatched = list_unmatched_transfers(
+        time_window_seconds=payload.time_window_seconds,
+        amount_tolerance_ratio=payload.amount_tolerance_ratio,
+        min_confidence=payload.min_confidence,
+    )
+    unmatched_total = len(unmatched.get("unmatched_outbound_ids", [])) + len(unmatched.get("unmatched_inbound_ids", []))
+    if unmatched_total > 0:
+        blockers.append({"code": "unmatched_transfers_open", "message": f"{unmatched_total} unmatched Transfers sind offen."})
+
+    if unresolved_valuation_events > 0:
+        warnings.append(
+            {
+                "code": "valuation_coverage_incomplete",
+                "message": f"{unresolved_valuation_events} Events im Steuerjahr haben keine klare Bewertung.",
+            }
+        )
+    if unclassified_events > 0:
+        warnings.append(
+            {
+                "code": "unclassified_events_present",
+                "message": f"{unclassified_events} Events im Steuerjahr sind unklassifiziert.",
+            }
+        )
+
+    allow_run = len(blockers) == 0
+    data = {
+        "allow_run": allow_run,
+        "tax_year": payload.tax_year,
+        "ruleset": resolved_ruleset.to_dict() if resolved_ruleset is not None else None,
+        "counts": {
+            "raw_events_total": len(raw_events),
+            "tax_year_events": len(year_events),
+            "issues_total": len(issues),
+            "high_severity_open": len(open_high_issues),
+            "unmatched_transfers": unmatched_total,
+            "unresolved_valuation_events": unresolved_valuation_events,
+            "unclassified_events": unclassified_events,
+        },
+        "blockers": blockers,
+        "warnings": warnings,
+    }
+    write_audit(
+        trace_id=trace_id,
+        action="process.preflight",
+        payload={
+            "tax_year": payload.tax_year,
+            "allow_run": allow_run,
+            "blocker_count": len(blockers),
+            "warning_count": len(warnings),
+        },
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=warnings)
 
 
 @router.post("/api/v1/process/run", response_model=StandardResponse, tags=["process"])
