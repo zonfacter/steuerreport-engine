@@ -19,6 +19,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Jahres-Dropdown und Event-Kategorie-Breakdown ergänzt, damit hohe Aktivitätszahlen (z. B. Derivate, Gebühren, Transfers) nachvollziehbar sind.
   - Quellen-Breakdown pro Jahr ergänzt, damit Importquellen wie Blockpit, Solana RPC, Binance API und HeliumGeek getrennt prüfbar sind.
   - Quellenfilter ergänzt: Jahresanalyse kann Importquellen ein-/ausblenden, um Referenzimporte und Primärdaten getrennt zu prüfen.
+  - Quellenfilter-UX erweitert: Alle/Keine/Nur-Primärdaten-Schalter, persistierte Auswahl und sichtbare Aktiv-Quellen-Zählung ergänzt.
   - Währungsanzeige geschärft: USD-Werte werden als USD, EUR-Werte als EUR dargestellt; Asset-Zeilen zeigen den durchschnittlichen `USD/EUR`-Kurs.
   - Symbol-Aliasse für SOL/HNT/IOT/MOBILE/JUP/USDT/USDC ergänzt, damit bekannte Assets nicht mehr als unbekannte Token erscheinen.
   - Portfolio-Wertentwicklung als separate Monatskurve ergänzt; sie basiert auf rekonstruierten Beständen und lokalem Preis-Cache und wird bewusst nicht mit Trading-/Wirtschaftswert vermischt.

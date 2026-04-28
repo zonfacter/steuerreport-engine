@@ -369,6 +369,11 @@ body {
   margin: 6px 0 12px;
 }
 
+.compact-row {
+  align-items: center;
+  gap: 8px;
+}
+
 .source-chip {
   align-items: center;
   background: rgba(137, 181, 231, 0.08);

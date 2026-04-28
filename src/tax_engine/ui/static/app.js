@@ -1782,7 +1782,7 @@ function populateYearlyYearFilter(years, rows) {
 function populateYearlySourceFilter(sourceBreakdown, rows) {
   const container = el("yearlySourceFilter");
   if (!container) return;
-  const current = new Map();
+  const current = loadYearlySourcePrefs();
   $$("input[data-yearly-source]").forEach((input) => current.set(input.value, input.checked));
   const sources = new Set();
   (Array.isArray(sourceBreakdown) ? sourceBreakdown : []).forEach((row) => {
@@ -1807,6 +1807,7 @@ function populateYearlySourceFilter(sourceBreakdown, rows) {
     `;
     container.appendChild(label);
   });
+  renderYearlySourceSummary();
 }
 
 function selectedYearlySources(sourceBreakdown, rows) {
@@ -1818,9 +1819,68 @@ function selectedYearlySources(sourceBreakdown, rows) {
     if (input.checked) selected.add(input.value);
   });
   if (!allSources.size || selected.size === allSources.size) {
+    renderYearlySourceSummary(selected.size || allSources.size, allSources.size, false);
     return { values: allSources, active: false };
   }
+  renderYearlySourceSummary(selected.size, allSources.size, true);
   return { values: selected, active: true };
+}
+
+function loadYearlySourcePrefs() {
+  const raw = loadPref("yearly.sources", "");
+  const prefs = new Map();
+  if (!raw) return prefs;
+  try {
+    Object.entries(JSON.parse(raw) || {}).forEach(([source, enabled]) => prefs.set(source, !!enabled));
+  } catch (_) {
+    return new Map();
+  }
+  return prefs;
+}
+
+function saveYearlySourcePrefs() {
+  const prefs = {};
+  $$("input[data-yearly-source]").forEach((input) => {
+    prefs[input.value] = !!input.checked;
+  });
+  savePref("yearly.sources", JSON.stringify(prefs));
+}
+
+function isReferenceImportSource(source) {
+  const value = String(source || "").toLowerCase();
+  return value.includes("blockpit")
+    || value.includes("reference")
+    || value.includes("referenz")
+    || value.includes("tax_report")
+    || value.includes("steuerreport");
+}
+
+function setYearlySourceSelection(mode) {
+  $$("input[data-yearly-source]").forEach((input) => {
+    if (mode === "none") {
+      input.checked = false;
+    } else if (mode === "primary") {
+      input.checked = !isReferenceImportSource(input.value);
+    } else {
+      input.checked = true;
+    }
+  });
+  saveYearlySourcePrefs();
+  renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
+}
+
+function renderYearlySourceSummary(selected = null, total = null, active = null) {
+  const host = el("yearlySourceSummary");
+  if (!host) return;
+  const inputs = $$("input[data-yearly-source]");
+  const sourceTotal = total ?? inputs.length;
+  const sourceSelected = selected ?? inputs.filter((input) => input.checked).length;
+  const isActive = active ?? (sourceTotal > 0 && sourceSelected !== sourceTotal);
+  if (!sourceTotal) {
+    host.textContent = "Noch keine Quellen geladen.";
+    return;
+  }
+  host.textContent = `${sourceSelected}/${sourceTotal} Quellen aktiv${isActive ? " (gefiltert)" : ""}.`;
 }
 
 function renderYearlyValueTrend(mode, rows, totals, hasFilter) {
@@ -4207,8 +4267,12 @@ async function loadUnmatched() {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
   });
   el("yearlySourceFilter")?.addEventListener("change", () => {
+    saveYearlySourcePrefs();
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
   });
+  el("btnYearlySourcesAll")?.addEventListener("click", () => setYearlySourceSelection("all"));
+  el("btnYearlySourcesNone")?.addEventListener("click", () => setYearlySourceSelection("none"));
+  el("btnYearlySourcesPrimary")?.addEventListener("click", () => setYearlySourceSelection("primary"));
   el("btnCockpitRefresh")?.addEventListener("click", async () => {
     await refreshUsdEurRateBestEffort();
     await loadDashboard();
