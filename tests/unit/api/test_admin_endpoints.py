@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
+from subprocess import CompletedProcess
 
 from tax_engine.api.app import (
+    AdminServiceActionRequest,
     AdminSettingsPutRequest,
     CexCredentialsLoadRequest,
     DashboardRoleOverrideRequest,
     IgnoredTokenDeleteRequest,
     IgnoredTokenUpsertRequest,
+    TokenAliasDeleteRequest,
+    TokenAliasUpsertRequest,
+    _build_solana_backfill_status,
+    _tail_file,
     admin_cex_credentials_load,
     admin_ignored_tokens_delete,
     admin_ignored_tokens_list,
@@ -15,6 +22,11 @@ from tax_engine.api.app import (
     admin_runtime_config,
     admin_settings_list,
     admin_settings_put,
+    admin_solana_backfill_action,
+    admin_solana_backfill_status,
+    admin_token_aliases_delete,
+    admin_token_aliases_list,
+    admin_token_aliases_upsert,
     dashboard_overview,
     dashboard_role_override,
 )
@@ -228,3 +240,108 @@ def test_admin_cex_credentials_load_returns_saved_secret_values() -> None:
     assert response.status == "success"
     assert response.data.get("api_key") == "binance-key-1234"
     assert response.data.get("api_secret") == "binance-secret-5678"
+
+
+def test_admin_token_aliases_upsert_list_delete_roundtrip() -> None:
+    _reset_store()
+    mint = "cm8vSesV7mBHaFD5uDxH84qFgxmAvWJCvVHOpb1dZIF4"
+
+    put_resp = admin_token_aliases_upsert(
+        TokenAliasUpsertRequest(mint=mint, symbol="iot", name="Helium IOT", notes="Known token")
+    )
+    assert put_resp.status == "success"
+    assert put_resp.data.get("mint") == mint.upper()
+
+    list_resp = admin_token_aliases_list()
+    assert list_resp.status == "success"
+    aliases = list_resp.data.get("aliases", [])
+    assert any(item.get("symbol") == "IOT" and item.get("name") == "Helium IOT" for item in aliases)
+
+    delete_resp = admin_token_aliases_delete(TokenAliasDeleteRequest(mint=mint))
+    assert delete_resp.status == "success"
+    assert delete_resp.data.get("deleted") is True
+
+
+def test_admin_solana_backfill_status_and_action_paths(monkeypatch) -> None:
+    _reset_store()
+    admin_module = importlib.import_module("tax_engine.api.admin")
+    calls: list[list[str]] = []
+
+    def fake_run_systemctl(args: list[str]) -> CompletedProcess[str]:
+        calls.append(args)
+        if args[0] == "show":
+            return CompletedProcess(
+                args=args,
+                returncode=0,
+                stdout="ActiveState=active\nSubState=running\nLoadState=loaded\nMainPID=123\nResult=success\n",
+                stderr="",
+            )
+        if args[0] == "is-enabled":
+            return CompletedProcess(args=args, returncode=0, stdout="enabled\n", stderr="")
+        return CompletedProcess(args=args, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(admin_module, "_run_systemctl", fake_run_systemctl)
+
+    status = admin_solana_backfill_status()
+    assert status.status == "success"
+    assert status.data["active_state"] == "active"
+    assert status.data["enabled"] is True
+
+    action = admin_solana_backfill_action(AdminServiceActionRequest(action="restart"))
+    assert action.status == "success"
+    assert action.data["command"]["action"] == "restart"
+    assert ["restart", "steuerreport-solana-backfill.service"] in calls
+
+
+def test_admin_solana_backfill_error_and_helper_edge_paths(monkeypatch, tmp_path: Path) -> None:
+    _reset_store()
+    admin_module = importlib.import_module("tax_engine.api.admin")
+    STORE.upsert_setting("runtime.scan.stats.wBrPoiEEzKYwH6obgAmNAC2iskiNs4HvwoAwqJbV2oB", "{bad-json", False)
+    STORE.upsert_setting(
+        "runtime.scan.cursor.wBrPoiEEzKYwH6obgAmNAC2iskiNs4HvwoAwqJbV2oB",
+        "{bad-json",
+        False,
+    )
+
+    def fake_run_systemctl(args: list[str]) -> CompletedProcess[str]:
+        if args[0] == "show":
+            return CompletedProcess(args=args, returncode=0, stdout="ActiveState=failed\nMainPID=0\n", stderr="")
+        if args[0] == "is-enabled":
+            return CompletedProcess(args=args, returncode=1, stdout="disabled\n", stderr="")
+        return CompletedProcess(args=args, returncode=1, stdout="", stderr="unit failed")
+
+    monkeypatch.setattr(admin_module, "_run_systemctl", fake_run_systemctl)
+
+    status = _build_solana_backfill_status()
+    assert status["active_state"] == "failed"
+    assert status["enabled"] is False
+    assert status["stats"] == "{bad-json"
+    assert status["last_before_signature"] == "{bad-json"
+
+    action = admin_solana_backfill_action(AdminServiceActionRequest(action="stop"))
+    assert action.status == "error"
+    assert action.errors[0]["code"] == "service_action_failed"
+
+    log_file = tmp_path / "service.log"
+    log_file.write_text("a\nb\nc\n", encoding="utf-8")
+    assert _tail_file(log_file, max_lines=2) == ["b", "c"]
+    assert _tail_file(tmp_path / "missing.log", max_lines=2) == []
+
+
+def test_admin_loaders_ignore_invalid_json_and_credentials_error(monkeypatch) -> None:
+    _reset_store()
+    admin_module = importlib.import_module("tax_engine.api.admin")
+    STORE.upsert_setting("runtime.token_aliases", "{bad-json", False)
+    STORE.upsert_setting("runtime.ignored_tokens", "[]", False)
+
+    assert admin_token_aliases_list().data["count"] == 0
+    assert admin_ignored_tokens_list().data["count"] == 0
+
+    monkeypatch.setattr(
+        admin_module,
+        "resolve_cex_credentials",
+        lambda connector_id: (_ for _ in ()).throw(RuntimeError(f"missing {connector_id}")),
+    )
+    response = admin_cex_credentials_load(CexCredentialsLoadRequest(connector_id="binance"))
+    assert response.status == "error"
+    assert response.errors[0]["code"] == "cex_credentials_load_failed"
