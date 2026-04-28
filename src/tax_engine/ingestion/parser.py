@@ -82,8 +82,20 @@ def parse_datetime_value(value: Any, timezone: str = "UTC") -> tuple[str | None,
         text = str(value).strip()
         if not text:
             return None, None
+        dayfirst = False
+        yearfirst = False
+        # Deutsche Formate wie 12.05.2021 als dd.mm.yyyy behandeln.
+        if re.match(r"^\d{1,2}\.\d{1,2}\.\d{2,4}([ T].*)?$", text):
+            dayfirst = True
+        # Binance-Sonderfall: yy-mm-dd HH:MM:SS (z. B. 25-06-12 10:51:05 => 2025-06-12).
+        elif re.match(r"^\d{2}-\d{2}-\d{2}([ T]\d{1,2}:\d{2}(:\d{2})?)?$", text):
+            yearfirst = True
+            dayfirst = False
+        # ISO-nahe Formate mit Jahr vorne.
+        elif re.match(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}", text):
+            yearfirst = True
         try:
-            dt = date_parser.parse(text, dayfirst=False, yearfirst=False)
+            dt = date_parser.parse(text, dayfirst=dayfirst, yearfirst=yearfirst)
         except (ValueError, TypeError, OverflowError):
             return None, "invalid_datetime"
 
@@ -119,4 +131,3 @@ def detect_fields(rows: Iterable[dict[str, Any]]) -> tuple[list[str], list[str]]
                 datetime_fields.add(key)
 
     return sorted(numeric_fields), sorted(datetime_fields)
-

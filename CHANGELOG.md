@@ -4,6 +4,29 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 
 ## [Unreleased]
 ### Added
+- Historischer Crypto-Preis-Backfill erweitert:
+  - CoinGecko-Demo-Key wird als bevorzugte Quelle genutzt, soweit der Plan historische Daten erlaubt.
+  - DefiLlama-History-Fallback ergänzt, damit ältere Dashboard-/Entwicklungswerte ab 2020 ohne Account befüllt werden können.
+  - Provider-Auswahl `--provider auto|coingecko|defillama` für `scripts/crypto_price_backfill_usd.py` ergänzt.
+- Preis-Cache für SOL/HNT/IOT/JUP in der lokalen DB initial befüllt (`fx_cache`, Quelle `defillama_coingecko_history`).
+- HeliumGeek-Mengenhärtung ergänzt:
+  - Punkt-Dezimalwerte wie `3421.905036` werden nicht mehr als `3421905036` interpretiert.
+  - Dashboard und Steuerprozessor normalisieren bereits importierte HeliumGeek-Rewards aus den originalen CSV-Feldern `IOT Tokens`/`MOBILE Tokens`.
+- Dashboard-Wertlogik geschärft:
+  - Reine Transfers/Deposits/Withdrawals werden nicht mehr als wirtschaftlicher Wertumsatz gezählt.
+  - Jahres-Gesamtsummen werden pro `tx_id` dedupliziert, damit Swap-Gegenpositionen nicht doppelt in die Gesamtgrafik laufen.
+  - Blockpit-Paare wie `blockpit-123:in` und `blockpit-123:out` werden für Jahres-Gesamtsummen als eine wirtschaftliche Transaktion behandelt.
+  - Jahres-Dropdown und Event-Kategorie-Breakdown ergänzt, damit hohe Aktivitätszahlen (z. B. Derivate, Gebühren, Transfers) nachvollziehbar sind.
+  - Quellen-Breakdown pro Jahr ergänzt, damit Importquellen wie Blockpit, Solana RPC, Binance API und HeliumGeek getrennt prüfbar sind.
+  - Quellenfilter ergänzt: Jahresanalyse kann Importquellen ein-/ausblenden, um Referenzimporte und Primärdaten getrennt zu prüfen.
+  - Währungsanzeige geschärft: USD-Werte werden als USD, EUR-Werte als EUR dargestellt; Asset-Zeilen zeigen den durchschnittlichen `USD/EUR`-Kurs.
+  - Symbol-Aliasse für SOL/HNT/IOT/MOBILE/JUP/USDT/USDC ergänzt, damit bekannte Assets nicht mehr als unbekannte Token erscheinen.
+  - Portfolio-Wertentwicklung als separate Monatskurve ergänzt; sie basiert auf rekonstruierten Beständen und lokalem Preis-Cache und wird bewusst nicht mit Trading-/Wirtschaftswert vermischt.
+  - Unit-Test mit SOL/USDT und HNT/USDC ergänzt, damit die Regel asset-unabhängig abgesichert ist.
+- BMF-2025-Fachlogik ergänzt:
+  - Neues Dossier `docs/19_BMF_2025_STEUERREGELN_UND_PFLICHTEN.md` als technische Umsetzung des BMF-Schreibens vom 06.03.2025.
+  - Ruleset-Modell um `other_services_exemption_limit` erweitert, damit §22-Nr.-3-EStG-Freigrenze (`256.00` EUR) getrennt von §23-Freigrenze geführt wird.
+  - Compliance-Klassifikation nutzt für Mining/Staking/Rewards jetzt die §22-Freigrenze statt der §23-Freigrenze.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.
@@ -99,6 +122,82 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Filterbare Ansicht für `tax_lines` (Asset/Tax-Status)
   - Filterbare Ansicht für `derivative_lines` (Asset/Event-Typ)
   - CSV-Download direkt aus dem Browser für beide Tabellen
+- Solana RPC-Härtung ergänzt:
+  - `getTransaction` nutzt jetzt Parameter-Fallbacks (`jsonParsed` mit/ohne `maxSupportedTransactionVersion`, danach `json`)
+  - `null`-Results werden endpoint-übergreifend retried statt frühzeitig als Endergebnis übernommen
+  - Retry-Fallback erweitert um typische RPC-Fehlercodes (`-32005`, `-32004`, `-32603`) plus kurzes Backoff
+  - zusätzlicher Standard-Fallback-Endpunkt `https://solana.rpc.subquery.network/public`
+- RPC-Betriebsdokumentation ergänzt:
+  - `docs/16_SOLANA_RPC_PROVIDER_STRATEGIE.md`
+  - `configs/profiles/solana_rpc_profile.example.json`
+- Solana RPC Konfigurierbarkeit erweitert:
+  - neue Env-Defaults `SOLANA_RPC_URL` und `SOLANA_RPC_FALLBACK_URLS`
+  - neuer Endpoint `POST /api/v1/connectors/solana/rpc-probe` für Laufzeit-Healthchecks
+  - No-Account-Endpunkte (u. a. `api.mainnet`, `publicnode`, `pocket`) in Defaults/Profil aufgenommen
+  - dokumentierte Verifikation weiterer Public-Kandidaten (`ankr`, `drpc`, `onfinality`, `llamarpc`, `subquery`) inkl. aktueller Einschränkungen
+- Solana Tatum-RPC integriert:
+  - Tatum Gateway `https://solana-mainnet.gateway.tatum.io` als konfigurierbarer Primär-RPC getestet
+  - API-Key wird als `x-api-key` Header aus `TATUM_API_KEY` gelesen, nicht in URL/UI/Audit-Logs geführt
+  - Full-History-Import um `before_signature` Cursor erweitert, damit Wallet-Historien seitenweise fortgesetzt werden können
+  - `scripts/scan_wallet_backfill.py` auf resumierbaren Full-History-Backfill mit gespeicherter Cursor-Position umgestellt
+  - Providerabhängige RPC-Drosselung ergänzt: öffentliche RPCs bleiben konservativ, Tatum läuft mit kürzerem Delay
+  - Adaptive RPC-Drosselung ergänzt: Delay sinkt nach stabilen Erfolgsserien und steigt sofort bei `429`/`403`/temporären RPC-Fehlern
+  - Admin-UI zeigt Solana-Backfill-Service, Start/Stop/Restart, Log-Auszug und Rate-Control-Kennzahlen
+- Dashboard-Jahresanalyse ergänzt:
+  - `/api/v1/dashboard/overview` liefert `yearly_asset_activity` mit Events, Mengen rein/raus/netto, bewertetem Bewegungsvolumen, Trading/Swap-Volumen und unbewerteten Events
+  - Performance-Tab zeigt Jahreschart mit Skalierung `Bewegungsvolumen EUR/USD`, `Trading/Swap-Volumen EUR/USD`, `Menge normalisiert (log10)` oder `Transaktionen`
+  - Jahres-Tabelle hilft bei großen Mengenunterschieden wie IOT/MOBILE vs. SOL/HNT, ohne die Y-Achse unlesbar zu machen
+  - Klarstellung: Die Jahresanalyse ist keine Portfolio-Wertentwicklung; echte Wertentwicklung basiert auf Snapshots bzw. historischem Price-Backfill
+- Historischer Crypto-Preis-Backfill vorbereitet:
+  - `configs/crypto_price_sources.example.json` mappt SOL/HNT/IOT/MOBILE/JUP auf CoinGecko-IDs und lokale Cache-Keys
+  - `scripts/crypto_price_backfill_usd.py` füllt historische `ASSET/USD`-Preise in `fx_cache`
+  - Dashboard-Jahreswerte nutzen lokale `fx_cache`-Preise, sobald diese vorhanden sind
+  - CoinGecko API-Key kann im Admin-Bereich verschlüsselt als `secret.coingecko.api_key` gespeichert werden
+- Admin-Konfigurationsbereich ergänzt:
+  - neue API-Endpunkte: `GET /api/v1/admin/settings`, `POST /api/v1/admin/settings`, `GET /api/v1/admin/runtime-config`
+  - neue Dashboard-Seite mit Untermenüs für Runtime, Credentials, Security und Raw Settings
+  - sichere Secret-Speicherung via AES-256-GCM (`secret.*`/`credential.*`)
+  - persistente Settings-Tabelle in SQLite (`settings`)
+- Portfolio-/Frontend-Ausbau:
+  - neue Dashboard-API `GET /api/v1/dashboard/overview` inkl. Rollen-Erkennung (auto/private/business)
+  - neuer Override-Endpunkt `POST /api/v1/dashboard/role-override`
+  - neues Solana-Live-Balance-API `POST /api/v1/connectors/solana/balance-snapshot`
+  - Frontend um sichtbare Portfolio-Historie, Event-Bestände und Live-Wallet-Balances erweitert
+  - Dashboard um Jahresverteilung (`activity_years`) und `suggested_tax_year` erweitert
+  - UI setzt Steuerjahr automatisch auf das zuletzt erkannte Importjahr (falls noch Standardwert aktiv)
+  - Live-Balance-Summary mit geschätztem USD-Gesamtwert ergänzt
+- Solana-Balance-Preisanreicherung ergänzt:
+  - optionales Preis-Mapping im Balance-Snapshot (`include_prices`)
+  - primär via Jupiter Price API, mit CoinGecko-Fallback für SOL bei DNS/RPC-Einschränkungen
+- Process-UX-Hinweis ergänzt:
+  - `POST /api/v1/process/run` liefert Warnung `tax_year_no_events`, wenn im gewählten Steuerjahr keine Events vorhanden sind.
+- Audit-Drilldown ergänzt:
+  - neuer Endpoint `GET /api/v1/audit/tax-line/{job_id}/{line_no}`
+  - Tax-Table im UI hat pro Zeile einen `Trace`-Button mit Detailausgabe (`taxAuditOut`)
+  - Audit enthält Tax-Line, zugehöriges Raw-Event und Berechnungs-Trace.
+- Virtuelle Wallet-Gruppen ergänzt:
+  - neue Endpunkte `GET /api/v1/wallet-groups`, `POST /api/v1/wallet-groups/upsert`, `POST /api/v1/wallet-groups/delete`
+  - neue Gruppen-Connector-Endpunkte `POST /api/v1/connectors/solana/group-balance-snapshot` und `POST /api/v1/connectors/solana/group-import-confirm`
+  - Frontend-Schritt „Wallet Gruppen“ für Speichern/Löschen/Balance/Import
+- UX-Refresh:
+  - visuelle Überarbeitung von Header, Step-Navigation, Cards, Tabellen und Metric-Kacheln
+  - Dashboard zeigt Wallet-Gruppen zusätzlich im Review-Bereich.
+- Stabilitätsfix:
+  - Test-DB von Produktiv-DB getrennt (`/tmp/steuerreport/steuerreport_test.db`), damit Tests keine Live-Daten löschen.
+- Roadmap-Ausführung eingeebnet:
+  - Neue Umsetzungsdatei `docs/18_ROADMAP_EXECUTION_PLAN.md` mit Sprintplanung, Sequenzierung, Abnahmekriterien und Risikoliste ergänzt.
+  - Dossier-Index um `18_ROADMAP_EXECUTION_PLAN.md` erweitert.
+- Safety-Härtung für Datenbank und Tests:
+  - Standard-DB von `/tmp/steuerreport/steuerreport.db` nach `~/.local/share/steuerreport/steuerreport.db` verlegt.
+  - `reset_for_tests()` blockiert jetzt hart außerhalb von `STEUERREPORT_ENV=testing`.
+  - Tests setzen explizit `STEUERREPORT_ENV=testing` und `STEUERREPORT_DB_PATH=/tmp/steuerreport/steuerreport_test.db`.
+  - API-Tests ohne `TestClient`-Deadlock stabilisiert, indem TestClient-Nutzung in Connector-Tests durch direkte Endpoint-Aufrufe ersetzt wurde.
+  - Dependency-Grenzen für FastAPI/Starlette/HTTPX enger gepinnt, damit zukünftige Major-/Pre-Release-Kombinationen die Testumgebung nicht unkontrolliert verändern.
+- Ruleset-Jahresmapping korrigiert:
+  - Default-Registry deckt jetzt `DE-2020-v1.0` bis `DE-2026-v1.0` ab.
+  - UI-nahe Eingaben wie `ruleset_id=DE` und `ruleset_version=2025-v1` werden auf das konkrete Jahres-Ruleset normalisiert.
+  - Fehlende Folgejahre erhalten einen dokumentierten Nearest-Fallback statt eines harten `Unknown ruleset`.
+  - Ein echter Processing-Lauf für 2025 mit reimportierten Daten wurde erfolgreich abgeschlossen (`1417` Tax Lines).
 
 ### Changed
 - Doku-Referenzen auf `docs/`-Pfadstruktur umgestellt.

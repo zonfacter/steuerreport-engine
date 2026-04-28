@@ -16,6 +16,83 @@ from .parser import (
 from .store import STORE
 
 
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _normalize_timestamp(value: Any) -> str:
+    raw = _clean_text(value)
+    if not raw:
+        return ""
+    parsed, _ = parse_datetime_value(raw)
+    return parsed or raw
+
+
+def _normalize_decimal(value: Any) -> str:
+    raw = _clean_text(value)
+    if not raw:
+        return ""
+    parsed, parse_error = parse_decimal_value(raw)
+    if parse_error or parsed is None:
+        return raw
+    return parsed.to_eng_string()
+
+
+def _extract_first(row: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip() != "":
+            return value
+    return None
+
+
+def _build_event_identity(row: dict[str, Any]) -> dict[str, str]:
+    # Deutsche Kommentare: Identity-Keys müssen dateiübergreifend stabil sein, damit Duplikate
+    # aus überlappenden CSV/API-Imports nicht erneut persistiert werden.
+    raw_row = row.get("raw_row")
+    raw_map = raw_row if isinstance(raw_row, dict) else {}
+
+    merged: dict[str, Any] = {}
+    merged.update(raw_map)
+    merged.update(row)
+
+    connector_event_id = _extract_first(
+        merged,
+        (
+            "tx_id",
+            "transaction_id",
+            "transactionId",
+            "tranId",
+            "id",
+            "order_id",
+            "orderId",
+            "trade_id",
+            "tradeId",
+            "signature",
+            "hash",
+        ),
+    )
+
+    identity = {
+        "identity_version": "v2",
+        "source": _clean_text(_extract_first(merged, ("source", "connector_id", "exchange", "platform"))).lower(),
+        "event_id": _clean_text(connector_event_id),
+        "timestamp_utc": _normalize_timestamp(_extract_first(merged, ("timestamp_utc", "timestamp", "time", "date"))),
+        "event_type": _clean_text(_extract_first(merged, ("event_type", "type", "operation"))).lower(),
+        "side": _clean_text(_extract_first(merged, ("side", "direction"))).lower(),
+        "asset": _clean_text(_extract_first(merged, ("asset", "coin", "currency", "symbol"))).upper(),
+        "quantity": _normalize_decimal(_extract_first(merged, ("quantity", "amount", "qty", "size"))),
+        "price": _normalize_decimal(_extract_first(merged, ("price", "rate", "execution_price"))),
+        "fee": _normalize_decimal(_extract_first(merged, ("fee", "commission", "transaction_fee"))),
+        "fee_asset": _clean_text(_extract_first(merged, ("fee_asset", "fee coin", "commissionAsset", "fee_currency"))).upper(),
+        "wallet_address": _clean_text(_extract_first(merged, ("wallet_address", "address", "from_address", "to_address"))),
+        "network": _clean_text(_extract_first(merged, ("network", "chain", "blockchain"))).lower(),
+    }
+    return identity
+
+
 def detect_format(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     rows_list = list(rows)
     numeric_fields, datetime_fields = detect_fields(rows_list)
@@ -121,13 +198,7 @@ def confirm_import(source_name: str, rows: list[dict[str, Any]]) -> dict[str, An
     event_ids: list[str] = []
 
     for idx, row in enumerate(rows):
-        unique_event_id = event_fingerprint(
-            {
-                "source_file_id": source_file_id,
-                "row_index": idx,
-                "row_payload": row,
-            }
-        )
+        unique_event_id = event_fingerprint(_build_event_identity(row))
         event_ids.append(unique_event_id)
         inserted = STORE.insert_raw_event(
             unique_event_id=unique_event_id,

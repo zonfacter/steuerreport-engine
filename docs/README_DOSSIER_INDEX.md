@@ -19,6 +19,10 @@ Dieses Verzeichnis enthält die verbindliche Fach-, Architektur- und Qualitätsd
 - `13_MODULARE_STEUER_ENGINE.md`: Pluggable Ruleset-Architektur, Versionierung, RuleContext.
 - `14_INTEGRITAET_VERSIONIERUNGS_KEYS.md`: Chain-of-Trust, Fingerprints, Snapshot-Strategie.
 - `15_GITHUB_WORKFLOW_COMPLIANCE.md`: KI-4-Augen-Prinzip, CI-Gates, Branch-Protection, PR-Governance.
+- `16_SOLANA_RPC_PROVIDER_STRATEGIE.md`: RPC-Provider-Reihenfolge, Free-Tier-Betrieb, Retry-/Fallback-Regeln.
+- `17_UX_IMPORT_PROCESSING_MASTERPLAN.md`: Integrations-Hub, vereinfachter Nutzerfluss, Wizard-basiertes Steuer-Processing, Import-Feedback, Portfolio-Sets, Exportstrategie.
+- `18_ROADMAP_EXECUTION_PLAN.md`: Umsetzungsplan mit Sprints, Sequenzierung, Akzeptanzkriterien und Risiken.
+- `19_BMF_2025_STEUERREGELN_UND_PFLICHTEN.md`: Technische Umsetzung des BMF-Schreibens vom 06.03.2025, inkl. Ruleset-Freigrenzen, Wallet-FIFO, Bewertung, Dokumentationspflichten.
 
 ## Single Source of Truth (SSoT)
 Bei Überschneidungen gilt folgende Priorität (höchste Priorität zuerst):
@@ -27,16 +31,20 @@ Bei Überschneidungen gilt folgende Priorität (höchste Priorität zuerst):
 3. `05_API_ERWEITERUNG.md`
 4. `04_UI_ANFORDERUNGEN.md`
 5. `13_MODULARE_STEUER_ENGINE.md`
-6. `14_INTEGRITAET_VERSIONIERUNGS_KEYS.md`
-7. `15_GITHUB_WORKFLOW_COMPLIANCE.md`
-8. `10_INGESTION_SMART_CLEANING_MASTERPLAN.md`
-9. `11_IMPORT_PARSING_UMRECHNUNG.md`
-10. `12_LLM_ROLLENBESCHREIBUNG_ETAPPE1.md`
-11. `07_HELIUM_STEUERKONZEPT.md`
-12. `08_STEUERLOGIK_TRADEREPUBLIC_2026.md`
-13. `09_DEPOT_TRENNUNG_KONZEPT.md`
-14. `02_ARCHITEKTUR_VORSCHLAG.md`
-15. `06_WETTBEWERBS_FEATURES.md`
+6. `19_BMF_2025_STEUERREGELN_UND_PFLICHTEN.md`
+7. `14_INTEGRITAET_VERSIONIERUNGS_KEYS.md`
+8. `15_GITHUB_WORKFLOW_COMPLIANCE.md`
+9. `10_INGESTION_SMART_CLEANING_MASTERPLAN.md`
+10. `11_IMPORT_PARSING_UMRECHNUNG.md`
+11. `12_LLM_ROLLENBESCHREIBUNG_ETAPPE1.md`
+12. `07_HELIUM_STEUERKONZEPT.md`
+13. `08_STEUERLOGIK_TRADEREPUBLIC_2026.md`
+14. `09_DEPOT_TRENNUNG_KONZEPT.md`
+15. `02_ARCHITEKTUR_VORSCHLAG.md`
+16. `06_WETTBEWERBS_FEATURES.md`
+17. `16_SOLANA_RPC_PROVIDER_STRATEGIE.md`
+18. `17_UX_IMPORT_PROCESSING_MASTERPLAN.md`
+19. `18_ROADMAP_EXECUTION_PLAN.md`
 
 ## Verbindliche Leitplanken
 - Code in Englisch, Kommentare und Dokumentation in Deutsch.

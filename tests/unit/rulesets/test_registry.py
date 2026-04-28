@@ -15,6 +15,43 @@ def test_select_for_date_returns_de_2026_ruleset() -> None:
 
     assert ruleset.ruleset_id == "DE-2026-v1.0"
     assert ruleset.exemption_limit_so == Decimal("1000.00")
+    assert ruleset.other_services_exemption_limit == Decimal("256.00")
+
+
+def test_default_registry_covers_de_years_2020_to_2026() -> None:
+    registry = build_default_registry()
+
+    for year in range(2020, 2027):
+        ruleset = registry.select_for_date("DE", date(year, 12, 31))
+        assert ruleset.ruleset_id == f"DE-{year}-v1.0"
+        assert ruleset.ruleset_version == "1.0"
+
+
+def test_resolve_for_year_accepts_ui_style_de_version_alias() -> None:
+    registry = build_default_registry()
+
+    ruleset, warnings = registry.resolve_for_year(
+        tax_year=2026,
+        ruleset_id="DE",
+        ruleset_version="2026-v1",
+    )
+
+    assert ruleset.ruleset_id == "DE-2026-v1.0"
+    assert ruleset.ruleset_version == "1.0"
+    assert warnings == []
+
+
+def test_resolve_for_year_uses_nearest_fallback_for_missing_future_year() -> None:
+    registry = build_default_registry()
+
+    ruleset, warnings = registry.resolve_for_year(
+        tax_year=2027,
+        ruleset_id="DE",
+        ruleset_version=None,
+    )
+
+    assert ruleset.ruleset_id == "DE-2026-v1.0"
+    assert warnings[0]["code"] == "ruleset_nearest_fallback"
 
 
 def test_select_for_date_raises_on_missing_ruleset() -> None:
@@ -52,4 +89,3 @@ def test_de_strategy_marks_short_holding_period_as_taxable() -> None:
     )
 
     assert status == TaxStatus.TAXABLE
-

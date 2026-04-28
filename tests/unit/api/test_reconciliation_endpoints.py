@@ -3,6 +3,7 @@ from __future__ import annotations
 from tax_engine.api.app import (
     import_confirm,
     reconcile_auto_match,
+    reconcile_ledger,
     reconcile_manual,
     review_unmatched,
 )
@@ -88,3 +89,37 @@ def test_reconcile_manual_creates_match() -> None:
     assert result.status == "success"
     assert result.data["ok"] is True
 
+
+def test_reconcile_ledger_contains_from_to_trace() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="trace.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "SOL",
+                    "event_type": "withdrawal",
+                    "amount": "10.0",
+                    "wallet_address": "binance-wallet",
+                },
+                {
+                    "timestamp": "2026-01-01T12:02:00Z",
+                    "asset": "SOL",
+                    "event_type": "deposit",
+                    "amount": "9.99",
+                    "wallet_address": "phantom-wallet",
+                },
+            ],
+        )
+    )
+    reconcile_auto_match(AutoMatchRequest())
+    ledger = reconcile_ledger(limit=50, offset=0)
+
+    assert ledger.status == "success"
+    rows = ledger.data.get("rows", [])
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.get("status") == "matched"
+    assert row.get("from_wallet") == "binance-wallet"
+    assert row.get("to_wallet") == "phantom-wallet"

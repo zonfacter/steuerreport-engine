@@ -13,10 +13,11 @@ typecheck:
 	mypy src/ --cache-dir=/tmp/steuerreport_mypy_cache
 
 test:
-	pytest -p no:cacheprovider
+	STEUERREPORT_ENV=testing STEUERREPORT_DB_PATH=/tmp/steuerreport/steuerreport_test.db pytest -p no:cacheprovider
 
 test-cov:
-	pytest -p no:cacheprovider --cov=src/tax_engine --cov-report=term-missing
+	rm -f .coverage .coverage.* 2>/dev/null || true
+	STEUERREPORT_ENV=testing STEUERREPORT_DB_PATH=/tmp/steuerreport/steuerreport_test.db COVERAGE_FILE=/tmp/steuerreport-coverage python3 -m pytest -p no:cacheprovider --cov=src/tax_engine --cov-report=term-missing
 
 audit:
 	pip-audit

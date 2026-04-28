@@ -1,0 +1,61 @@
+{
+  "profile_name": "solana-mainnet-free-tier",
+  "updated_at": "2026-04-18T00:00:00Z",
+  "endpoints": [
+    {
+      "name": "helius_primary",
+      "url": "https://mainnet.helius-rpc.com/?api-key=REPLACE_ME",
+      "priority": 1,
+      "kind": "provider_key"
+    },
+    {
+      "name": "solana_mainnet_beta_public",
+      "url": "https://api.mainnet-beta.solana.com",
+      "priority": 2,
+      "kind": "public"
+    },
+    {
+      "name": "solana_mainnet_public_alt",
+      "url": "https://api.mainnet.solana.com",
+      "priority": 3,
+      "kind": "public"
+    },
+    {
+      "name": "publicnode",
+      "url": "https://solana-rpc.publicnode.com",
+      "priority": 4,
+      "kind": "public"
+    },
+    {
+      "name": "publicnode_alt",
+      "url": "https://solana.publicnode.dev",
+      "priority": 5,
+      "kind": "public"
+    },
+    {
+      "name": "pocket_public",
+      "url": "https://solana.api.pocket.network",
+      "priority": 6,
+      "kind": "public"
+    },
+    {
+      "name": "subquery_public",
+      "url": "https://solana.rpc.subquery.network/public",
+      "priority": 7,
+      "kind": "public"
+    }
+  ],
+  "retry_policy": {
+    "retry_http_status": [
+      403,
+      429
+    ],
+    "retry_rpc_codes": [
+      -32005,
+      -32004,
+      -32603
+    ],
+    "backoff_ms": 50
+  },
+  "privacy_note": "Public Endpunkte sehen Quell-IP und Anfrageverhalten. Für produktive Nutzung Key-RPC bevorzugen."
+}

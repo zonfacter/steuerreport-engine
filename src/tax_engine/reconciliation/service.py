@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -91,3 +92,151 @@ def manual_match(outbound_event_id: str, inbound_event_id: str, note: str | None
     )
     return {"ok": True, "match_id": match_id}
 
+
+def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    raw_events = STORE.list_raw_events()
+    transfer_events = extract_transfer_events(raw_events)
+    matches = STORE.list_transfer_matches()
+    match_by_outbound = {str(item["outbound_event_id"]): item for item in matches}
+    inbound_matched_ids = {str(item["inbound_event_id"]) for item in matches}
+
+    transfer_ids = [str(item.unique_event_id) for item in transfer_events]
+    detail_by_id = _load_event_details(transfer_ids)
+
+    rows: list[dict[str, Any]] = []
+    for event in transfer_events:
+        event_id = str(event.unique_event_id)
+        detail = detail_by_id.get(event_id, {})
+        payload = detail.get("payload", {}) if isinstance(detail.get("payload"), dict) else {}
+        source_name = str(detail.get("source_name") or payload.get("source") or "")
+        side = str(payload.get("side") or event.direction).lower()
+        tx_id = str(payload.get("tx_id") or "")
+        wallet = _extract_wallet(payload)
+        counterparty = _extract_counterparty(payload, side)
+        from_depot = _extract_depot_id(source_name=source_name, wallet=wallet)
+
+        # Outbound: versuche Gegenbuchung und Zielauflösung.
+        if event.direction == "out":
+            match = match_by_outbound.get(event_id)
+            inbound = detail_by_id.get(str(match["inbound_event_id"]), {}) if match else {}
+            inbound_payload = inbound.get("payload", {}) if isinstance(inbound.get("payload"), dict) else {}
+            to_platform = str(inbound.get("source_name") or inbound_payload.get("source") or "")
+            to_wallet = _extract_wallet(inbound_payload)
+            to_counterparty = _extract_counterparty(inbound_payload, "in")
+            to_depot = _extract_depot_id(source_name=to_platform, wallet=to_wallet)
+            rows.append(
+                {
+                    "event_id": event_id,
+                    "timestamp_utc": _normalize_timestamp(event.timestamp),
+                    "asset": event.asset,
+                    "quantity": event.amount.to_eng_string(),
+                    "direction": "out",
+                    "status": "matched" if match else "unmatched_outbound",
+                    "from_platform": source_name,
+                    "from_wallet": wallet,
+                    "from_counterparty": counterparty,
+                    "from_depot_id": from_depot,
+                    "to_platform": to_platform,
+                    "to_wallet": to_wallet,
+                    "to_counterparty": to_counterparty,
+                    "to_depot_id": to_depot,
+                    "tx_id": tx_id,
+                    "match_id": str(match["match_id"]) if match else "",
+                    "method": str(match["method"]) if match else "",
+                    "confidence_score": str(match["confidence_score"]) if match else "",
+                    "time_diff_seconds": int(match["time_diff_seconds"]) if match else None,
+                    "amount_diff": str(match["amount_diff"]) if match else "",
+                    "holding_period_continues": "true" if match else "unknown",
+                    "continuity_basis": "internal_transfer_matched" if match else "unmatched_transfer",
+                }
+            )
+            continue
+
+        # Inbound: nur anzeigen, wenn keine Outbound-Match-Zeile bereits die Verbindung trägt.
+        if event_id in inbound_matched_ids:
+            continue
+        rows.append(
+            {
+                "event_id": event_id,
+                "timestamp_utc": _normalize_timestamp(event.timestamp),
+                "asset": event.asset,
+                "quantity": event.amount.to_eng_string(),
+                "direction": "in",
+                "status": "unmatched_inbound",
+                "from_platform": "",
+                "from_wallet": "",
+                "from_counterparty": _extract_counterparty(payload, "in"),
+                "from_depot_id": "",
+                "to_platform": source_name,
+                "to_wallet": wallet,
+                "to_counterparty": "",
+                "to_depot_id": from_depot,
+                "tx_id": tx_id,
+                "match_id": "",
+                "method": "",
+                "confidence_score": "",
+                "time_diff_seconds": None,
+                "amount_diff": "",
+                "holding_period_continues": "unknown",
+                "continuity_basis": "unmatched_transfer",
+            }
+        )
+
+    rows.sort(key=lambda item: str(item.get("timestamp_utc", "")), reverse=True)
+    total_count = len(rows)
+    start = max(offset, 0)
+    end = start + max(limit, 1)
+    page = rows[start:end]
+    return {
+        "total_count": total_count,
+        "offset": start,
+        "limit": max(limit, 1),
+        "rows": page,
+    }
+
+
+def _load_event_details(event_ids: list[str]) -> dict[str, dict[str, Any]]:
+    details: dict[str, dict[str, Any]] = {}
+    for event_id in event_ids:
+        data = STORE.get_raw_event(event_id)
+        if data is not None:
+            details[event_id] = data
+    return details
+
+
+def _normalize_timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
+
+
+def _extract_wallet(payload: dict[str, Any]) -> str:
+    for key in ("wallet_address", "wallet", "address", "owner"):
+        raw = payload.get(key)
+        if raw:
+            return str(raw)
+    return ""
+
+
+def _extract_counterparty(payload: dict[str, Any], direction: str) -> str:
+    if direction == "out":
+        for key in ("to_address", "to_wallet", "destination", "target_address"):
+            raw = payload.get(key)
+            if raw:
+                return str(raw)
+    else:
+        for key in ("from_address", "from_wallet", "source_address", "sender"):
+            raw = payload.get(key)
+            if raw:
+                return str(raw)
+    return ""
+
+
+def _extract_depot_id(source_name: str, wallet: str) -> str:
+    source = str(source_name or "").strip().lower()
+    w = str(wallet or "").strip()
+    if w:
+        return f"{source}:{w}"
+    if source:
+        return source
+    return "unknown"

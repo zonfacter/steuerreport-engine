@@ -85,3 +85,75 @@ def test_fifo_flags_short_sell_and_creates_fallback_tax_line() -> None:
     assert tax_lines[0]["cost_basis_eur"] == "0"
     assert tax_lines[0]["proceeds_eur"] == "100"
 
+
+def test_solana_swap_transfers_are_classified_as_spot() -> None:
+    raw_events = [
+        {
+            "unique_event_id": "swap-out-1",
+            "payload": {
+                "timestamp_utc": "2026-02-01T00:00:00+00:00",
+                "asset": "SOL",
+                "event_type": "token_transfer",
+                "defi_label": "swap",
+                "side": "out",
+                "quantity": "1",
+                "price_eur": "120",
+            },
+        },
+        {
+            "unique_event_id": "swap-in-1",
+            "payload": {
+                "timestamp_utc": "2026-01-01T00:00:00+00:00",
+                "asset": "SOL",
+                "event_type": "token_transfer",
+                "defi_label": "swap",
+                "side": "in",
+                "quantity": "2",
+                "price_eur": "100",
+            },
+        },
+    ]
+
+    result = process_events_for_year(raw_events=raw_events, tax_year=2026)
+
+    assert result["class_counts"]["spot"] == 2
+    assert result["processed_events"] == 2
+    assert result["tax_line_count"] == 1
+    assert result["tax_lines"][0]["asset"] == "SOL"
+
+
+def test_stable_asset_events_convert_usd_to_eur_without_explicit_price_eur() -> None:
+    raw_events = [
+        {
+            "unique_event_id": "usdt-buy",
+            "payload": {
+                "timestamp_utc": "2026-01-10T12:00:00Z",
+                "asset": "USDT",
+                "side": "buy",
+                "amount": "558.64384",
+                "fx_rate_usd_eur": "0.90",
+                "fee_eur": "0",
+            },
+        },
+        {
+            "unique_event_id": "usdt-sell",
+            "payload": {
+                "timestamp": "2026-06-10T12:00:00+00:00",
+                "asset": "USDT",
+                "side": "sell",
+                "amount": "200",
+                "fx_rate_usd_eur": "0.95",
+                "fee_eur": "0",
+            },
+        },
+    ]
+
+    result = process_events_for_year(raw_events=raw_events, tax_year=2026)
+    tax_lines = result["tax_lines"]
+
+    assert result["tax_line_count"] == 1
+    assert result["tax_lines"][0]["asset"] == "USDT"
+    assert tax_lines[0]["qty"] == "200"
+    assert tax_lines[0]["cost_basis_eur"] == "180.00"
+    assert tax_lines[0]["proceeds_eur"] == "190.00"
+    assert tax_lines[0]["gain_loss_eur"] == "10.00"

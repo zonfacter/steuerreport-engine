@@ -13,6 +13,8 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       CORE_COVERAGE_MIN: "50"
+      STEUERREPORT_ENV: "testing"
+      STEUERREPORT_DB_PATH: "/tmp/steuerreport/steuerreport_test.db"
     steps:
       - name: Checkout Code
         uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
@@ -30,7 +32,7 @@ jobs:
           elif [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-          pip install pip-audit ruff mypy pytest pytest-cov
+          pip install pip-audit ruff mypy
 
       - name: Dependency Audit
         run: |

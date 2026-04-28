@@ -1,23 +1,94 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from tax_engine.admin.service import resolve_effective_runtime_config
 from tax_engine.core.derivatives import process_derivatives_for_year
 from tax_engine.core.processor import process_events_for_year
+from tax_engine.core.tax_domains import build_tax_domain_summary
+from tax_engine.fx import FallbackFxResolver
 from tax_engine.ingestion.store import STORE
-from tax_engine.integrity import config_fingerprint
+from tax_engine.integrity import (
+    config_fingerprint,
+    data_fingerprint,
+    report_integrity_id,
+    ruleset_fingerprint,
+)
+from tax_engine.rulesets import build_default_registry
 
 from .models import ProcessRunRequest
 
 
+def _load_tax_event_overrides() -> dict[str, dict[str, str]]:
+    row = STORE.get_setting("runtime.tax_event_overrides")
+    if row is None:
+        return {}
+    try:
+        raw = json.loads(str(row.get("value_json", "{}")))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, dict[str, str]] = {}
+    for event_id_raw, payload in raw.items():
+        event_id = str(event_id_raw).strip()
+        if not event_id or not isinstance(payload, dict):
+            continue
+        category = str(payload.get("tax_category", "")).strip().upper()
+        if category not in {"PRIVATE_SO", "BUSINESS"}:
+            continue
+        result[event_id] = {
+            "tax_category": category,
+            "note": str(payload.get("note", "")).strip(),
+            "updated_at_utc": str(payload.get("updated_at_utc", "")).strip(),
+        }
+    return result
+
+
+def _apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    overrides = _load_tax_event_overrides()
+    if not overrides:
+        return raw_events, 0
+    transformed: list[dict[str, Any]] = []
+    applied = 0
+    for event in raw_events:
+        event_id = str(event.get("unique_event_id", "")).strip()
+        override = overrides.get(event_id)
+        if override is None:
+            transformed.append(event)
+            continue
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        payload_copy = dict(payload)
+        category = override["tax_category"]
+        payload_copy["tax_category"] = "BUSINESS" if category == "BUSINESS" else "INCOME_SO"
+        payload_copy["tax_override_note"] = override.get("note", "")
+        payload_copy["tax_override_updated_at_utc"] = override.get("updated_at_utc") or datetime.now(UTC).isoformat()
+        event_copy = dict(event)
+        event_copy["payload"] = payload_copy
+        transformed.append(event_copy)
+        applied += 1
+    return transformed, applied
+
+
 def create_processing_job(payload: ProcessRunRequest) -> dict[str, Any]:
+    registry = build_default_registry()
+    ruleset, _warnings = registry.resolve_for_year(
+        tax_year=payload.tax_year,
+        ruleset_id=payload.ruleset_id,
+        ruleset_version=payload.ruleset_version,
+    )
     job_id = str(uuid4())
     cfg_hash = config_fingerprint(
         {
             "tax_year": payload.tax_year,
-            "ruleset_id": payload.ruleset_id,
+            "ruleset_id": ruleset.ruleset_id,
+            "ruleset_version": ruleset.ruleset_version,
             "dry_run": payload.dry_run,
             "config": payload.config,
         }
@@ -25,7 +96,8 @@ def create_processing_job(payload: ProcessRunRequest) -> dict[str, Any]:
     STORE.create_processing_job(
         job_id=job_id,
         tax_year=payload.tax_year,
-        ruleset_id=payload.ruleset_id,
+        ruleset_id=ruleset.ruleset_id,
+        ruleset_version=ruleset.ruleset_version,
         config_hash=cfg_hash,
         status="queued",
         progress=0,
@@ -54,6 +126,17 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             current_step="load_events",
         )
         raw_events = STORE.list_raw_events()
+        effective_events, override_count = _apply_tax_event_overrides(raw_events)
+        fx_config = resolve_effective_runtime_config()
+        runtime_fx = fx_config.get("runtime", {}).get("fx", {})
+        fallback_rate = runtime_fx.get("usd_to_eur", 1.0)
+        fx_resolver = FallbackFxResolver(fallback_rate=fallback_rate)
+        effective_events, fx_summary = fx_resolver.enrich_events_with_fx(effective_events)
+        STORE.upsert_setting(
+            setting_key="runtime.fx.unresolved_events",
+            value_json=json.dumps(fx_summary.get("unresolved_events", []), separators=(",", ":")),
+            is_secret=False,
+        )
 
         STORE.update_processing_job_state(
             job_id=job_id,
@@ -61,10 +144,50 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             progress=70,
             current_step="core_processing",
         )
-        processing_result = process_events_for_year(raw_events=raw_events, tax_year=claimed["tax_year"])
+        ruleset_id = str(claimed["ruleset_id"])
+        ruleset_version = claimed.get("ruleset_version")
+        if ruleset_version is not None and not str(ruleset_version).strip():
+            ruleset_version = None
+
+        processing_result = process_events_for_year(
+            raw_events=effective_events,
+            tax_year=claimed["tax_year"],
+            ruleset_id=ruleset_id,
+            ruleset_version=ruleset_version,
+        )
         tax_lines = processing_result.pop("tax_lines")
-        derivative_result = process_derivatives_for_year(raw_events=raw_events, tax_year=claimed["tax_year"])
+        derivative_result = process_derivatives_for_year(raw_events=effective_events, tax_year=claimed["tax_year"])
         derivative_lines = derivative_result.pop("lines")
+        tax_domain_summary = build_tax_domain_summary(
+            raw_events=effective_events,
+            tax_lines=tax_lines,
+            derivative_lines=derivative_lines,
+            tax_year=claimed["tax_year"],
+            ruleset_id=ruleset_id,
+        )
+
+        registry = build_default_registry()
+        ruleset = registry.get(ruleset_id, ruleset_version)
+        ruleset_hash = ruleset_fingerprint(ruleset)
+
+        event_ids = [event.get("unique_event_id", "") for event in effective_events]
+        data_hash = data_fingerprint([str(value) for value in event_ids])
+        integrity_id = report_integrity_id(
+            event_hashes=[str(event_id) for event_id in event_ids],
+            ruleset_hash=ruleset_hash,
+            config_hash=claimed["config_hash"],
+        )
+        STORE.insert_report_integrity(
+            job_id=job_id,
+            data_hash=data_hash,
+            ruleset_id=ruleset_id,
+            ruleset_version=ruleset.ruleset_version,
+            ruleset_hash=ruleset_hash,
+            config_hash=claimed["config_hash"],
+            report_integrity_id=integrity_id,
+            event_count=len(event_ids),
+            run_started_at_utc=claimed["created_at_utc"],
+        )
 
         if simulate_fail:
             raise RuntimeError("Simulated worker error")
@@ -72,6 +195,12 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         STORE.replace_tax_lines(job_id=job_id, tax_lines=tax_lines)
         STORE.replace_derivative_lines(job_id=job_id, derivative_lines=derivative_lines)
         processing_result["derivatives"] = derivative_result
+        processing_result["tax_domain_summary"] = tax_domain_summary
+        processing_result["tax_event_override_count"] = override_count
+        processing_result["fx_enrichment"] = fx_summary
+        processing_result["ruleset_id"] = ruleset_id
+        processing_result["ruleset_version"] = ruleset.ruleset_version
+        processing_result["report_integrity_id"] = integrity_id
 
         STORE.update_processing_job_state(
             job_id=job_id,

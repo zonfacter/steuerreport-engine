@@ -3,8 +3,16 @@ from .models import (
     CexImportConfirmRequest,
     CexTransactionsPreviewRequest,
     CexVerifyRequest,
+    DashboardRoleOverrideRequest,
+    SolanaBalanceSnapshotRequest,
+    SolanaFullHistoryImportRequest,
+    SolanaGroupBalanceSnapshotRequest,
+    SolanaGroupImportConfirmRequest,
     SolanaImportConfirmRequest,
+    SolanaRpcProbeRequest,
     SolanaWalletPreviewRequest,
+    WalletGroupDeleteRequest,
+    WalletGroupUpsertRequest,
 )
 from .service import (
     build_binance_signature,
@@ -15,16 +23,32 @@ from .service import (
     mask_api_key,
     verify_cex_credentials,
 )
-from .solana_service import fetch_solana_wallet_preview
+from .solana_service import (
+    fetch_solana_wallet_balances,
+    fetch_solana_wallet_full_history,
+    fetch_solana_wallet_preview,
+    probe_solana_rpc_endpoints,
+)
 
 __all__ = [
     "CexBalancesPreviewRequest",
     "CexImportConfirmRequest",
     "CexTransactionsPreviewRequest",
     "CexVerifyRequest",
+    "DashboardRoleOverrideRequest",
+    "WalletGroupUpsertRequest",
+    "WalletGroupDeleteRequest",
+    "SolanaGroupBalanceSnapshotRequest",
+    "SolanaGroupImportConfirmRequest",
     "SolanaImportConfirmRequest",
+    "SolanaFullHistoryImportRequest",
+    "SolanaBalanceSnapshotRequest",
+    "SolanaRpcProbeRequest",
     "SolanaWalletPreviewRequest",
+    "fetch_solana_wallet_balances",
     "fetch_solana_wallet_preview",
+    "fetch_solana_wallet_full_history",
+    "probe_solana_rpc_endpoints",
     "build_binance_signature",
     "build_bitget_signature",
     "build_coinbase_signature",

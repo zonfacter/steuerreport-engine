@@ -1,0 +1,35 @@
+{
+  "provider": "coingecko",
+  "assets": [
+    {
+      "symbol": "SOL",
+      "coingecko_id": "solana",
+      "store_keys": ["SOL", "So11111111111111111111111111111111111111112"],
+      "aliases": ["SOL", "So11111111111111111111111111111111111111112"]
+    },
+    {
+      "symbol": "HNT",
+      "coingecko_id": "helium",
+      "store_keys": ["HNT", "HNTYVP6YFM1HG25TN9WGLQM12B8TQMCKNKRDU1OXWUX"],
+      "aliases": ["HNT", "HNTYVP6YFM1HG25TN9WGLQM12B8TQMCKNKRDU1OXWUX"]
+    },
+    {
+      "symbol": "IOT",
+      "coingecko_id": "helium-iot",
+      "store_keys": ["IOT", "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS"],
+      "aliases": ["IOT", "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS"]
+    },
+    {
+      "symbol": "MOBILE",
+      "coingecko_id": "helium-mobile",
+      "store_keys": ["MOBILE"],
+      "aliases": ["MOBILE"]
+    },
+    {
+      "symbol": "JUP",
+      "coingecko_id": "jupiter-exchange-solana",
+      "store_keys": ["JUP", "JUPYIWRYJFSKUPIHA7HKER8VUTAEFOSYBKEDZNSDVCN"],
+      "aliases": ["JUP", "JUPYIWRYJFSKUPIHA7HKER8VUTAEFOSYBKEDZNSDVCN"]
+    }
+  ]
+}
