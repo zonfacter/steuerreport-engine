@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-from datetime import UTC, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -13,10 +11,6 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from tax_engine.admin import (
-    put_admin_setting,
-    resolve_effective_runtime_config,
-)
 from tax_engine.api.admin import (
     AdminServiceActionRequest,
     AdminSettingsPutRequest,
@@ -61,6 +55,51 @@ from tax_engine.api.connectors import (
 )
 from tax_engine.api.connectors import (
     router as connectors_router,
+)
+from tax_engine.api.dashboard import (
+    DashboardRoleOverrideRequest,
+    _accumulate_deduped_bucket_value,
+    _accumulate_yearly_deduped_value,
+    _accumulate_yearly_event_breakdown,
+    _accumulate_yearly_source_breakdown,
+    _build_portfolio_value_history,
+    _cached_asset_usd_price,
+    _cached_asset_usd_price_on_or_before,
+    _dashboard_economic_tx_key,
+    _dashboard_event_category,
+    _dashboard_event_quantity,
+    _decimal_to_plain,
+    _decorate_token_rows,
+    _deduped_bucket_totals,
+    _estimate_event_values,
+    _event_quote_asset,
+    _extract_year,
+    _first_positive_decimal,
+    _format_yearly_asset_activity,
+    _format_yearly_event_breakdown,
+    _format_yearly_source_breakdown,
+    _heliumgeek_display_quantity,
+    _is_dashboard_value_event,
+    _is_ignored_token,
+    _is_spam_candidate,
+    _is_trading_volume_event,
+    _load_dashboard_role_override,
+    _load_ignored_tokens,
+    _load_token_aliases,
+    _normalize_mint,
+    _parse_iso_timestamp,
+    _resolve_token_display,
+    _runtime_usd_to_eur_rate,
+    _safe_decimal,
+    _usd_to_eur_rate_for_date,
+    dashboard_overview,
+    dashboard_role_override,
+    dashboard_wallet_snapshots,
+    portfolio_integrations,
+    portfolio_lot_aging,
+)
+from tax_engine.api.dashboard import (
+    router as dashboard_router,
 )
 from tax_engine.api.imports import (
     BulkFolderImportRequest,
@@ -160,15 +199,6 @@ from tax_engine.api.wallet_groups import (
     append_wallet_snapshot as _append_wallet_snapshot,
 )
 from tax_engine.api.wallet_groups import (
-    decimal_to_plain as _decimal_to_plain,
-)
-from tax_engine.api.wallet_groups import (
-    filter_wallet_snapshots as _filter_wallet_snapshots,
-)
-from tax_engine.api.wallet_groups import (
-    load_wallet_groups as _load_wallet_groups,
-)
-from tax_engine.api.wallet_groups import (
     load_wallet_snapshots as _load_wallet_snapshots,
 )
 from tax_engine.api.wallet_groups import (
@@ -185,15 +215,6 @@ from tax_engine.api.wallet_groups import (
     wallet_groups_list,
     wallet_groups_upsert,
 )
-from tax_engine.connectors import (
-    DashboardRoleOverrideRequest,
-)
-from tax_engine.connectors.token_metadata import resolve_token_metadata
-from tax_engine.core.processor import build_open_lot_aging_snapshot
-from tax_engine.ingestion import (
-    write_audit,
-)
-from tax_engine.ingestion.store import STORE
 
 __all__ = [
     "AdminServiceActionRequest",
@@ -201,6 +222,7 @@ __all__ = [
     "BulkFolderImportRequest",
     "CexFullHistoryImportRequest",
     "CexCredentialsLoadRequest",
+    "DashboardRoleOverrideRequest",
     "IgnoredTokenDeleteRequest",
     "IgnoredTokenUpsertRequest",
     "IssueStatusUpdateRequest",
@@ -211,29 +233,60 @@ __all__ = [
     "TaxEventOverrideUpsertRequest",
     "TokenAliasDeleteRequest",
     "TokenAliasUpsertRequest",
+    "_accumulate_deduped_bucket_value",
+    "_accumulate_yearly_deduped_value",
+    "_accumulate_yearly_event_breakdown",
+    "_accumulate_yearly_source_breakdown",
     "_build_solana_backfill_status",
     "_append_wallet_snapshot",
     "_build_csv_from_rows",
     "_build_export_rows",
     "_build_import_job_rows",
     "_build_issue_inbox",
+    "_build_portfolio_value_history",
     "_build_pdf_from_rows",
     "_build_report_file_index",
+    "_cached_asset_usd_price",
+    "_cached_asset_usd_price_on_or_before",
+    "_dashboard_economic_tx_key",
+    "_dashboard_event_category",
+    "_dashboard_event_quantity",
     "_detect_connector_from_filename",
     "_detect_connector_from_source_name",
     "_decimal_to_plain",
-    "_filter_wallet_snapshots",
+    "_decorate_token_rows",
+    "_deduped_bucket_totals",
+    "_estimate_event_values",
+    "_event_quote_asset",
+    "_extract_year",
+    "_first_positive_decimal",
     "_format_ruleset_row",
-    "_load_wallet_groups",
+    "_format_yearly_asset_activity",
+    "_format_yearly_event_breakdown",
+    "_format_yearly_source_breakdown",
+    "_heliumgeek_display_quantity",
+    "_is_dashboard_value_event",
+    "_is_ignored_token",
+    "_is_spam_candidate",
+    "_is_trading_volume_event",
+    "_load_dashboard_role_override",
+    "_load_ignored_tokens",
+    "_load_token_aliases",
     "_load_wallet_snapshots",
     "_load_issue_overrides",
     "_load_tax_event_overrides",
     "_load_unresolved_fx_issues",
+    "_normalize_mint",
     "_normalize_wallet_addresses",
+    "_parse_iso_timestamp",
     "_resolve_wallets_from_group",
+    "_resolve_token_display",
+    "_runtime_usd_to_eur_rate",
+    "_safe_decimal",
     "_run_systemctl",
     "_tail_file",
     "_to_iso_date",
+    "_usd_to_eur_rate_for_date",
     "admin_cex_credentials_load",
     "admin_ignored_tokens_delete",
     "admin_ignored_tokens_list",
@@ -261,6 +314,9 @@ __all__ = [
     "connectors_solana_rpc_probe",
     "connectors_solana_wallet_preview",
     "create_snapshot",
+    "dashboard_overview",
+    "dashboard_role_override",
+    "dashboard_wallet_snapshots",
     "get_snapshot",
     "import_bulk_folder",
     "import_confirm",
@@ -275,6 +331,8 @@ __all__ = [
     "integrity_report",
     "issues_inbox",
     "issues_update_status",
+    "portfolio_integrations",
+    "portfolio_lot_aging",
     "process_compare_rulesets",
     "process_compare_rulesets_post",
     "process_derivative_lines",
@@ -319,6 +377,7 @@ app = FastAPI(
 )
 app.include_router(admin_router)
 app.include_router(connectors_router)
+app.include_router(dashboard_router)
 app.include_router(imports_router)
 app.include_router(processing_router)
 app.include_router(review_router)
@@ -414,1138 +473,3 @@ def health() -> StandardResponse:
 @app.get("/app", include_in_schema=False)
 def web_app() -> FileResponse:
     return FileResponse(_UI_STATIC_DIR / "index.html")
-
-
-@app.post("/api/v1/dashboard/role-override", response_model=StandardResponse, tags=["dashboard"])
-def dashboard_role_override(payload: DashboardRoleOverrideRequest) -> StandardResponse:
-    trace_id = str(uuid4())
-    put_admin_setting("runtime.dashboard.role_override", payload.mode, is_secret=False)
-    write_audit(
-        trace_id=trace_id,
-        action="dashboard.role_override",
-        payload={"mode": payload.mode},
-    )
-    return StandardResponse(
-        trace_id=trace_id,
-        status="success",
-        data={"mode": payload.mode, "saved": True},
-        errors=[],
-        warnings=[],
-    )
-
-
-@app.get("/api/v1/dashboard/overview", response_model=StandardResponse, tags=["dashboard"])
-def dashboard_overview() -> StandardResponse:
-    trace_id = str(uuid4())
-    events = STORE.list_raw_events()
-
-    by_source: dict[str, int] = {}
-    by_event_type: dict[str, int] = {}
-    by_day: dict[str, int] = {}
-    by_year: dict[int, int] = {}
-    asset_balances: dict[str, Decimal] = {}
-    yearly_asset_buckets: dict[tuple[int, str, str], dict[str, Any]] = {}
-    yearly_deduped_values: dict[int, dict[str, Any]] = {}
-    yearly_event_buckets: dict[tuple[int, str], dict[str, Any]] = {}
-    yearly_source_buckets: dict[tuple[int, str], dict[str, Any]] = {}
-    runtime_fx = _runtime_usd_to_eur_rate()
-
-    reward_events = 0
-    mining_events = 0
-    ignored_tokens = _load_ignored_tokens()
-    ignored_mints = set(ignored_tokens.keys())
-    for row in events:
-        payload = row.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
-        source = str(payload.get("source") or "unknown")
-        event_type = str(payload.get("event_type") or "unknown")
-        by_source[source] = by_source.get(source, 0) + 1
-        by_event_type[event_type] = by_event_type.get(event_type, 0) + 1
-
-        ts_raw = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")
-        day = ts_raw[:10] if len(ts_raw) >= 10 else "unknown"
-        by_day[day] = by_day.get(day, 0) + 1
-        year = _extract_year(ts_raw)
-        if year is not None:
-            by_year[year] = by_year.get(year, 0) + 1
-
-        side = str(payload.get("side") or "").lower()
-        asset = str(payload.get("asset") or "").upper()
-        if _normalize_mint(asset) in ignored_mints:
-            continue
-        qty = _dashboard_event_quantity(payload)
-        if year is not None and asset:
-            value = _estimate_event_values(payload=payload, asset=asset, quantity=qty, runtime_fx=runtime_fx)
-            value_counts = _is_dashboard_value_event(payload)
-            _accumulate_yearly_event_breakdown(
-                yearly_event_buckets=yearly_event_buckets,
-                year=year,
-                payload=payload,
-                value=value,
-                value_counts=value_counts,
-            )
-            _accumulate_yearly_source_breakdown(
-                yearly_source_buckets=yearly_source_buckets,
-                year=year,
-                payload=payload,
-                value=value,
-                value_counts=value_counts,
-            )
-            source_key = source or "unknown"
-            bucket_key = (year, asset, source_key)
-            bucket = yearly_asset_buckets.setdefault(
-                bucket_key,
-                {
-                    "year": year,
-                    "asset": asset,
-                    "source": source_key,
-                    "events": 0,
-                    "quantity_in": Decimal("0"),
-                    "quantity_out": Decimal("0"),
-                    "quantity_net": Decimal("0"),
-                    "quantity_abs": Decimal("0"),
-                    "value_usd": Decimal("0"),
-                    "value_eur": Decimal("0"),
-                    "trading_value_usd": Decimal("0"),
-                    "trading_value_eur": Decimal("0"),
-                    "priced_events": 0,
-                    "unpriced_events": 0,
-                },
-            )
-            bucket["events"] += 1
-            bucket["quantity_abs"] += abs(qty)
-            if side == "in":
-                bucket["quantity_in"] += abs(qty)
-                bucket["quantity_net"] += abs(qty)
-            elif side == "out":
-                bucket["quantity_out"] += abs(qty)
-                bucket["quantity_net"] -= abs(qty)
-            else:
-                bucket["quantity_net"] += qty
-            if value_counts:
-                bucket["value_usd"] += value["usd_abs"]
-                bucket["value_eur"] += value["eur_abs"]
-                _accumulate_yearly_deduped_value(
-                    yearly_deduped_values=yearly_deduped_values,
-                    year=year,
-                    payload=payload,
-                    value=value,
-                    event_type=event_type,
-                )
-            if _is_trading_volume_event(event_type):
-                bucket["trading_value_usd"] += value["usd_abs"]
-                bucket["trading_value_eur"] += value["eur_abs"]
-            if value["priced"]:
-                bucket["priced_events"] += 1
-            else:
-                bucket["unpriced_events"] += 1
-        if asset and qty != Decimal("0"):
-            sign = Decimal("0")
-            if side == "in":
-                sign = Decimal("1")
-            elif side == "out":
-                sign = Decimal("-1")
-            asset_balances[asset] = asset_balances.get(asset, Decimal("0")) + (sign * qty)
-
-        lowered = event_type.lower()
-        if any(tag in lowered for tag in ("reward", "claim", "staking", "income")):
-            reward_events += 1
-        if "mining" in lowered:
-            mining_events += 1
-
-    sorted_days = sorted(by_day.items(), key=lambda item: item[0])
-    activity_history = [{"day": day, "count": count} for day, count in sorted_days if day != "unknown"]
-    activity_years = [
-        {"year": year, "count": count}
-        for year, count in sorted(by_year.items(), key=lambda item: item[0])
-    ]
-    yearly_asset_activity = _format_yearly_asset_activity(
-        yearly_asset_buckets,
-        yearly_deduped_values,
-        yearly_event_buckets,
-        yearly_source_buckets,
-    )
-    top_balances = sorted(asset_balances.items(), key=lambda item: abs(item[1]), reverse=True)[:20]
-    balances: list[dict[str, str]] = []
-    for asset, qty in top_balances:
-        meta = _resolve_token_display(asset)
-        spam_candidate = _is_spam_candidate(asset=asset, qty=qty, known=meta["is_known"])
-        balances.append(
-            {
-                "asset": asset,
-                "symbol": str(meta["symbol"]),
-                "name": str(meta["name"]),
-                "display_source": str(meta["display_source"]),
-                "quantity": _decimal_to_plain(qty),
-                "quantity_abs": _decimal_to_plain(abs(qty)),
-                "flow_direction": "net_in" if qty > 0 else ("net_out" if qty < 0 else "flat"),
-                "spam_candidate": "true" if spam_candidate else "false",
-            }
-        )
-
-    override_mode = _load_dashboard_role_override()
-    auto_business = (reward_events > 0 and len(events) >= 500) or mining_events > 0
-    detected_mode = "business" if auto_business else "private"
-    effective_mode = detected_mode if override_mode == "auto" else override_mode
-
-    role_detection = {
-        "is_commercial": effective_mode == "business",
-        "detected_mode": detected_mode,
-        "override_mode": override_mode,
-        "effective_mode": effective_mode,
-        "signals": {
-            "has_reward_events": reward_events > 0,
-            "reward_events": reward_events,
-            "mining_events": mining_events,
-            "high_activity": len(events) >= 500,
-            "event_count": len(events),
-        },
-    }
-
-    data = {
-        "summary": {
-            "total_events": len(events),
-            "unique_sources": len(by_source),
-            "unique_event_types": len(by_event_type),
-            "unique_assets": len({item["asset"] for item in balances}),
-            "suggested_tax_year": max(by_year.keys()) if by_year else None,
-        },
-        "role_detection": role_detection,
-        "by_source": by_source,
-        "by_event_type": by_event_type,
-        "activity_history": activity_history,
-        "activity_years": activity_years,
-        "portfolio_value_history": _build_portfolio_value_history(events, ignored_mints, runtime_fx),
-        "yearly_asset_activity": yearly_asset_activity,
-        "asset_balances": balances,
-        "wallet_groups": _load_wallet_groups(),
-    }
-    write_audit(
-        trace_id=trace_id,
-        action="dashboard.overview",
-        payload={
-            "total_events": len(events),
-            "effective_mode": effective_mode,
-        },
-    )
-    return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
-
-
-@app.get("/api/v1/portfolio/integrations", response_model=StandardResponse, tags=["dashboard"])
-def portfolio_integrations() -> StandardResponse:
-    trace_id = str(uuid4())
-    events = STORE.list_raw_events()
-    buckets: dict[str, dict[str, Any]] = {}
-    for row in events:
-        payload = row.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
-        source = str(payload.get("source") or payload.get("source_name") or "unknown").strip() or "unknown"
-        bucket = buckets.get(source)
-        if bucket is None:
-            bucket = {
-                "integration_id": source,
-                "event_count": 0,
-                "assets": set(),
-                "source_file_ids": set(),
-                "first_timestamp_utc": "",
-                "last_timestamp_utc": "",
-            }
-            buckets[source] = bucket
-
-        bucket["event_count"] += 1
-        asset = str(payload.get("asset") or "").strip().upper()
-        if asset:
-            bucket["assets"].add(asset)
-        source_file_id = str(row.get("source_file_id") or "").strip()
-        if source_file_id:
-            bucket["source_file_ids"].add(source_file_id)
-        ts = str(payload.get("timestamp_utc") or payload.get("timestamp") or "").strip()
-        if ts:
-            current_first = str(bucket.get("first_timestamp_utc") or "")
-            current_last = str(bucket.get("last_timestamp_utc") or "")
-            if not current_first or ts < current_first:
-                bucket["first_timestamp_utc"] = ts
-            if not current_last or ts > current_last:
-                bucket["last_timestamp_utc"] = ts
-
-    rows: list[dict[str, Any]] = []
-    for bucket in buckets.values():
-        rows.append(
-            {
-                "integration_id": str(bucket["integration_id"]),
-                "event_count": int(bucket["event_count"]),
-                "asset_count": len(bucket["assets"]),
-                "source_file_count": len(bucket["source_file_ids"]),
-                "assets_preview": sorted(list(bucket["assets"]))[:10],
-                "first_timestamp_utc": str(bucket["first_timestamp_utc"]),
-                "last_timestamp_utc": str(bucket["last_timestamp_utc"]),
-            }
-        )
-    rows.sort(key=lambda item: int(item.get("event_count", 0)), reverse=True)
-
-    write_audit(
-        trace_id=trace_id,
-        action="portfolio.integrations",
-        payload={"count": len(rows), "event_count_total": len(events)},
-    )
-    return StandardResponse(
-        trace_id=trace_id,
-        status="success",
-        data={"count": len(rows), "event_count_total": len(events), "rows": rows},
-        errors=[],
-        warnings=[],
-    )
-
-
-@app.get("/api/v1/dashboard/wallet-snapshots", response_model=StandardResponse, tags=["dashboard"])
-def dashboard_wallet_snapshots(
-    scope: str = "wallet",
-    entity_id: str = "",
-    window_days: int = 365,
-) -> StandardResponse:
-    trace_id = str(uuid4())
-    if scope not in {"wallet", "group"}:
-        return StandardResponse(
-            trace_id=trace_id,
-            status="error",
-            data={},
-            errors=[{"code": "invalid_scope", "message": "scope muss wallet oder group sein"}],
-            warnings=[],
-        )
-    points = _filter_wallet_snapshots(scope=scope, entity_id=entity_id.strip())
-    if window_days > 0:
-        cutoff = datetime.now(UTC) - timedelta(days=window_days)
-        filtered: list[dict[str, Any]] = []
-        for point in points:
-            ts = _parse_iso_timestamp(str(point.get("timestamp_utc", "")))
-            if ts is None or ts < cutoff:
-                continue
-            filtered.append(point)
-        points = filtered
-
-    perf_points: list[dict[str, str]] = []
-    start_value = Decimal("0")
-    end_value = Decimal("0")
-    if points:
-        start_value = _safe_decimal(points[0].get("total_estimated_usd", "0"))
-        end_value = _safe_decimal(points[-1].get("total_estimated_usd", "0"))
-        for point in points:
-            value = _safe_decimal(point.get("total_estimated_usd", "0"))
-            pnl_abs = value - start_value
-            pnl_pct = (pnl_abs / start_value * Decimal("100")) if start_value > 0 else Decimal("0")
-            perf_points.append(
-                {
-                    "timestamp_utc": str(point.get("timestamp_utc", "")),
-                    "value_usd": value.normalize().to_eng_string() if value != 0 else "0",
-                    "pnl_abs_usd": pnl_abs.normalize().to_eng_string() if pnl_abs != 0 else "0",
-                    "pnl_pct": pnl_pct.normalize().to_eng_string() if start_value > 0 else "",
-                }
-            )
-
-    pnl_abs_total = end_value - start_value
-    pnl_pct_total = (pnl_abs_total / start_value * Decimal("100")) if start_value > 0 else Decimal("0")
-    return StandardResponse(
-        trace_id=trace_id,
-        status="success",
-        data={
-            "scope": scope,
-            "entity_id": entity_id.strip(),
-            "window_days": window_days,
-            "count": len(points),
-            "points": points,
-            "performance_points": perf_points,
-            "summary": {
-                "start_value_usd": start_value.normalize().to_eng_string() if start_value != 0 else "0",
-                "end_value_usd": end_value.normalize().to_eng_string() if end_value != 0 else "0",
-                "pnl_abs_usd": pnl_abs_total.normalize().to_eng_string() if pnl_abs_total != 0 else "0",
-                "pnl_pct": pnl_pct_total.normalize().to_eng_string() if start_value > 0 else "",
-            },
-        },
-        errors=[],
-        warnings=[],
-    )
-
-
-@app.get("/api/v1/portfolio/lot-aging", response_model=StandardResponse, tags=["dashboard"])
-def portfolio_lot_aging(as_of_utc: str | None = None, asset: str | None = None) -> StandardResponse:
-    trace_id = str(uuid4())
-    as_of = _parse_iso_timestamp(as_of_utc or "") or datetime.now(UTC)
-    snapshot = build_open_lot_aging_snapshot(raw_events=STORE.list_raw_events(), as_of=as_of)
-    asset_filter = str(asset or "").strip().upper()
-    if asset_filter:
-        snapshot["assets"] = [item for item in snapshot.get("assets", []) if str(item.get("asset", "")).upper() == asset_filter]
-        snapshot["lot_rows"] = [item for item in snapshot.get("lot_rows", []) if str(item.get("asset", "")).upper() == asset_filter]
-        snapshot["asset_count"] = len(snapshot["assets"])
-        snapshot["lot_count"] = len(snapshot["lot_rows"])
-    write_audit(
-        trace_id=trace_id,
-        action="portfolio.lot_aging",
-        payload={"as_of_utc": as_of.isoformat(), "asset_filter": asset_filter, "lot_count": snapshot.get("lot_count", 0)},
-    )
-    return StandardResponse(trace_id=trace_id, status="success", data=snapshot, errors=[], warnings=[])
-
-
-def _safe_decimal(value: Any) -> Decimal:
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return Decimal("0")
-
-
-def _runtime_usd_to_eur_rate() -> Decimal:
-    runtime = resolve_effective_runtime_config()
-    raw_rate = runtime.get("runtime", {}).get("fx", {}).get("usd_to_eur")
-    rate = _safe_decimal(raw_rate)
-    return rate if rate > 0 else Decimal("1")
-
-
-def _estimate_event_values(payload: dict[str, Any], asset: str, quantity: Decimal, runtime_fx: Decimal) -> dict[str, Any]:
-    eur_direct = _first_positive_decimal(
-        payload,
-        (
-            "value_eur",
-            "amount_eur",
-            "income_eur",
-            "proceeds_eur",
-            "raw_value_eur",
-            "raw_amount_eur",
-            "raw_income_eur",
-            "raw_proceeds_eur",
-        ),
-    )
-    usd_direct = _first_positive_decimal(
-        payload,
-        (
-            "value_usd",
-            "amount_usd",
-            "income_usd",
-            "proceeds_usd",
-            "raw_value_usd",
-            "raw_amount_usd",
-            "raw_income_usd",
-            "raw_proceeds_usd",
-            "usd_amount",
-            "raw_usd_amount",
-        ),
-    )
-    price_eur = _first_positive_decimal(payload, ("price_eur", "execution_price_eur"))
-    price_usd = _first_positive_decimal(payload, ("price_usd", "usd_price", "execution_price_usd", "raw_usd_price"))
-    price = _safe_decimal(payload.get("price"))
-    quote_asset = _event_quote_asset(payload)
-    qty_abs = abs(quantity)
-    event_date = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")[:10]
-    fx_rate = _safe_decimal(payload.get("fx_rate_usd_eur"))
-    if fx_rate <= 0:
-        fx_rate = _usd_to_eur_rate_for_date(event_date, runtime_fx)
-
-    eur = eur_direct
-    usd = usd_direct
-    if eur <= 0 and price_eur > 0 and qty_abs > 0:
-        eur = price_eur * qty_abs
-    if usd <= 0 and price_usd > 0 and qty_abs > 0:
-        usd = price_usd * qty_abs
-    if usd <= 0 and asset in {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"}:
-        usd = qty_abs
-    if usd <= 0 and quote_asset in {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"} and price > 0 and qty_abs > 0:
-        usd = price * qty_abs
-    if usd <= 0 and qty_abs > 0:
-        cached = _cached_asset_usd_price(asset=asset, rate_date=event_date)
-        if cached > 0:
-            usd = cached * qty_abs
-    if eur <= 0 and usd > 0 and fx_rate > 0:
-        eur = usd * fx_rate
-    if usd <= 0 and eur > 0 and fx_rate > 0:
-        usd = eur / fx_rate
-
-    return {
-        "usd_abs": abs(usd),
-        "eur_abs": abs(eur),
-        "priced": usd > 0 or eur > 0,
-    }
-
-
-def _usd_to_eur_rate_for_date(rate_date: str, fallback_rate: Decimal) -> Decimal:
-    if len(rate_date) >= 10:
-        row = STORE.get_fx_rate_on_or_before(rate_date=rate_date[:10], base_ccy="USD", quote_ccy="EUR")
-        if row:
-            rate = _safe_decimal(row.get("rate"))
-            if rate > 0:
-                return rate
-    return fallback_rate if fallback_rate > 0 else Decimal("1")
-
-
-def _dashboard_event_quantity(payload: dict[str, Any]) -> Decimal:
-    normalized_helium_qty = _heliumgeek_display_quantity(payload)
-    if normalized_helium_qty > 0:
-        return normalized_helium_qty
-    return _safe_decimal(payload.get("quantity"))
-
-
-def _heliumgeek_display_quantity(payload: dict[str, Any]) -> Decimal:
-    if str(payload.get("source", "")).lower().strip() != "heliumgeek":
-        return Decimal("0")
-    asset = str(payload.get("asset") or "").upper().strip()
-    raw_row = payload.get("raw_row")
-    if not isinstance(raw_row, dict):
-        return Decimal("0")
-    token_fields = (
-        ("IOT Token", "IOT Tokens"),
-        ("MOBILE Token", "MOBILE Tokens"),
-    )
-    for token_field, amount_field in token_fields:
-        if str(raw_row.get(token_field, "")).upper().strip() == asset:
-            return abs(_safe_decimal(raw_row.get(amount_field)))
-    return Decimal("0")
-
-
-def _cached_asset_usd_price(asset: str, rate_date: str) -> Decimal:
-    if not asset or len(rate_date) < 10:
-        return Decimal("0")
-    candidates = [asset.upper()]
-    meta = _resolve_token_display(asset)
-    symbol = str(meta.get("symbol") or "").upper().strip()
-    if symbol and symbol not in candidates:
-        candidates.append(symbol)
-    for candidate in candidates:
-        row = STORE.get_fx_rate(rate_date=rate_date, base_ccy=candidate, quote_ccy="USD")
-        if row:
-            rate = _safe_decimal(row.get("rate"))
-            if rate > 0:
-                return rate
-    return Decimal("0")
-
-
-def _cached_asset_usd_price_on_or_before(asset: str, rate_date: str) -> Decimal:
-    if not asset or len(rate_date) < 10:
-        return Decimal("0")
-    normalized = asset.upper()
-    if normalized in {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"}:
-        return Decimal("1")
-    candidates = [normalized]
-    meta = _resolve_token_display(normalized)
-    symbol = str(meta.get("symbol") or "").upper().strip()
-    if symbol and symbol not in candidates:
-        candidates.append(symbol)
-    for candidate in candidates:
-        row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy=candidate, quote_ccy="USD")
-        if row:
-            rate = _safe_decimal(row.get("rate"))
-            if rate > 0:
-                return rate
-    return Decimal("0")
-
-
-def _build_portfolio_value_history(events: list[dict[str, Any]], ignored_mints: set[str], runtime_fx: Decimal) -> list[dict[str, Any]]:
-    timeline: list[tuple[str, dict[str, Any]]] = []
-    for row in events:
-        payload = row.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
-        ts_raw = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")
-        if len(ts_raw) < 10:
-            continue
-        asset = str(payload.get("asset") or "").upper().strip()
-        if not asset or _normalize_mint(asset) in ignored_mints:
-            continue
-        timeline.append((ts_raw, payload))
-    timeline.sort(key=lambda item: item[0])
-
-    month_end_days: dict[str, str] = {}
-    for ts_raw, _payload in timeline:
-        day = ts_raw[:10]
-        month_end_days[day[:7]] = day
-
-    points: list[dict[str, Any]] = []
-    running_balances: dict[str, Decimal] = {}
-    month_marks = set(month_end_days.values())
-    day_payloads: dict[str, list[dict[str, Any]]] = {}
-    for ts_raw, payload in timeline:
-        day_payloads.setdefault(ts_raw[:10], []).append(payload)
-
-    for day, payloads in sorted(day_payloads.items(), key=lambda item: item[0]):
-        for payload in payloads:
-            asset = str(payload.get("asset") or "").upper().strip()
-            qty = _dashboard_event_quantity(payload)
-            side = str(payload.get("side") or "").lower().strip()
-            if side == "in":
-                running_balances[asset] = running_balances.get(asset, Decimal("0")) + abs(qty)
-            elif side == "out":
-                running_balances[asset] = running_balances.get(asset, Decimal("0")) - abs(qty)
-            else:
-                running_balances[asset] = running_balances.get(asset, Decimal("0")) + qty
-        if day not in month_marks:
-            continue
-        value_usd = Decimal("0")
-        priced_assets = 0
-        unpriced_assets = 0
-        for balance_asset, balance_qty in running_balances.items():
-            if balance_qty == 0:
-                continue
-            price = _cached_asset_usd_price_on_or_before(balance_asset, day)
-            if price > 0:
-                value_usd += balance_qty * price
-                priced_assets += 1
-            else:
-                unpriced_assets += 1
-        fx_rate = _usd_to_eur_rate_for_date(day, runtime_fx)
-        value_eur = value_usd * fx_rate if fx_rate > 0 else value_usd
-        points.append(
-            {
-                "date": day,
-                "year": int(day[:4]),
-                "value_usd": _decimal_to_plain(value_usd),
-                "value_eur": _decimal_to_plain(value_eur),
-                "priced_assets": priced_assets,
-                "unpriced_assets": unpriced_assets,
-            }
-        )
-        month_marks.remove(day)
-    return points
-
-
-def _first_positive_decimal(payload: dict[str, Any], keys: tuple[str, ...]) -> Decimal:
-    lookup = {str(key).lower(): value for key, value in payload.items()}
-    raw_row = payload.get("raw_row")
-    if isinstance(raw_row, dict):
-        lookup.update({str(key).lower().replace(" ", "_"): value for key, value in raw_row.items()})
-        lookup.update({str(key).lower(): value for key, value in raw_row.items()})
-    for key in keys:
-        value = lookup.get(key.lower())
-        parsed = _safe_decimal(value)
-        if parsed > 0:
-            return parsed
-    return Decimal("0")
-
-
-def _event_quote_asset(payload: dict[str, Any]) -> str:
-    lookup = {str(key).lower(): value for key, value in payload.items()}
-    raw_row = payload.get("raw_row")
-    if isinstance(raw_row, dict):
-        lookup.update({str(key).lower().replace(" ", "_"): value for key, value in raw_row.items()})
-        lookup.update({str(key).lower(): value for key, value in raw_row.items()})
-    for key in ("quote_asset", "quote", "quoteasset", "quote_asset_symbol", "currency", "market"):
-        raw = str(lookup.get(key, "") or "").upper().strip()
-        if raw:
-            if raw.endswith("USDT"):
-                return "USDT"
-            if raw.endswith("USDC"):
-                return "USDC"
-            return raw
-    return ""
-
-
-def _is_trading_volume_event(event_type: str) -> bool:
-    normalized = event_type.lower().strip()
-    return any(token in normalized for token in ("trade", "swap", "buy", "sell", "fill", "convert"))
-
-
-def _is_dashboard_value_event(payload: dict[str, Any]) -> bool:
-    event_type = str(payload.get("event_type") or "").lower().strip()
-    if _is_trading_volume_event(event_type):
-        return True
-    if any(token in event_type for token in ("reward", "interest", "staking", "mining", "income", "airdrop")):
-        return True
-    if event_type in {"deposit", "withdrawal", "token_transfer", "sol_transfer", "fee", ""}:
-        return False
-    defi_label = str(payload.get("defi_label") or "").lower().strip()
-    if defi_label == "swap":
-        return True
-    return False
-
-
-def _dashboard_event_category(payload: dict[str, Any]) -> str:
-    event_type = str(payload.get("event_type") or "").lower().strip()
-    if "derivative" in event_type:
-        return "derivate"
-    if event_type in {"deposit", "withdrawal", "token_transfer", "sol_transfer"}:
-        return "transfer"
-    if "auto-balancing" in event_type or "non-taxable" in event_type:
-        return "abgleich"
-    if "fee" in event_type:
-        return "gebuehr"
-    if any(token in event_type for token in ("reward", "interest", "staking", "mining", "income", "airdrop", "bounty")):
-        return "reward_einkunft"
-    if _is_trading_volume_event(event_type):
-        return "trade_swap"
-    if not event_type or event_type == "unknown":
-        return "unbekannt"
-    return event_type.replace("_", " ")
-
-
-def _accumulate_yearly_event_breakdown(
-    yearly_event_buckets: dict[tuple[int, str], dict[str, Any]],
-    year: int,
-    payload: dict[str, Any],
-    value: dict[str, Any],
-    value_counts: bool,
-) -> None:
-    category = _dashboard_event_category(payload)
-    key = (year, category)
-    bucket = yearly_event_buckets.setdefault(
-        key,
-        {
-            "year": year,
-            "category": category,
-            "events": 0,
-            "value_usd": Decimal("0"),
-            "value_eur": Decimal("0"),
-            "trading_value_usd": Decimal("0"),
-            "trading_value_eur": Decimal("0"),
-            "priced_events": 0,
-            "unpriced_events": 0,
-            "deduped_values": {},
-        },
-    )
-    bucket["events"] += 1
-    if value_counts:
-        bucket["value_usd"] += _safe_decimal(value.get("usd_abs"))
-        bucket["value_eur"] += _safe_decimal(value.get("eur_abs"))
-    if _is_trading_volume_event(str(payload.get("event_type") or "")):
-        bucket["trading_value_usd"] += _safe_decimal(value.get("usd_abs"))
-        bucket["trading_value_eur"] += _safe_decimal(value.get("eur_abs"))
-    if value_counts or _is_trading_volume_event(str(payload.get("event_type") or "")):
-        _accumulate_deduped_bucket_value(bucket, payload, year, value)
-    if value.get("priced"):
-        bucket["priced_events"] += 1
-    else:
-        bucket["unpriced_events"] += 1
-
-
-def _accumulate_yearly_source_breakdown(
-    yearly_source_buckets: dict[tuple[int, str], dict[str, Any]],
-    year: int,
-    payload: dict[str, Any],
-    value: dict[str, Any],
-    value_counts: bool,
-) -> None:
-    source = str(payload.get("source") or "unknown").strip() or "unknown"
-    key = (year, source)
-    bucket = yearly_source_buckets.setdefault(
-        key,
-        {
-            "year": year,
-            "source": source,
-            "events": 0,
-            "value_usd": Decimal("0"),
-            "value_eur": Decimal("0"),
-            "trading_value_usd": Decimal("0"),
-            "trading_value_eur": Decimal("0"),
-            "priced_events": 0,
-            "unpriced_events": 0,
-            "deduped_values": {},
-        },
-    )
-    bucket["events"] += 1
-    if value_counts:
-        bucket["value_usd"] += _safe_decimal(value.get("usd_abs"))
-        bucket["value_eur"] += _safe_decimal(value.get("eur_abs"))
-    if _is_trading_volume_event(str(payload.get("event_type") or "")):
-        bucket["trading_value_usd"] += _safe_decimal(value.get("usd_abs"))
-        bucket["trading_value_eur"] += _safe_decimal(value.get("eur_abs"))
-    if value_counts or _is_trading_volume_event(str(payload.get("event_type") or "")):
-        _accumulate_deduped_bucket_value(bucket, payload, year, value)
-    if value.get("priced"):
-        bucket["priced_events"] += 1
-    else:
-        bucket["unpriced_events"] += 1
-
-
-def _accumulate_yearly_deduped_value(
-    yearly_deduped_values: dict[int, dict[str, Any]],
-    year: int,
-    payload: dict[str, Any],
-    value: dict[str, Any],
-    event_type: str,
-) -> None:
-    tx_key = _dashboard_economic_tx_key(payload, year)
-    bucket = yearly_deduped_values.setdefault(year, {})
-    current = bucket.get(tx_key)
-    usd = _safe_decimal(value.get("usd_abs"))
-    eur = _safe_decimal(value.get("eur_abs"))
-    trading = _is_trading_volume_event(event_type)
-    if current is None:
-        bucket[tx_key] = {
-            "usd": usd,
-            "eur": eur,
-            "trading_usd": usd if trading else Decimal("0"),
-            "trading_eur": eur if trading else Decimal("0"),
-        }
-        return
-    if usd > current["usd"]:
-        current["usd"] = usd
-    if eur > current["eur"]:
-        current["eur"] = eur
-    if trading and usd > current["trading_usd"]:
-        current["trading_usd"] = usd
-    if trading and eur > current["trading_eur"]:
-        current["trading_eur"] = eur
-
-
-def _accumulate_deduped_bucket_value(bucket: dict[str, Any], payload: dict[str, Any], year: int, value: dict[str, Any]) -> None:
-    deduped_values = bucket.setdefault("deduped_values", {})
-    if not isinstance(deduped_values, dict):
-        return
-    tx_key = _dashboard_economic_tx_key(payload, year)
-    usd = _safe_decimal(value.get("usd_abs"))
-    eur = _safe_decimal(value.get("eur_abs"))
-    trading = _is_trading_volume_event(str(payload.get("event_type") or ""))
-    current = deduped_values.get(tx_key)
-    if current is None:
-        deduped_values[tx_key] = {
-            "usd": usd,
-            "eur": eur,
-            "trading_usd": usd if trading else Decimal("0"),
-            "trading_eur": eur if trading else Decimal("0"),
-        }
-        return
-    if usd > current["usd"]:
-        current["usd"] = usd
-    if eur > current["eur"]:
-        current["eur"] = eur
-    if trading and usd > current["trading_usd"]:
-        current["trading_usd"] = usd
-    if trading and eur > current["trading_eur"]:
-        current["trading_eur"] = eur
-
-
-def _deduped_bucket_totals(bucket: dict[str, Any]) -> dict[str, Decimal]:
-    deduped_values = bucket.get("deduped_values")
-    if not isinstance(deduped_values, dict) or not deduped_values:
-        return {
-            "value_usd": _safe_decimal(bucket.get("value_usd")),
-            "value_eur": _safe_decimal(bucket.get("value_eur")),
-            "trading_value_usd": _safe_decimal(bucket.get("trading_value_usd")),
-            "trading_value_eur": _safe_decimal(bucket.get("trading_value_eur")),
-        }
-    return {
-        "value_usd": sum((_safe_decimal(item.get("usd")) for item in deduped_values.values()), Decimal("0")),
-        "value_eur": sum((_safe_decimal(item.get("eur")) for item in deduped_values.values()), Decimal("0")),
-        "trading_value_usd": sum((_safe_decimal(item.get("trading_usd")) for item in deduped_values.values()), Decimal("0")),
-        "trading_value_eur": sum((_safe_decimal(item.get("trading_eur")) for item in deduped_values.values()), Decimal("0")),
-    }
-
-
-def _dashboard_economic_tx_key(payload: dict[str, Any], year: int) -> str:
-    raw_row = payload.get("raw_row")
-    if isinstance(raw_row, dict):
-        for key in ("Trx. ID (optional)", "TXID", "transaction_hash", "Order No.", "Trade ID"):
-            raw = str(raw_row.get(key) or "").strip()
-            if raw:
-                return f"{year}:{raw}"
-    for key in ("tx_id", "signature", "transaction_hash", "order_id", "trade_id"):
-        raw = str(payload.get(key) or "").strip()
-        if raw:
-            if raw.startswith("blockpit-") and raw.rsplit(":", 1)[-1] in {"in", "out", "fee"}:
-                raw = raw.rsplit(":", 1)[0]
-            return f"{year}:{raw}"
-    timestamp = str(payload.get("timestamp_utc") or payload.get("timestamp") or "").strip()
-    source = str(payload.get("source") or "").strip()
-    event_type = str(payload.get("event_type") or "").strip()
-    return f"{year}:{source}:{event_type}:{timestamp}:{payload.get('asset')}:{payload.get('quantity')}"
-
-
-def _format_yearly_asset_activity(
-    buckets: dict[tuple[int, str, str], dict[str, Any]],
-    yearly_deduped_values: dict[int, dict[str, Any]] | None = None,
-    yearly_event_buckets: dict[tuple[int, str], dict[str, Any]] | None = None,
-    yearly_source_buckets: dict[tuple[int, str], dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
-    totals: dict[int, dict[str, Any]] = {}
-    for (_, asset, source), bucket in buckets.items():
-        year = int(bucket["year"])
-        meta = _resolve_token_display(asset)
-        rows.append(
-            {
-                "year": year,
-                "asset": asset,
-                "source": source,
-                "symbol": str(meta["symbol"]),
-                "name": str(meta["name"]),
-                "events": int(bucket["events"]),
-                "quantity_in": _decimal_to_plain(bucket["quantity_in"]),
-                "quantity_out": _decimal_to_plain(bucket["quantity_out"]),
-                "quantity_net": _decimal_to_plain(bucket["quantity_net"]),
-                "quantity_abs": _decimal_to_plain(bucket["quantity_abs"]),
-                "value_usd": _decimal_to_plain(bucket["value_usd"]),
-                "value_eur": _decimal_to_plain(bucket["value_eur"]),
-                "avg_usd_to_eur": _decimal_to_plain(
-                    bucket["value_eur"] / bucket["value_usd"] if bucket["value_usd"] > 0 else Decimal("0")
-                ),
-                "trading_value_usd": _decimal_to_plain(bucket["trading_value_usd"]),
-                "trading_value_eur": _decimal_to_plain(bucket["trading_value_eur"]),
-                "priced_events": int(bucket["priced_events"]),
-                "unpriced_events": int(bucket["unpriced_events"]),
-                "priced_coverage_ratio": _decimal_to_plain(
-                    Decimal(int(bucket["priced_events"])) / Decimal(int(bucket["events"])) if int(bucket["events"]) > 0 else Decimal("0")
-                ),
-            }
-        )
-        total = totals.setdefault(
-            year,
-            {
-                "year": year,
-                "events": 0,
-                "value_usd": Decimal("0"),
-                "value_eur": Decimal("0"),
-                "trading_value_usd": Decimal("0"),
-                "trading_value_eur": Decimal("0"),
-                "quantity_abs": Decimal("0"),
-            },
-        )
-        total["events"] += int(bucket["events"])
-        total["value_usd"] += bucket["value_usd"]
-        total["value_eur"] += bucket["value_eur"]
-        total["trading_value_usd"] += bucket["trading_value_usd"]
-        total["trading_value_eur"] += bucket["trading_value_eur"]
-        total["quantity_abs"] += bucket["quantity_abs"]
-
-    if yearly_deduped_values:
-        for year, tx_values in yearly_deduped_values.items():
-            total = totals.setdefault(
-                year,
-                {
-                    "year": year,
-                    "events": 0,
-                    "value_usd": Decimal("0"),
-                    "value_eur": Decimal("0"),
-                    "trading_value_usd": Decimal("0"),
-                    "trading_value_eur": Decimal("0"),
-                    "quantity_abs": Decimal("0"),
-                },
-            )
-            total["value_usd"] = sum((_safe_decimal(item.get("usd")) for item in tx_values.values()), Decimal("0"))
-            total["value_eur"] = sum((_safe_decimal(item.get("eur")) for item in tx_values.values()), Decimal("0"))
-            total["trading_value_usd"] = sum((_safe_decimal(item.get("trading_usd")) for item in tx_values.values()), Decimal("0"))
-            total["trading_value_eur"] = sum((_safe_decimal(item.get("trading_eur")) for item in tx_values.values()), Decimal("0"))
-
-    rows.sort(key=lambda item: (int(item["year"]), -_safe_decimal(item["value_eur"]), -int(item["events"])))
-    yearly_totals = [
-        {
-            "year": year,
-            "events": total["events"],
-            "value_usd": _decimal_to_plain(total["value_usd"]),
-            "value_eur": _decimal_to_plain(total["value_eur"]),
-            "avg_usd_to_eur": _decimal_to_plain(
-                total["value_eur"] / total["value_usd"] if total["value_usd"] > 0 else Decimal("0")
-            ),
-            "trading_value_usd": _decimal_to_plain(total["trading_value_usd"]),
-            "trading_value_eur": _decimal_to_plain(total["trading_value_eur"]),
-            "quantity_abs": _decimal_to_plain(total["quantity_abs"]),
-        }
-        for year, total in sorted(totals.items(), key=lambda item: item[0])
-    ]
-    return {
-        "years": sorted(totals.keys()),
-        "rows": rows,
-        "totals_by_year": yearly_totals,
-        "event_breakdown": _format_yearly_event_breakdown(yearly_event_buckets or {}),
-        "source_breakdown": _format_yearly_source_breakdown(yearly_source_buckets or {}),
-    }
-
-
-def _format_yearly_event_breakdown(buckets: dict[tuple[int, str], dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for (_, category), bucket in buckets.items():
-        deduped = _deduped_bucket_totals(bucket)
-        rows.append(
-            {
-                "year": int(bucket["year"]),
-                "category": category,
-                "events": int(bucket["events"]),
-                "value_usd": _decimal_to_plain(deduped["value_usd"]),
-                "value_eur": _decimal_to_plain(deduped["value_eur"]),
-                "avg_usd_to_eur": _decimal_to_plain(
-                    deduped["value_eur"] / deduped["value_usd"] if deduped["value_usd"] > 0 else Decimal("0")
-                ),
-                "trading_value_usd": _decimal_to_plain(deduped["trading_value_usd"]),
-                "trading_value_eur": _decimal_to_plain(deduped["trading_value_eur"]),
-                "priced_events": int(bucket["priced_events"]),
-                "unpriced_events": int(bucket["unpriced_events"]),
-            }
-        )
-    rows.sort(key=lambda item: (int(item["year"]), -int(item["events"]), str(item["category"])))
-    return rows
-
-
-def _format_yearly_source_breakdown(buckets: dict[tuple[int, str], dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for (_, source), bucket in buckets.items():
-        deduped = _deduped_bucket_totals(bucket)
-        rows.append(
-            {
-                "year": int(bucket["year"]),
-                "source": source,
-                "events": int(bucket["events"]),
-                "value_usd": _decimal_to_plain(deduped["value_usd"]),
-                "value_eur": _decimal_to_plain(deduped["value_eur"]),
-                "avg_usd_to_eur": _decimal_to_plain(
-                    deduped["value_eur"] / deduped["value_usd"] if deduped["value_usd"] > 0 else Decimal("0")
-                ),
-                "trading_value_usd": _decimal_to_plain(deduped["trading_value_usd"]),
-                "trading_value_eur": _decimal_to_plain(deduped["trading_value_eur"]),
-                "priced_events": int(bucket["priced_events"]),
-                "unpriced_events": int(bucket["unpriced_events"]),
-            }
-        )
-    rows.sort(key=lambda item: (int(item["year"]), -int(item["events"]), str(item["source"])))
-    return rows
-
-
-def _extract_year(ts_raw: str) -> int | None:
-    value = str(ts_raw).strip()
-    if len(value) < 4:
-        return None
-    candidate = value[:4]
-    if not candidate.isdigit():
-        return None
-    year = int(candidate)
-    if year < 2009 or year > 2100:
-        return None
-    return year
-
-
-def _normalize_mint(value: str) -> str:
-    return str(value or "").strip().upper()
-
-
-def _load_token_aliases() -> dict[str, dict[str, str]]:
-    row = STORE.get_setting("runtime.token_aliases")
-    if row is None:
-        return {}
-    try:
-        raw = json.loads(str(row.get("value_json", "{}")))
-    except Exception:
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    aliases: dict[str, dict[str, str]] = {}
-    for mint_raw, payload in raw.items():
-        mint = _normalize_mint(str(mint_raw))
-        if not mint or not isinstance(payload, dict):
-            continue
-        symbol = str(payload.get("symbol", "")).strip().upper()
-        name = str(payload.get("name", "")).strip()
-        notes = str(payload.get("notes", "")).strip()
-        if not symbol or not name:
-            continue
-        aliases[mint] = {"symbol": symbol, "name": name, "notes": notes}
-    return aliases
-
-
-def _load_ignored_tokens() -> dict[str, dict[str, str]]:
-    row = STORE.get_setting("runtime.ignored_tokens")
-    if row is None:
-        return {}
-    try:
-        raw = json.loads(str(row.get("value_json", "{}")))
-    except Exception:
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    ignored: dict[str, dict[str, str]] = {}
-    for mint_raw, payload in raw.items():
-        mint = _normalize_mint(str(mint_raw))
-        if not mint or not isinstance(payload, dict):
-            continue
-        reason = str(payload.get("reason", "")).strip()
-        updated_at_utc = str(payload.get("updated_at_utc", "")).strip()
-        if not reason:
-            continue
-        ignored[mint] = {"reason": reason, "updated_at_utc": updated_at_utc}
-    return ignored
-
-
-def _is_ignored_token(asset: str) -> bool:
-    mint = _normalize_mint(asset)
-    if not mint:
-        return False
-    ignored = _load_ignored_tokens()
-    return mint in ignored
-
-
-def _resolve_token_display(asset: str) -> dict[str, Any]:
-    mint = _normalize_mint(asset)
-    aliases = _load_token_aliases()
-    aliased = aliases.get(mint)
-    if aliased is not None:
-        return {
-            "asset": mint,
-            "symbol": aliased["symbol"],
-            "name": aliased["name"],
-            "is_known": True,
-            "display_source": "alias",
-        }
-    meta = resolve_token_metadata(mint)
-    return {
-        "asset": mint,
-        "symbol": str(meta.get("symbol", mint)),
-        "name": str(meta.get("name", "Unbekanntes Token")),
-        "is_known": bool(meta.get("is_known", False)),
-        "display_source": "known" if bool(meta.get("is_known", False)) else "unknown",
-    }
-
-
-def _is_spam_candidate(asset: str, qty: Decimal, known: bool) -> bool:
-    if known:
-        return False
-    abs_qty = abs(qty)
-    # Heuristik: unbekannt + extrem klein oder extrem groß => Spam/Dust-Kandidat.
-    if abs_qty == 0:
-        return False
-    if abs_qty < Decimal("0.01"):
-        return True
-    if abs_qty > Decimal("1000000"):
-        return True
-    return False
-
-
-def _decorate_token_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    decorated: list[dict[str, Any]] = []
-    ignored_tokens = _load_ignored_tokens()
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        asset = str(row.get("asset") or "")
-        qty = _safe_decimal(row.get("quantity", "0"))
-        meta = _resolve_token_display(asset)
-        item = dict(row)
-        item["symbol"] = str(meta["symbol"])
-        item["name"] = str(meta["name"])
-        item["display_source"] = str(meta["display_source"])
-        ignored_meta = ignored_tokens.get(_normalize_mint(asset))
-        item["ignored"] = "true" if ignored_meta is not None else "false"
-        item["ignored_reason"] = str(ignored_meta.get("reason", "")) if ignored_meta is not None else ""
-        item["spam_candidate"] = "true" if _is_spam_candidate(asset=asset, qty=qty, known=bool(meta["is_known"])) else "false"
-        item["quantity"] = _decimal_to_plain(qty)
-        decorated.append(item)
-    return decorated
-
-
-def _parse_iso_timestamp(value: str) -> datetime | None:
-    raw = str(value).strip()
-    if not raw:
-        return None
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def _load_dashboard_role_override() -> str:
-    row = STORE.get_setting("runtime.dashboard.role_override")
-    if row is None:
-        return "auto"
-    try:
-        value = row.get("value_json", "\"auto\"")
-        mode = str(json.loads(str(value)))
-    except Exception:
-        return "auto"
-    if mode not in {"auto", "private", "business"}:
-        return "auto"
-    return mode
