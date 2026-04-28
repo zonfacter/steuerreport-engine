@@ -9,6 +9,7 @@ const state = {
   lotRows: [],
   taxLines: [],
   derivativeLines: [],
+  reportFiles: [],
   processingJobs: [],
   processingJobsLimit: 25,
   processingJobsOffset: 0,
@@ -2940,6 +2941,110 @@ async function refreshTaxReviewData(jobId = currentJobId(), silent = true) {
     renderDerivativeTable();
   }
   await loadTaxDomainSummary(jobId, silent);
+  await loadReportFiles(jobId, true);
+}
+
+function renderReportFiles() {
+  const host = el("reportFilesGrid");
+  if (!host) return;
+  const rows = state.reportFiles || [];
+  host.innerHTML = "";
+  rows.forEach((item) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "source-card action-card";
+    const partLabel = item.part_count && item.part_count > 1 ? `Teil ${item.part}/${item.part_count}` : "komplett";
+    card.innerHTML = `
+      <span>${item.label || item.file_id || "Export"}</span>
+      <strong>${String(item.format || "").toUpperCase()} · ${item.scope || "-"}</strong>
+      <small>${formatInt(item.row_count || 0)} Zeilen · ${partLabel}</small>
+    `;
+    card.addEventListener("click", () => {
+      if (!item.download_url) return;
+      window.open(item.download_url, "_blank", "noopener");
+    });
+    host.appendChild(card);
+  });
+  if (!rows.length) {
+    host.innerHTML = `<div class="muted">Keine Export-Artefakte vorhanden. Starte zuerst einen erfolgreichen Steuerlauf.</div>`;
+  }
+  const info = el("reportFilesInfo");
+  if (info) {
+    info.textContent = rows.length ? `${rows.length} Export-Dateien verfügbar.` : "Keine Export-Dateien verfügbar.";
+  }
+}
+
+async function loadReportFiles(jobId = currentJobId(), silent = true) {
+  if (!jobId) {
+    if (!silent) showToast("Bitte zuerst eine job_id eintragen.", "warn");
+    return;
+  }
+  const data = await callApi(`/api/v1/report/files/${jobId}`, "GET", null, null, silent);
+  if (!data?.data) return;
+  state.reportFiles = data.data.files || [];
+  renderReportFiles();
+}
+
+function renderIntegrityActionResult(items) {
+  const host = el("integrityActionResult");
+  if (!host) return;
+  host.innerHTML = (items || [])
+    .map((item) => `<span><strong>${item.label}:</strong> ${item.value}</span>`)
+    .join("");
+}
+
+async function compareCurrentRuleset(trigger = null) {
+  const jobId = currentJobId();
+  if (!jobId) {
+    showToast("Bitte zuerst eine job_id eintragen.", "warn");
+    return;
+  }
+  const compareRulesetId = (el("compareRulesetId")?.value || "").trim() || rulesetForYear(el("taxYear")?.value || "2026");
+  const compareRulesetVersion = (el("compareRulesetVersion")?.value || "").trim() || null;
+  const data = await callApi(
+    "/api/v1/process/compare-rulesets",
+    "POST",
+    {
+      job_id: jobId,
+      compare_ruleset_id: compareRulesetId,
+      compare_ruleset_version: compareRulesetVersion,
+    },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  const baseSo = data.data?.base?.tax_domain_summary?.anlage_so || {};
+  const compareSo = data.data?.comparison?.tax_domain_summary?.anlage_so || {};
+  renderIntegrityActionResult([
+    { label: "Job", value: jobId },
+    { label: "Basis", value: `${data.data?.base?.ruleset_id || "-"} ${data.data?.base?.ruleset_version || ""}` },
+    { label: "Vergleich", value: `${compareRulesetId} ${compareRulesetVersion || ""}` },
+    { label: "SO Basis Netto", value: formatCurrency(baseSo.private_veraeusserung_net_taxable_eur || 0, "EUR") },
+    { label: "SO Vergleich Netto", value: formatCurrency(compareSo.private_veraeusserung_net_taxable_eur || 0, "EUR") },
+  ]);
+  showToast("Ruleset-Vergleich berechnet.", "ok");
+}
+
+async function createCurrentSnapshot(trigger = null) {
+  const jobId = currentJobId();
+  if (!jobId) {
+    showToast("Bitte zuerst eine job_id eintragen.", "warn");
+    return;
+  }
+  const notes = (el("snapshotNote")?.value || "").trim() || null;
+  const data = await callApi(
+    `/api/v1/snapshots/create/${jobId}`,
+    "POST",
+    { notes },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  renderIntegrityActionResult([
+    { label: "Snapshot", value: data.data?.snapshot_id || "-" },
+    { label: "Job", value: data.data?.job_id || jobId },
+    { label: "Erstellt", value: data.data?.created_at_utc || "-" },
+    { label: "Notiz", value: data.data?.notes || "-" },
+  ]);
+  showToast("Snapshot erstellt.", "ok");
 }
 
 async function loadTaxEventOverrides(silent = true) {
@@ -3672,6 +3777,16 @@ async function loadUnmatched() {
     } else {
       showToast("Review-Gates blockieren den Export. Details im Panel.", "warn");
     }
+  });
+  el("btnReportFiles")?.addEventListener("click", async () => {
+    await loadReportFiles(currentJobId(), false);
+    showToast("Export-Dateien geladen.", "ok");
+  });
+  el("btnCompareRuleset")?.addEventListener("click", async (e) => {
+    await compareCurrentRuleset(e.currentTarget);
+  });
+  el("btnCreateSnapshot")?.addEventListener("click", async (e) => {
+    await createCurrentSnapshot(e.currentTarget);
   });
   ["reviewIssueSearch", "reviewIssueStatus"].forEach((id) => {
     const node = el(id);

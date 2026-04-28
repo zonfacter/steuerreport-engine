@@ -10,6 +10,15 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Daten-Integritätspfad immer aktiv: `unique_event_id`, `config_hash`, `report_integrity_id`.
 - UX ist Workflow-gesteuert: Integrationen hinzufügen → Daten laden → Portfolio-Set prüfen → Steuerlauf-Wizard → Export.
 
+## Aktueller Umsetzungsstand
+- `GET /api/v1/report/files/{run_id}` ist implementiert und liefert JSON/CSV/PDF-Artefakte nach Scope.
+- `GET /api/v1/report/export` unterstützt JSON, CSV und PDF; PDF-Dateien werden in Teile mit maximal `100` Seiten geschnitten.
+- Exportzeilen enthalten `report_integrity_id`, `config_hash` und `data_hash`.
+- `POST /api/v1/process/compare-rulesets` ist ergänzend zum GET-Endpunkt implementiert.
+- `GET /api/v1/import/jobs` nutzt persistierte Importquellen und unterstützt Filter nach `integration` und `status`.
+- Die UI zeigt Export-Artefakte im Steuer-Tab als klickbare Karten und bietet Ruleset-Vergleich sowie Snapshot-Erstellung an.
+- Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
+
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)
 Ziel: Den technischen Funktionsumfang an die Roadmap-Dokumentation angleichen.
 

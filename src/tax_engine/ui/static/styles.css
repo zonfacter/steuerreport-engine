@@ -1014,6 +1014,12 @@ tr.sum-row td {
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
+button.source-card {
+  color: var(--text);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
 .source-card:hover {
   transform: translateY(-1px);
   border-color: rgba(243, 186, 47, 0.5);

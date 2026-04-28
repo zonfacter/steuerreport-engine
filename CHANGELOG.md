@@ -27,6 +27,22 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Neues Dossier `docs/19_BMF_2025_STEUERREGELN_UND_PFLICHTEN.md` als technische Umsetzung des BMF-Schreibens vom 06.03.2025.
   - Ruleset-Modell um `other_services_exemption_limit` erweitert, damit §22-Nr.-3-EStG-Freigrenze (`256.00` EUR) getrennt von §23-Freigrenze geführt wird.
   - Compliance-Klassifikation nutzt für Mining/Staking/Rewards jetzt die §22-Freigrenze statt der §23-Freigrenze.
+- Reporting-Roadmap weitergeführt:
+  - Neuer Endpoint `GET /api/v1/report/files/{run_id}` liefert verfügbare virtuelle Export-Artefakte für JSON/CSV/PDF nach Scope (`all`, `tax`, `derivatives`).
+  - `GET /api/v1/report/export` unterstützt jetzt PDF-Export mit maximal 100 Seiten je Teil-Datei.
+  - Exportzeilen enthalten `report_integrity_id`, `config_hash` und `data_hash`, damit CSV/JSON/PDF prüfungssicherer nachvollziehbar sind.
+  - Processing-End-to-End-Test prüft jetzt, dass Report-Artefakte nach einem erfolgreichen Lauf auffindbar sind.
+- Ruleset-Vergleich ergänzt:
+  - `POST /api/v1/process/compare-rulesets` ist zusätzlich zum bestehenden GET-Endpunkt verfügbar, damit der API-Vertrag aus der Roadmap ohne Freitext-/Query-Workaround nutzbar ist.
+- Import-Job-Historie nachgezogen:
+  - `GET /api/v1/import/jobs` nutzt jetzt persistierte Importquellen statt Prozessjobs.
+  - Filter nach `integration` und `status` sowie Header-Felder für Connector, Row Counts, Duplikate und Zeitstempel ergänzt.
+- UI-Exportfluss verbessert:
+  - Steuer-Tab zeigt verfügbare Report-Artefakte als klickbare JSON/CSV/PDF-Karten.
+  - PDF-Teilung und Zeilenanzahl werden direkt in der Oberfläche sichtbar.
+- Revisions-UX ergänzt:
+  - Steuer-Tab kann einen aktuellen Lauf gegen ein zweites Ruleset vergleichen.
+  - Snapshot-Erstellung aus der Oberfläche ergänzt, inklusive Notizfeld für Nachprüfungsstände.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.

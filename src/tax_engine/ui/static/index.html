@@ -1099,6 +1099,30 @@
             <ul id="gateWarnings" class="gate-list muted"></ul>
           </div>
 
+          <div class="gate-card">
+            <div class="row">
+              <h4>Report Export</h4>
+              <button id="btnReportFiles" class="btn-primary">Export-Dateien laden</button>
+              <span id="reportFilesInfo" class="muted">Noch keine Export-Dateien geladen.</span>
+            </div>
+            <p class="muted">PDF-Dateien werden automatisch in Teile mit maximal 100 Seiten aufgeteilt. Jede Exportzeile enthält Integritäts- und Ruleset-Referenzen.</p>
+            <div id="reportFilesGrid" class="source-grid"></div>
+          </div>
+
+          <div class="gate-card">
+            <h4>Revisionssicherheit</h4>
+            <div class="row">
+              <label>Vergleichs-Ruleset<input id="compareRulesetId" value="DE-2026-v1.0" /></label>
+              <label>Version<input id="compareRulesetVersion" value="1.0" /></label>
+              <button id="btnCompareRuleset">Ruleset vergleichen</button>
+            </div>
+            <div class="row">
+              <label class="grow">Snapshot-Notiz<input id="snapshotNote" placeholder="z. B. Finaler Entwurf 2026 nach Review" /></label>
+              <button id="btnCreateSnapshot" class="btn-primary">Snapshot erstellen</button>
+            </div>
+            <div id="integrityActionResult" class="tax-run-preview"></div>
+          </div>
+
           <h3>Result Summary</h3>
           <details class="raw-box expert-only">
             <summary>Result Summary (JSON)</summary>

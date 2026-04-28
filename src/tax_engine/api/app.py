@@ -7,7 +7,7 @@ from base64 import b64decode
 from collections import deque
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -175,6 +175,12 @@ class IssueStatusUpdateRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class ProcessCompareRulesetsRequest(BaseModel):
+    job_id: str = Field(min_length=1, max_length=200)
+    compare_ruleset_id: str = Field(min_length=1, max_length=80)
+    compare_ruleset_version: str | None = Field(default=None, min_length=1, max_length=20)
+
+
 class TaxEventOverrideUpsertRequest(BaseModel):
     source_event_id: str = Field(min_length=8, max_length=200)
     tax_category: str = Field(min_length=3, max_length=30)
@@ -258,6 +264,9 @@ _UI_STATIC_DIR = Path(__file__).resolve().parents[1] / "ui" / "static"
 app.mount("/ui/static", StaticFiles(directory=str(_UI_STATIC_DIR)), name="ui-static")
 
 _BULK_IMPORT_EXTENSIONS = {".csv", ".txt", ".json", ".xls", ".xlsx"}
+_PDF_MAX_PAGES_PER_FILE = 100
+_PDF_ROWS_PER_PAGE = 28
+_PDF_ROWS_PER_FILE = _PDF_MAX_PAGES_PER_FILE * _PDF_ROWS_PER_PAGE
 
 
 def _to_iso_date(value: str) -> str:
@@ -287,8 +296,10 @@ def _build_export_rows(
     tax_lines: list[dict[str, Any]],
     derivative_lines: list[dict[str, Any]],
     include_derivatives: bool,
+    integrity: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     export_rows: list[dict[str, Any]] = []
+    integrity_payload = integrity or {}
     for line in tax_lines:
         export_rows.append(
             {
@@ -297,6 +308,9 @@ def _build_export_rows(
                 "tax_year": job.get("tax_year"),
                 "ruleset_id": job.get("ruleset_id"),
                 "ruleset_version": job.get("ruleset_version"),
+                "report_integrity_id": integrity_payload.get("report_integrity_id"),
+                "config_hash": integrity_payload.get("config_hash"),
+                "data_hash": integrity_payload.get("data_hash"),
                 "line_no": line.get("line_no"),
                 "asset": line.get("asset"),
                 "qty": line.get("qty"),
@@ -319,6 +333,9 @@ def _build_export_rows(
                     "tax_year": job.get("tax_year"),
                     "ruleset_id": job.get("ruleset_id"),
                     "ruleset_version": job.get("ruleset_version"),
+                    "report_integrity_id": integrity_payload.get("report_integrity_id"),
+                    "config_hash": integrity_payload.get("config_hash"),
+                    "data_hash": integrity_payload.get("data_hash"),
                     "line_no": line.get("line_no"),
                     "asset": line.get("asset"),
                     "qty": None,
@@ -339,6 +356,49 @@ def _build_export_rows(
     return export_rows
 
 
+def _build_report_file_index(job: dict[str, Any], tax_line_count: int, derivative_line_count: int) -> list[dict[str, Any]]:
+    job_id = str(job.get("job_id") or "")
+    scopes = [
+        ("all", "Vollreport", tax_line_count + derivative_line_count),
+        ("tax", "Tax Lines", tax_line_count),
+        ("derivatives", "Derivate", derivative_line_count),
+    ]
+    files: list[dict[str, Any]] = []
+    for scope, label, row_count in scopes:
+        if scope != "all" and row_count == 0:
+            continue
+        for fmt in ("json", "csv"):
+            files.append(
+                {
+                    "file_id": f"{job_id}:{scope}:{fmt}",
+                    "label": f"{label} ({fmt.upper()})",
+                    "format": fmt,
+                    "scope": scope,
+                    "row_count": row_count,
+                    "download_url": f"/api/v1/report/export?job_id={job_id}&scope={scope}&fmt={fmt}",
+                }
+            )
+        part_count = max(1, (row_count + _PDF_ROWS_PER_FILE - 1) // _PDF_ROWS_PER_FILE)
+        for part in range(1, part_count + 1):
+            suffix = f" Teil {part}/{part_count}" if part_count > 1 else ""
+            files.append(
+                {
+                    "file_id": f"{job_id}:{scope}:pdf:{part}",
+                    "label": f"{label} (PDF){suffix}",
+                    "format": "pdf",
+                    "scope": scope,
+                    "part": part,
+                    "part_count": part_count,
+                    "row_count": row_count,
+                    "max_pages": _PDF_MAX_PAGES_PER_FILE,
+                    "download_url": (
+                        f"/api/v1/report/export?job_id={job_id}&scope={scope}&fmt=pdf&part={part}"
+                    ),
+                }
+            )
+    return files
+
+
 def _build_csv_from_rows(rows: list[dict[str, Any]]) -> str:
     headers = [
         "line_type",
@@ -346,6 +406,9 @@ def _build_csv_from_rows(rows: list[dict[str, Any]]) -> str:
         "tax_year",
         "ruleset_id",
         "ruleset_version",
+        "report_integrity_id",
+        "config_hash",
+        "data_hash",
         "line_no",
         "position_id",
         "asset",
@@ -370,6 +433,91 @@ def _build_csv_from_rows(rows: list[dict[str, Any]]) -> str:
     return buffer.getvalue()
 
 
+def _build_pdf_from_rows(
+    *,
+    job: dict[str, Any],
+    rows: list[dict[str, Any]],
+    integrity: dict[str, Any] | None,
+    scope: str,
+    part: int,
+    part_count: int,
+) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    buffer = BytesIO()
+    page_width, page_height = A4
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    integrity_payload = integrity or {}
+    report_key = str(integrity_payload.get("report_integrity_id") or "nicht-verfuegbar")
+    config_hash = str(integrity_payload.get("config_hash") or "nicht-verfuegbar")
+    data_hash = str(integrity_payload.get("data_hash") or "nicht-verfuegbar")
+    ruleset = f"{job.get('ruleset_id') or ''} {job.get('ruleset_version') or ''}".strip()
+    generated_at = datetime.now(UTC).isoformat()
+    total_pages = max(1, (len(rows) + _PDF_ROWS_PER_PAGE - 1) // _PDF_ROWS_PER_PAGE)
+
+    for page_index in range(total_pages):
+        start = page_index * _PDF_ROWS_PER_PAGE
+        page_rows = rows[start : start + _PDF_ROWS_PER_PAGE]
+        pdf.setTitle(f"Steuerreport {job.get('job_id')}")
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(36, page_height - 38, "Steuerreport Export")
+        pdf.setFont("Helvetica", 7)
+        pdf.drawString(36, page_height - 52, f"Run: {job.get('job_id')} | Jahr: {job.get('tax_year')} | Scope: {scope}")
+        pdf.drawString(36, page_height - 64, f"Ruleset: {ruleset or 'nicht-verfuegbar'} | Teil: {part}/{part_count}")
+        pdf.drawString(36, page_height - 76, f"Report-Integrity-ID: {report_key}")
+        pdf.drawString(36, page_height - 88, f"Config-Hash: {config_hash} | Data-Hash: {data_hash}")
+        pdf.drawString(36, page_height - 100, f"Erstellt UTC: {generated_at}")
+
+        y = page_height - 122
+        pdf.setFont("Helvetica-Bold", 7)
+        columns = [
+            ("Typ", 36),
+            ("Nr", 72),
+            ("Asset", 98),
+            ("Menge", 138),
+            ("Kauf", 194),
+            ("Verkauf", 284),
+            ("Kosten EUR", 374),
+            ("Erloes EUR", 432),
+            ("G/V EUR", 490),
+            ("Status", 548),
+        ]
+        for label, x_pos in columns:
+            pdf.drawString(x_pos, y, label)
+        y -= 10
+        pdf.line(36, y + 6, page_width - 32, y + 6)
+        pdf.setFont("Helvetica", 6)
+        for row in page_rows:
+            values = [
+                row.get("line_type"),
+                row.get("line_no"),
+                row.get("asset"),
+                row.get("qty"),
+                row.get("buy_timestamp_utc"),
+                row.get("sell_timestamp_utc"),
+                row.get("cost_basis_eur"),
+                row.get("proceeds_eur"),
+                row.get("gain_loss_eur"),
+                row.get("tax_status"),
+            ]
+            for value, (_, x_pos) in zip(values, columns, strict=False):
+                text = str(value or "")[:22]
+                pdf.drawString(x_pos, y, text)
+            y -= 14
+
+        pdf.setFont("Helvetica", 7)
+        pdf.drawRightString(
+            page_width - 36,
+            24,
+            f"Seite {page_index + 1}/{total_pages} in Datei, max. {_PDF_MAX_PAGES_PER_FILE} Seiten je PDF",
+        )
+        pdf.showPage()
+
+    pdf.save()
+    return buffer.getvalue()
+
+
 def _detect_connector_from_filename(file_path: Path) -> str | None:
     name = file_path.name.lower()
     if "blockpit" in name:
@@ -387,6 +535,63 @@ def _detect_connector_from_filename(file_path: Path) -> str | None:
     if name.startswith("wallet.") and "month" in name:
         return "heliumgeek"
     return None
+
+
+def _detect_connector_from_source_name(source_name: str) -> str:
+    normalized = str(source_name or "").lower()
+    for connector in ("binance", "bitget", "coinbase", "pionex", "blockpit", "heliumgeek", "solana"):
+        if connector in normalized:
+            return connector
+    if normalized.startswith("wallet.") and "month" in normalized:
+        return "heliumgeek"
+    return "unknown"
+
+
+def _build_import_job_rows(
+    *,
+    status: str | None,
+    integration: str | None,
+    limit: int,
+    offset: int,
+) -> list[dict[str, Any]]:
+    wanted_status = str(status or "").strip().lower()
+    wanted_integration = str(integration or "").strip().lower()
+    raw_rows = STORE.list_source_file_summaries(limit=5000)
+    rows: list[dict[str, Any]] = []
+    for row in raw_rows:
+        declared = int(row.get("declared_row_count") or 0)
+        imported = int(row.get("imported_event_count") or 0)
+        duplicates = max(declared - imported, 0)
+        if declared == 0:
+            row_status = "empty"
+        elif imported == 0 and duplicates > 0:
+            row_status = "duplicate"
+        elif imported < declared:
+            row_status = "partial"
+        else:
+            row_status = "completed"
+
+        connector = _detect_connector_from_source_name(str(row.get("source_name") or ""))
+        if wanted_status and row_status != wanted_status:
+            continue
+        if wanted_integration and connector != wanted_integration:
+            continue
+        rows.append(
+            {
+                "job_id": row.get("source_file_id"),
+                "source_file_id": row.get("source_file_id"),
+                "connector": connector,
+                "source_name": row.get("source_name"),
+                "started_at_utc": row.get("created_at_utc"),
+                "finished_at_utc": row.get("created_at_utc"),
+                "status": row_status,
+                "rows": declared,
+                "inserted_events": imported,
+                "duplicates": duplicates,
+                "warnings": [],
+            }
+        )
+    return rows[offset : offset + limit]
 
 
 @app.get("/", include_in_schema=False)
@@ -2711,12 +2916,48 @@ def process_jobs(status: str | None = None, limit: int = 50, offset: int = 0) ->
 
 
 @app.get("/api/v1/import/jobs", response_model=StandardResponse, tags=["import"])
-def import_jobs(status: str | None = None, limit: int = 50, offset: int = 0) -> StandardResponse:
-    return process_jobs(status=status, limit=limit, offset=offset)
+def import_jobs(
+    status: str | None = None,
+    integration: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> StandardResponse:
+    trace_id = str(uuid4())
+    safe_limit = max(1, min(int(limit), 5000))
+    safe_offset = max(0, int(offset))
+    rows = _build_import_job_rows(
+        status=status,
+        integration=integration,
+        limit=safe_limit,
+        offset=safe_offset,
+    )
+    write_audit(
+        trace_id=trace_id,
+        action="import.jobs",
+        payload={
+            "status": status,
+            "integration": integration,
+            "count": len(rows),
+            "limit": safe_limit,
+            "offset": safe_offset,
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={"count": len(rows), "offset": safe_offset, "limit": safe_limit, "rows": rows},
+        errors=[],
+        warnings=[],
+    )
 
 
 @app.get("/api/v1/report/export", response_model=None)
-def report_export(job_id: str, scope: str = "all", fmt: str = "json") -> StandardResponse | StreamingResponse:
+def report_export(
+    job_id: str,
+    scope: str = "all",
+    fmt: str = "json",
+    part: int = 1,
+) -> StandardResponse | StreamingResponse:
     trace_id = str(uuid4())
     scope_normalized = str(scope or "all").strip().lower()
     fmt_normalized = str(fmt or "json").strip().lower()
@@ -2737,7 +2978,7 @@ def report_export(job_id: str, scope: str = "all", fmt: str = "json") -> Standar
             warnings=[],
         )
 
-    if fmt_normalized not in {"json", "csv"}:
+    if fmt_normalized not in {"json", "csv", "pdf"}:
         write_audit(
             trace_id=trace_id,
             action="report.export",
@@ -2747,7 +2988,7 @@ def report_export(job_id: str, scope: str = "all", fmt: str = "json") -> Standar
             trace_id=trace_id,
             status="error",
             data={},
-            errors=[{"code": "invalid_format", "message": "fmt muss json|csv sein."}],
+            errors=[{"code": "invalid_format", "message": "fmt muss json|csv|pdf sein."}],
             warnings=[],
         )
 
@@ -2768,7 +3009,24 @@ def report_export(job_id: str, scope: str = "all", fmt: str = "json") -> Standar
 
     tax_lines = STORE.get_tax_lines(job_id) if include_tax else []
     derivative_lines = STORE.get_derivative_lines(job_id) if include_derivatives else []
-    export_rows = _build_export_rows(job, tax_lines, derivative_lines, include_derivatives=include_derivatives)
+    integrity = STORE.get_report_integrity(job_id)
+    export_rows = _build_export_rows(
+        job,
+        tax_lines,
+        derivative_lines,
+        include_derivatives=include_derivatives,
+        integrity=integrity,
+    )
+    total_parts = max(1, (len(export_rows) + _PDF_ROWS_PER_FILE - 1) // _PDF_ROWS_PER_FILE)
+    safe_part = max(1, int(part))
+    if fmt_normalized == "pdf" and safe_part > total_parts:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={"job_id": job_id, "scope": scope_normalized, "part_count": total_parts},
+            errors=[{"code": "report_part_not_found", "message": f"PDF-Teil {safe_part} existiert nicht."}],
+            warnings=[],
+        )
     write_audit(
         trace_id=trace_id,
         action="report.export",
@@ -2776,6 +3034,7 @@ def report_export(job_id: str, scope: str = "all", fmt: str = "json") -> Standar
             "job_id": job_id,
             "scope": scope_normalized,
             "format": fmt_normalized,
+            "part": safe_part,
             "tax_lines": len(tax_lines),
             "derivative_lines": len(derivative_lines),
         },
@@ -2793,18 +3052,94 @@ def report_export(job_id: str, scope: str = "all", fmt: str = "json") -> Standar
             headers=headers,
         )
 
+    if fmt_normalized == "pdf":
+        start = (safe_part - 1) * _PDF_ROWS_PER_FILE
+        selected_rows = export_rows[start : start + _PDF_ROWS_PER_FILE]
+        pdf_content = _build_pdf_from_rows(
+            job=job,
+            rows=selected_rows,
+            integrity=integrity,
+            scope=scope_normalized,
+            part=safe_part,
+            part_count=total_parts,
+        )
+        filename = f"steuerreport_{job_id}_{scope_normalized}_teil_{safe_part}_von_{total_parts}.pdf"
+        headers = {
+            "Content-Disposition": f'attachment; filename=\"{filename}\"',
+        }
+        return StreamingResponse(
+            iter([pdf_content]),
+            media_type="application/pdf",
+            headers=headers,
+        )
+
     return StandardResponse(
         trace_id=trace_id,
         status="success",
         data={
             "job_id": job_id,
             "scope": scope_normalized,
+            "part_count": total_parts,
             "job": {
                 "tax_year": job.get("tax_year"),
                 "ruleset_id": job.get("ruleset_id"),
                 "ruleset_version": job.get("ruleset_version"),
             },
+            "integrity": integrity,
             "rows": export_rows,
+        },
+        errors=[],
+        warnings=[],
+    )
+
+
+@app.get("/api/v1/report/files/{run_id}", response_model=StandardResponse, tags=["report"])
+def report_files(run_id: str) -> StandardResponse:
+    trace_id = str(uuid4())
+    job = get_processing_job(run_id)
+    if job is None:
+        write_audit(
+            trace_id=trace_id,
+            action="report.files",
+            payload={"run_id": run_id, "found": False},
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "job_not_found", "message": f"Run not found: {run_id}"}],
+            warnings=[],
+        )
+
+    tax_lines = STORE.get_tax_lines(run_id)
+    derivative_lines = STORE.get_derivative_lines(run_id)
+    files = _build_report_file_index(
+        job=job,
+        tax_line_count=len(tax_lines),
+        derivative_line_count=len(derivative_lines),
+    )
+    write_audit(
+        trace_id=trace_id,
+        action="report.files",
+        payload={
+            "run_id": run_id,
+            "file_count": len(files),
+            "tax_line_count": len(tax_lines),
+            "derivative_line_count": len(derivative_lines),
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "run_id": run_id,
+            "status": job.get("status"),
+            "tax_year": job.get("tax_year"),
+            "ruleset_id": job.get("ruleset_id"),
+            "ruleset_version": job.get("ruleset_version"),
+            "tax_line_count": len(tax_lines),
+            "derivative_line_count": len(derivative_lines),
+            "files": files,
         },
         errors=[],
         warnings=[],
@@ -3101,6 +3436,27 @@ def integrity_event(unique_event_id: str) -> StandardResponse:
 
 @app.get("/api/v1/process/compare-rulesets", response_model=StandardResponse, tags=["process"])
 def process_compare_rulesets(
+    job_id: str,
+    compare_ruleset_id: str,
+    compare_ruleset_version: str | None = None,
+) -> StandardResponse:
+    return _process_compare_rulesets_impl(
+        job_id=job_id,
+        compare_ruleset_id=compare_ruleset_id,
+        compare_ruleset_version=compare_ruleset_version,
+    )
+
+
+@app.post("/api/v1/process/compare-rulesets", response_model=StandardResponse, tags=["process"])
+def process_compare_rulesets_post(payload: ProcessCompareRulesetsRequest) -> StandardResponse:
+    return _process_compare_rulesets_impl(
+        job_id=payload.job_id,
+        compare_ruleset_id=payload.compare_ruleset_id,
+        compare_ruleset_version=payload.compare_ruleset_version,
+    )
+
+
+def _process_compare_rulesets_impl(
     job_id: str,
     compare_ruleset_id: str,
     compare_ruleset_version: str | None = None,
