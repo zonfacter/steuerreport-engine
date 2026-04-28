@@ -61,6 +61,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Import-Endpunkte inklusive Bulk-Folder-Import und Import-Job-Historie in `api/imports.py` ausgelagert.
   - CEX- und Solana-Connector-Endpunkte in `api/connectors.py` ausgelagert.
   - Process-, Report-, Compliance-, Integrity-, Snapshot- und Audit-Tax-Line-Endpunkte in `api/processing.py` ausgelagert.
+  - Reconciliation-, Review-Gate-, Issue- und Tax-Override-Endpunkte in `api/review.py` ausgelagert.
   - API-Coverage-Report misst die extrahierten Router-Module und lässt den temporären Router-Bootstrap `api/app.py` aus, bis die restlichen Bereiche ausgelagert sind.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
