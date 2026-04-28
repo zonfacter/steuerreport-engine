@@ -47,6 +47,17 @@ def normalize_wallet_addresses(values: list[str]) -> list[str]:
     return normalized
 
 
+def normalize_source_filters(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        item = str(value).strip()
+        if not item:
+            continue
+        if item not in normalized:
+            normalized.append(item)
+    return normalized
+
+
 def load_wallet_groups() -> list[dict[str, Any]]:
     row = STORE.get_setting("runtime.wallet_groups")
     if row is None:
@@ -66,6 +77,9 @@ def load_wallet_groups() -> list[dict[str, Any]]:
         wallets_raw = item.get("wallet_addresses", [])
         if not isinstance(wallets_raw, list):
             wallets_raw = []
+        sources_raw = item.get("source_filters", [])
+        if not isinstance(sources_raw, list):
+            sources_raw = []
         wallets = normalize_wallet_addresses([str(v) for v in wallets_raw])
         if not group_id or not name:
             continue
@@ -74,6 +88,7 @@ def load_wallet_groups() -> list[dict[str, Any]]:
                 "group_id": group_id,
                 "name": name,
                 "wallet_addresses": wallets,
+                "source_filters": normalize_source_filters([str(v) for v in sources_raw]),
                 "description": str(item.get("description") or "").strip(),
             }
         )
@@ -181,6 +196,7 @@ def wallet_groups_upsert(payload: WalletGroupUpsertRequest) -> StandardResponse:
     trace_id = str(uuid4())
     groups = load_wallet_groups()
     normalized_wallets = normalize_wallet_addresses(payload.wallet_addresses)
+    normalized_sources = normalize_source_filters(payload.source_filters)
     if not normalized_wallets:
         return StandardResponse(
             trace_id=trace_id,
@@ -198,6 +214,7 @@ def wallet_groups_upsert(payload: WalletGroupUpsertRequest) -> StandardResponse:
         if str(group.get("group_id", "")) == group_id:
             group["name"] = name
             group["wallet_addresses"] = normalized_wallets
+            group["source_filters"] = normalized_sources
             group["description"] = description
             updated = True
             break
@@ -208,6 +225,7 @@ def wallet_groups_upsert(payload: WalletGroupUpsertRequest) -> StandardResponse:
                 "group_id": group_id,
                 "name": name,
                 "wallet_addresses": normalized_wallets,
+                "source_filters": normalized_sources,
                 "description": description,
             }
         )
@@ -216,7 +234,12 @@ def wallet_groups_upsert(payload: WalletGroupUpsertRequest) -> StandardResponse:
     write_audit(
         trace_id=trace_id,
         action="wallet_groups.upsert",
-        payload={"group_id": group_id, "wallet_count": len(normalized_wallets), "updated": updated},
+        payload={
+            "group_id": group_id,
+            "wallet_count": len(normalized_wallets),
+            "source_filter_count": len(normalized_sources),
+            "updated": updated,
+        },
     )
     return StandardResponse(
         trace_id=trace_id,

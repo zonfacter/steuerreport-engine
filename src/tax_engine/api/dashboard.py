@@ -19,6 +19,9 @@ from tax_engine.api.wallet_groups import (
 from tax_engine.api.wallet_groups import (
     load_wallet_groups as _load_wallet_groups,
 )
+from tax_engine.api.wallet_groups import (
+    normalize_source_filters as _normalize_source_filters,
+)
 from tax_engine.connectors import DashboardRoleOverrideRequest
 from tax_engine.connectors.token_metadata import resolve_token_metadata
 from tax_engine.core.processor import build_open_lot_aging_snapshot
@@ -223,6 +226,7 @@ def dashboard_overview() -> StandardResponse:
         },
     }
 
+    wallet_groups = _load_wallet_groups()
     data = {
         "summary": {
             "total_events": len(events),
@@ -239,7 +243,7 @@ def dashboard_overview() -> StandardResponse:
         "portfolio_value_history": _build_portfolio_value_history(events, ignored_mints, runtime_fx),
         "yearly_asset_activity": yearly_asset_activity,
         "asset_balances": balances,
-        "wallet_groups": _load_wallet_groups(),
+        "wallet_groups": _decorate_wallet_groups_with_sources(wallet_groups, by_source),
     }
     write_audit(
         trace_id=trace_id,
@@ -250,6 +254,23 @@ def dashboard_overview() -> StandardResponse:
         },
     )
     return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
+
+
+def _decorate_wallet_groups_with_sources(groups: list[dict[str, Any]], by_source: dict[str, int]) -> list[dict[str, Any]]:
+    available_sources = set(by_source.keys())
+    decorated: list[dict[str, Any]] = []
+    for group in groups:
+        item = dict(group)
+        source_filters = _normalize_source_filters([str(v) for v in item.get("source_filters", [])])
+        item["source_filters"] = source_filters
+        item["source_event_count"] = (
+            sum(int(by_source.get(source, 0)) for source in source_filters)
+            if source_filters
+            else sum(int(value) for value in by_source.values())
+        )
+        item["source_filters_missing"] = sorted([source for source in source_filters if source not in available_sources])
+        decorated.append(item)
+    return decorated
 
 
 @router.get("/api/v1/portfolio/integrations", response_model=StandardResponse, tags=["dashboard"])
@@ -407,6 +428,87 @@ def dashboard_wallet_snapshots(
         errors=[],
         warnings=[],
     )
+
+
+@router.get("/api/v1/dashboard/portfolio-set-history", response_model=StandardResponse, tags=["dashboard"])
+def dashboard_portfolio_set_history(
+    group_id: str,
+    window_days: int = 365,
+) -> StandardResponse:
+    trace_id = str(uuid4())
+    group = next((item for item in _load_wallet_groups() if str(item.get("group_id")) == str(group_id)), None)
+    if group is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "group_not_found", "message": f"Wallet-Gruppe nicht gefunden: {group_id}"}],
+            warnings=[],
+        )
+
+    source_filters = _normalize_source_filters([str(v) for v in group.get("source_filters", [])])
+    all_events = STORE.list_raw_events()
+    events: list[dict[str, Any]] = []
+    if source_filters:
+        wanted = set(source_filters)
+        for row in all_events:
+            payload = row.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
+            source = str(payload.get("source") or payload.get("source_name") or "unknown").strip() or "unknown"
+            if source in wanted:
+                events.append(row)
+    else:
+        events = all_events
+
+    runtime_fx = _runtime_usd_to_eur_rate()
+    ignored_mints = set(_load_ignored_tokens().keys())
+    points = _build_portfolio_value_history(events, ignored_mints, runtime_fx)
+    if window_days > 0:
+        cutoff = datetime.now(UTC) - timedelta(days=window_days)
+        filtered_points: list[dict[str, Any]] = []
+        for point in points:
+            ts = _parse_iso_timestamp(f"{point.get('month', '')}-01T00:00:00+00:00")
+            if ts is None or ts < cutoff:
+                continue
+            filtered_points.append(point)
+        points = filtered_points
+
+    values = [_safe_decimal(point.get("value_usd", "0")) for point in points]
+    start_value = values[0] if values else Decimal("0")
+    end_value = values[-1] if values else Decimal("0")
+    pnl_abs_total = end_value - start_value
+    pnl_pct_total = (pnl_abs_total / start_value * Decimal("100")) if start_value > 0 else Decimal("0")
+    data = {
+        "group": _decorate_wallet_groups_with_sources([group], _source_counts_for_events(all_events))[0],
+        "source_filters": source_filters,
+        "event_count": len(events),
+        "window_days": window_days,
+        "points": points,
+        "summary": {
+            "start_value_usd": start_value.normalize().to_eng_string() if start_value != 0 else "0",
+            "end_value_usd": end_value.normalize().to_eng_string() if end_value != 0 else "0",
+            "pnl_abs_usd": pnl_abs_total.normalize().to_eng_string() if pnl_abs_total != 0 else "0",
+            "pnl_pct": pnl_pct_total.normalize().to_eng_string() if start_value > 0 else "",
+        },
+    }
+    write_audit(
+        trace_id=trace_id,
+        action="dashboard.portfolio_set_history",
+        payload={"group_id": group_id, "source_filter_count": len(source_filters), "event_count": len(events)},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
+
+
+def _source_counts_for_events(events: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in events:
+        payload = row.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        source = str(payload.get("source") or payload.get("source_name") or "unknown").strip() or "unknown"
+        counts[source] = counts.get(source, 0) + 1
+    return counts
 
 
 @router.get("/api/v1/portfolio/lot-aging", response_model=StandardResponse, tags=["dashboard"])

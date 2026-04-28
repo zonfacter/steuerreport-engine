@@ -1950,6 +1950,7 @@ async function loadIntegrationOverview() {
   state.integrationRows = data.data?.rows ?? [];
   renderIntegrationTable(state.integrationRows);
   renderIntegrationMetrics();
+  renderWalletGroupSourceFilters(selectedWalletGroup());
 }
 
 async function loadLegacyHntTransfers(silent = true) {
@@ -2512,15 +2513,93 @@ function renderWalletGroupsTable(groups) {
   tbody.innerHTML = "";
   groups.forEach((group) => {
     const wallets = Array.isArray(group.wallet_addresses) ? group.wallet_addresses.length : 0;
+    const sources = Array.isArray(group.source_filters) ? group.source_filters.length : 0;
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${group.name || ""}</td><td>${group.group_id || ""}</td><td class="num">${wallets}</td>`;
+    tr.innerHTML = `
+      <td>${escapeHtml(group.name || "")}</td>
+      <td>${escapeHtml(group.group_id || "")}</td>
+      <td class="num">${wallets}</td>
+      <td class="num">${sources}</td>
+      <td class="num">${formatQty(group.source_event_count || 0)}</td>
+    `;
+    tr.addEventListener("click", () => {
+      state.selectedWalletGroupId = group.group_id || "";
+      if (el("wgSelect")) el("wgSelect").value = state.selectedWalletGroupId;
+      fillWalletGroupForm(selectedWalletGroup());
+      refreshPortfolioSetHistory(group.group_id || "");
+      switchReviewTab("holdings");
+    });
     tbody.appendChild(tr);
   });
   if (!groups.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="3">Keine Wallet-Gruppen vorhanden.</td>';
+    tr.innerHTML = '<td colspan="5">Keine Wallet-Gruppen vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function selectedWalletGroupSourceFilters() {
+  return Array.from(document.querySelectorAll("#wgSourceFilters input[type='checkbox']:checked"))
+    .map((input) => String(input.value || "").trim())
+    .filter((value) => value.length > 0);
+}
+
+function renderWalletGroupSourceFilters(group) {
+  const host = el("wgSourceFilters");
+  if (!host) return;
+  const selected = new Set(Array.isArray(group?.source_filters) ? group.source_filters : []);
+  const rows = Array.isArray(state.integrationRows) ? state.integrationRows : [];
+  if (!rows.length) {
+    host.innerHTML = '<span class="muted">Noch keine Importquellen erkannt.</span>';
+    return;
+  }
+  host.innerHTML = rows
+    .map((row) => {
+      const source = String(row.integration_id || "");
+      return `
+        <label class="source-chip">
+          <input type="checkbox" value="${escapeHtml(source)}" ${selected.has(source) ? "checked" : ""} />
+          <span>${escapeHtml(source)}</span>
+          <small>${formatQty(row.event_count || 0)} Events</small>
+        </label>
+      `;
+    })
+    .join("");
+}
+
+async function refreshPortfolioSetHistory(groupId) {
+  const safeGroupId = String(groupId || "").trim();
+  if (!safeGroupId) return;
+  const windowDays = Number(el("dashSnapshotWindow")?.value || "365");
+  const query = new URLSearchParams({
+    group_id: safeGroupId,
+    window_days: String(windowDays),
+  });
+  const res = await callApi(`/api/v1/dashboard/portfolio-set-history?${query.toString()}`, "GET", null, null, true);
+  if (res?.status !== "success") return;
+  const data = res.data || {};
+  const points = data.points || [];
+  const labels = points.map((point) => String(point.month || ""));
+  const values = points.map((point) => convertUsdForDisplay(point.value_usd || 0));
+  renderPnlCards(data.summary || {});
+  buildChart("chartWalletSnapshots", {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: `Portfolio-Set Value (${currencyLabel()})`,
+          data: values,
+          borderColor: "#f8d15c",
+          backgroundColor: "rgba(248,209,92,0.16)",
+          fill: true,
+          tension: 0.25,
+          pointRadius: 1.5,
+        },
+      ],
+    },
+    options: { maintainAspectRatio: false, scales: { y: { beginAtZero: false } } },
+  });
 }
 
 function renderLiveTokenTable(tokens) {
@@ -3192,11 +3271,13 @@ function fillWalletGroupForm(group) {
     el("wgName").value = "";
     el("wgDescription").value = "";
     el("wgWallets").value = "";
+    renderWalletGroupSourceFilters(null);
     return;
   }
   el("wgName").value = group.name || "";
   el("wgDescription").value = group.description || "";
   el("wgWallets").value = (group.wallet_addresses || []).join("\n");
+  renderWalletGroupSourceFilters(group);
 }
 
 function renderWalletGroups(groups) {
@@ -3220,6 +3301,10 @@ function renderWalletGroups(groups) {
     select.value = state.selectedWalletGroupId;
   }
   fillWalletGroupForm(selectedWalletGroup());
+  renderWalletGroupsTable(state.walletGroups);
+  if (state.selectedWalletGroupId) {
+    void refreshPortfolioSetHistory(state.selectedWalletGroupId);
+  }
   renderConnectorWizard();
 }
 
@@ -3630,6 +3715,7 @@ function init() {
     fillWalletGroupForm(selectedWalletGroup());
     if (state.selectedWalletGroupId) {
       refreshWalletSnapshotChart("group", state.selectedWalletGroupId);
+      refreshPortfolioSetHistory(state.selectedWalletGroupId);
     }
   });
 
@@ -3921,6 +4007,7 @@ function init() {
       name,
       description: description || null,
       wallet_addresses: walletAddresses,
+      source_filters: selectedWalletGroupSourceFilters(),
     };
     const res = await callApi("/api/v1/wallet-groups/upsert", "POST", payload, e.currentTarget);
     if (res?.status === "success") {
@@ -4765,8 +4852,14 @@ async function loadUnmatched() {
   el("btnSnapshotRefresh").addEventListener("click", async () => {
     const selectedGroupId = state.selectedWalletGroupId || "";
     if (selectedGroupId) {
-      await refreshWalletSnapshotChart("group", selectedGroupId);
-      showToast("Gruppen-Verlauf aktualisiert.", "ok");
+      const group = selectedWalletGroup();
+      if (Array.isArray(group?.source_filters) && group.source_filters.length > 0) {
+        await refreshPortfolioSetHistory(selectedGroupId);
+        showToast("Portfolio-Set-Verlauf aktualisiert.", "ok");
+      } else {
+        await refreshWalletSnapshotChart("group", selectedGroupId);
+        showToast("Gruppen-Verlauf aktualisiert.", "ok");
+      }
       return;
     }
     const wallet = el("dashWallet").value.trim() || el("solWallet").value.trim();
@@ -4779,6 +4872,10 @@ async function loadUnmatched() {
   });
   el("dashSnapshotWindow")?.addEventListener("change", () => {
     savePref("field.dashSnapshotWindow", el("dashSnapshotWindow").value);
+    const selectedGroupId = state.selectedWalletGroupId || "";
+    if (selectedGroupId) {
+      void refreshPortfolioSetHistory(selectedGroupId);
+    }
   });
   el("dashShowIgnored").addEventListener("change", () => {
     savePref("field.dashShowIgnored", el("dashShowIgnored").checked ? "1" : "0");

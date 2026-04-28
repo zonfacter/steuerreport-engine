@@ -76,11 +76,13 @@ Ein Portfolio-Set bündelt mehrere Integrationen/Wallets logisch zu einem Gesamt
 ### Funktionen
 - Set erstellen/bearbeiten/löschen.
 - Integrationen zuordnen.
+- Quellenfilter pro Set speichern, damit Solana RPC, Binance API, Blockpit-Referenzimporte und Helium Legacy getrennt oder gemeinsam betrachtet werden können.
 - Überblick je Set:
   - Gesamtwert EUR/USD
   - Asset-Allokation
   - Verlauf
   - Quellenbeitrag pro Integration
+- Set-spezifischer Wertverlauf basiert auf den zugeordneten Quellen und wird getrennt von globaler Portfolio-Wertentwicklung dargestellt.
 
 ### Steuerlicher Zweck
 - Trennung nach Depot-Logik weiterhin möglich.

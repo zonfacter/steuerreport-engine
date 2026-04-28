@@ -410,6 +410,11 @@
               <textarea id="wgWallets" rows="4" placeholder="Wallet1&#10;Wallet2"></textarea>
             </label>
           </div>
+          <div>
+            <label>Quellenzuordnung für virtuelle Wallet</label>
+            <p class="muted">Optional: Importquellen auswählen, die zu dieser virtuellen Wallet gehören. Ohne Auswahl nutzt die Wertkurve alle Quellen.</p>
+            <div id="wgSourceFilters" class="chip-row"></div>
+          </div>
           <div class="row">
             <button id="btnWgSave" class="btn-primary">Gruppe speichern</button>
             <button id="btnWgDelete">Gruppe löschen</button>
@@ -844,6 +849,8 @@
                   <th>Name</th>
                   <th>Group ID</th>
                   <th class="num">Wallets</th>
+                  <th class="num">Quellen</th>
+                  <th class="num">Events</th>
                 </tr>
               </thead>
               <tbody></tbody>

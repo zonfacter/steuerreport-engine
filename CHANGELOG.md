@@ -24,6 +24,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Symbol-Aliasse für SOL/HNT/IOT/MOBILE/JUP/USDT/USDC ergänzt, damit bekannte Assets nicht mehr als unbekannte Token erscheinen.
   - Portfolio-Wertentwicklung als separate Monatskurve ergänzt; sie basiert auf rekonstruierten Beständen und lokalem Preis-Cache und wird bewusst nicht mit Trading-/Wirtschaftswert vermischt.
   - Unit-Test mit SOL/USDT und HNT/USDC ergänzt, damit die Regel asset-unabhängig abgesichert ist.
+- Portfolio-Sets erweitert:
+  - Wallet-Gruppen können optional Importquellen wie `solana_rpc`, `binance_api`, Blockpit oder Helium Legacy zugeordnet bekommen.
+  - Neues Dashboard-Endpoint `GET /api/v1/dashboard/portfolio-set-history` erzeugt eine Set-spezifische Wertkurve aus den zugeordneten Quellen.
+  - UI zeigt Quellenchips, Quellen-/Event-Anzahl je virtueller Wallet und nutzt die Set-Kurve im Wertverlaufs-Chart.
 - Review- und Korrekturworkflow gehärtet:
   - Tax-Event-Overrides unterstützen jetzt `EXCLUDED`, damit ein Event mit Pflichtgrund und Notiz aus der Steuerberechnung ausgeschlossen werden kann, ohne `raw_events` zu verändern.
   - UI ergänzt vorausgewählte Ausschlussgründe für Duplikat, falsche Zuordnung, Spam/Dust, reinen Referenzimport und nicht steuerrelevante Vorgänge.
