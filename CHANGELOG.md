@@ -58,6 +58,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Admin-Endpunkte für Settings, Runtime-Config, Solana-Backfill-Service, Token-Aliases, Ignored Tokens und CEX-Credential-Load in `api/admin.py` ausgelagert.
   - Admin-Router-Tests erweitert, damit Service-Aktionen, Token-Aliases, Fehlerpfade und Loader-Kantenfälle regressionssicher bleiben.
   - Wallet-Gruppen-Endpunkte und gemeinsame Wallet-Snapshot-Helfer in `api/wallet_groups.py` ausgelagert.
+  - Import-Endpunkte inklusive Bulk-Folder-Import und Import-Job-Historie in `api/imports.py` ausgelagert.
+  - API-Coverage-Report misst die extrahierten Router-Module und lässt den temporären Router-Bootstrap `api/app.py` aus, bis die restlichen Bereiche ausgelagert sind.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.
