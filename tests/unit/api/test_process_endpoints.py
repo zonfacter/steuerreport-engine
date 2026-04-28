@@ -95,7 +95,9 @@ def test_process_preflight_blocks_without_import_data() -> None:
 
     assert response.status == "success"
     assert response.data["allow_run"] is False
-    assert any(item["code"] == "no_import_data" for item in response.data["blockers"])
+    blocker = next(item for item in response.data["blockers"] if item["code"] == "no_import_data")
+    assert blocker["action"]["target_step"] == "1"
+    assert blocker["action"]["target_element_id"] == "integrationHub"
 
 
 def test_process_preflight_allows_clean_year_with_priced_trade() -> None:
@@ -124,6 +126,33 @@ def test_process_preflight_allows_clean_year_with_priced_trade() -> None:
     assert response.data["allow_run"] is True
     assert response.data["counts"]["tax_year_events"] == 1
     assert response.data["blockers"] == []
+
+
+def test_process_preflight_returns_guided_action_for_missing_valuation() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="preflight_unpriced.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "HNT",
+                    "side": "in",
+                    "amount": "1",
+                    "event_type": "mining_reward",
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    warning = next(item for item in response.data["warnings"] if item["code"] == "valuation_coverage_incomplete")
+    assert warning["action"]["target_review_tab"] == "transfers"
+    assert warning["action"]["issue_search"] == "valuation"
 
 
 def test_process_status_returns_created_job() -> None:

@@ -46,8 +46,8 @@ class StandardResponse(BaseModel):
     trace_id: str = Field(description="Request trace identifier")
     status: str = Field(description="Response status")
     data: dict[str, Any] = Field(default_factory=dict)
-    errors: list[dict[str, str]] = Field(default_factory=list)
-    warnings: list[dict[str, str]] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ReportSnapshotCreateRequest(BaseModel):
@@ -121,6 +121,32 @@ def _preflight_has_valuation(payload: dict[str, Any]) -> bool:
     return False
 
 
+def _preflight_action(
+    label: str,
+    target_step: str,
+    target_review_tab: str | None = None,
+    target_element_id: str | None = None,
+    issue_search: str | None = None,
+    issue_status: str | None = None,
+    transfer_status: str | None = None,
+) -> dict[str, str]:
+    action: dict[str, str] = {
+        "label": label,
+        "target_step": target_step,
+    }
+    if target_review_tab:
+        action["target_review_tab"] = target_review_tab
+    if target_element_id:
+        action["target_element_id"] = target_element_id
+    if issue_search is not None:
+        action["issue_search"] = issue_search
+    if issue_status is not None:
+        action["issue_status"] = issue_status
+    if transfer_status is not None:
+        action["transfer_status"] = transfer_status
+    return action
+
+
 @router.get("/api/v1/process/options", response_model=StandardResponse, tags=["process"])
 def process_options() -> StandardResponse:
     trace_id = str(uuid4())
@@ -183,8 +209,8 @@ def process_options() -> StandardResponse:
 def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
     trace_id = str(uuid4())
     registry = build_default_registry()
-    blockers: list[dict[str, str]] = []
-    warnings: list[dict[str, str]] = []
+    blockers: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
 
     try:
         resolved_ruleset, ruleset_warnings = registry.resolve_for_year(
@@ -195,7 +221,17 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
         warnings.extend(ruleset_warnings)
     except ValueError as exc:
         resolved_ruleset = None
-        blockers.append({"code": "ruleset_not_resolvable", "message": str(exc)})
+        blockers.append(
+            {
+                "code": "ruleset_not_resolvable",
+                "message": str(exc),
+                "action": _preflight_action(
+                    "Ruleset-Auswahl prüfen",
+                    target_step="3",
+                    target_element_id="rulesetId",
+                ),
+            }
+        )
 
     raw_events = STORE.list_raw_events()
     year_events = []
@@ -216,9 +252,29 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
             unresolved_valuation_events += 1
 
     if not raw_events:
-        blockers.append({"code": "no_import_data", "message": "Keine Importdaten vorhanden."})
+        blockers.append(
+            {
+                "code": "no_import_data",
+                "message": "Keine Importdaten vorhanden.",
+                "action": _preflight_action(
+                    "Importe öffnen",
+                    target_step="1",
+                    target_element_id="integrationHub",
+                ),
+            }
+        )
     elif not year_events:
-        blockers.append({"code": "tax_year_no_events", "message": f"Keine Events fuer Steuerjahr {payload.tax_year} vorhanden."})
+        blockers.append(
+            {
+                "code": "tax_year_no_events",
+                "message": f"Keine Events fuer Steuerjahr {payload.tax_year} vorhanden.",
+                "action": _preflight_action(
+                    "Import-Zeitraum prüfen",
+                    target_step="1",
+                    target_element_id="importActivity",
+                ),
+            }
+        )
 
     issues = _build_issue_inbox()
     open_high_issues = [
@@ -232,6 +288,14 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
             {
                 "code": "high_severity_issues_open",
                 "message": f"{len(open_high_issues)} High-Severity Issues sind offen.",
+                "action": _preflight_action(
+                    "High-Issues bearbeiten",
+                    target_step="4",
+                    target_review_tab="transfers",
+                    target_element_id="issuesTable",
+                    issue_search="high",
+                    issue_status="",
+                ),
             }
         )
 
@@ -242,13 +306,33 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
     )
     unmatched_total = len(unmatched.get("unmatched_outbound_ids", [])) + len(unmatched.get("unmatched_inbound_ids", []))
     if unmatched_total > 0:
-        blockers.append({"code": "unmatched_transfers_open", "message": f"{unmatched_total} unmatched Transfers sind offen."})
+        blockers.append(
+            {
+                "code": "unmatched_transfers_open",
+                "message": f"{unmatched_total} unmatched Transfers sind offen.",
+                "action": _preflight_action(
+                    "Transfers abgleichen",
+                    target_step="4",
+                    target_review_tab="transfers",
+                    target_element_id="reviewTransferTable",
+                    transfer_status="unmatched",
+                ),
+            }
+        )
 
     if unresolved_valuation_events > 0:
         warnings.append(
             {
                 "code": "valuation_coverage_incomplete",
                 "message": f"{unresolved_valuation_events} Events im Steuerjahr haben keine klare Bewertung.",
+                "action": _preflight_action(
+                    "Bewertungs-Issues prüfen",
+                    target_step="4",
+                    target_review_tab="transfers",
+                    target_element_id="issuesTable",
+                    issue_search="valuation",
+                    issue_status="",
+                ),
             }
         )
     if unclassified_events > 0:
@@ -256,6 +340,14 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
             {
                 "code": "unclassified_events_present",
                 "message": f"{unclassified_events} Events im Steuerjahr sind unklassifiziert.",
+                "action": _preflight_action(
+                    "Klassifizierung prüfen",
+                    target_step="4",
+                    target_review_tab="transfers",
+                    target_element_id="issuesTable",
+                    issue_search="unknown",
+                    issue_status="",
+                ),
             }
         )
 

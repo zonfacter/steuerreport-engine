@@ -100,6 +100,7 @@ Ein Portfolio-Set bündelt mehrere Integrationen/Wallets logisch zu einem Gesamt
 - Vor Start zwingender Preflight.
 - Die UI darf `POST /api/v1/process/run` erst auslösen, wenn `POST /api/v1/process/preflight` keine Blocker liefert.
 - Preflight-Ergebnis wird sichtbar im Steuerlauf angezeigt, inklusive Anzahl Events im Steuerjahr, offene Transfers, High-Issues und Bewertungswarnungen.
+- Jede Preflight-Meldung kann eine Guided Action enthalten, damit Nutzer nicht raten müssen, ob sie Import, Transfer-Review oder Issue-Inbox öffnen müssen.
 
 ## Preflight-Check (vor jedem Run)
 ### Blocker
@@ -115,7 +116,7 @@ Ein Portfolio-Set bündelt mehrere Integrationen/Wallets logisch zu einem Gesamt
 
 ## Review-Workflow
 - Automatische "Review needed"-Inbox aus Blockern/Warnungen.
-- Guided Actions je Issue-Typ (statt Rohdatenzwang).
+- Guided Actions je Issue-Typ (statt Rohdatenzwang) mit vorbelegten UI-Filtern.
 - Gate-Status für Exportfreigabe (`allow_export`).
 
 ## Import/Export für Steuerlauf-Konfiguration

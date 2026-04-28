@@ -38,6 +38,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Neuer Endpoint `GET /api/v1/process/options` liefert validierte Steuerjahre, Rulesets, Steuerverfahren, Depotmodi, Validierungsflags und Standardprofile.
   - Neuer Endpoint `POST /api/v1/process/preflight` prüft vor dem Steuerlauf Importdaten, Ruleset-Auflösung, offene High-Severity-Issues, unmatched Transfers und Bewertungsabdeckung.
   - UI führt den Preflight vor dem Steuerlauf automatisch aus und blockiert `process/run`, wenn harte Blocker offen sind.
+  - Preflight-Blocker und Warnungen liefern Guided Actions, die direkt zur passenden Import-, Transfer- oder Issue-Ansicht springen und Filter vorbelegen.
 - Solana-Importkontrolle erweitert:
   - Admin-Backfill-Status zeigt lokale Solana-Coverage mit Event-/TX-Zahl, Zeitraum und Chain-Start-Indikator.
   - Background-Scanner speichert künftig, ob der RPC-Import den Anfang der Signaturhistorie erreicht hat.

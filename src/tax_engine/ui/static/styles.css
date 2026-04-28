@@ -1016,6 +1016,33 @@ tr.sum-row td {
   border-color: rgba(224, 93, 103, 0.42);
 }
 
+.guided-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.guided-action {
+  background: rgba(248, 209, 92, 0.12);
+  border: 1px solid rgba(248, 209, 92, 0.46);
+  border-radius: 999px;
+  color: #ffe9a8;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 7px 11px;
+}
+
+.guided-action:hover {
+  background: rgba(248, 209, 92, 0.2);
+}
+
+.guided-focus {
+  outline: 2px solid rgba(248, 209, 92, 0.82);
+  outline-offset: 4px;
+  transition: outline-color 0.2s ease;
+}
+
 .action-stack {
   display: grid;
   gap: 8px;

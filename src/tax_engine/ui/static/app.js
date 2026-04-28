@@ -80,6 +80,15 @@ const REVIEW_LABELS = {
   tax: "Steuer",
 };
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 const numberFmt = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 8 });
 const numberFmt2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -191,17 +200,70 @@ function renderPreflight(data) {
     `${formatInt(counts.high_severity_open || 0)} High-Issues`,
     `${formatInt(counts.unresolved_valuation_events || 0)} Bewertungswarnungen`,
   ];
+  const renderAction = (item, idx, kind) => {
+    if (!item?.action) return "";
+    return `
+      <button
+        class="guided-action"
+        data-preflight-kind="${escapeHtml(kind)}"
+        data-preflight-index="${idx}"
+        type="button"
+      >${escapeHtml(item.action.label || "Öffnen")}</button>
+    `;
+  };
   const blockerHtml = blockers.length
-    ? `<div><strong>Blocker:</strong> ${blockers.map((item) => item.message || item.code).join(" · ")}</div>`
+    ? `<div><strong>Blocker:</strong> ${blockers.map((item) => escapeHtml(item.message || item.code)).join(" · ")}</div>
+       <div class="guided-actions">${blockers.map((item, idx) => renderAction(item, idx, "blockers")).join("")}</div>`
     : "";
   const warningHtml = warnings.length
-    ? `<div><strong>Warnungen:</strong> ${warnings.map((item) => item.message || item.code).join(" · ")}</div>`
+    ? `<div><strong>Warnungen:</strong> ${warnings.map((item) => escapeHtml(item.message || item.code)).join(" · ")}</div>
+       <div class="guided-actions">${warnings.map((item, idx) => renderAction(item, idx, "warnings")).join("")}</div>`
     : "";
   panel.innerHTML = `
-    <div><strong>${status}</strong> · ${details.join(" · ")}</div>
+    <div><strong>${escapeHtml(status)}</strong> · ${details.map(escapeHtml).join(" · ")}</div>
     ${blockerHtml}
     ${warningHtml}
   `;
+}
+
+function applyPreflightAction(action) {
+  if (!action) return;
+  const step = String(action.target_step || "");
+  const review = String(action.target_review_tab || "");
+  if (step) {
+    guardedSwitchStep(step);
+  }
+  if (step === "4" && review) {
+    switchReviewTab(review);
+  }
+  if (Object.prototype.hasOwnProperty.call(action, "issue_search") && el("reviewIssueSearch")) {
+    el("reviewIssueSearch").value = action.issue_search || "";
+    savePref("field.reviewIssueSearch", el("reviewIssueSearch").value);
+    state.paging.issuePage = 1;
+    renderIssues(state.issues);
+    el("btnIssuesLoad")?.click();
+  }
+  if (Object.prototype.hasOwnProperty.call(action, "issue_status") && el("reviewIssueStatus")) {
+    el("reviewIssueStatus").value = action.issue_status || "";
+    savePref("field.reviewIssueStatus", el("reviewIssueStatus").value);
+    state.paging.issuePage = 1;
+    renderIssues(state.issues);
+  }
+  if (Object.prototype.hasOwnProperty.call(action, "transfer_status") && el("reviewTransferStatus")) {
+    el("reviewTransferStatus").value = action.transfer_status || "";
+    savePref("field.reviewTransferStatus", el("reviewTransferStatus").value);
+    state.paging.transferPage = 1;
+    renderTransferLedger(state.transferLedger);
+    el("btnReviewTransferLoad")?.click();
+  }
+  const target = action.target_element_id ? el(action.target_element_id) : null;
+  if (target) {
+    window.setTimeout(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("guided-focus");
+      window.setTimeout(() => target.classList.remove("guided-focus"), 1800);
+    }, 120);
+  }
 }
 
 async function runPreflight(trigger = null, silent = false) {
@@ -3291,6 +3353,15 @@ async function loadLatestProcessJob(silent = true) {
 
 function init() {
   el("eventsJson").value = JSON.stringify(defaultEvents, null, 2);
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest(".guided-action");
+    if (!button) return;
+    const kind = button.dataset.preflightKind;
+    const idx = Number(button.dataset.preflightIndex || "-1");
+    const source = state.preflight?.[kind];
+    const action = Array.isArray(source) && idx >= 0 ? source[idx]?.action : null;
+    applyPreflightAction(action);
+  });
   if (el("cexEndDate") && !el("cexEndDate").value) {
     el("cexEndDate").value = new Date().toISOString().slice(0, 10);
   }
