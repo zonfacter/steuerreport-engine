@@ -428,6 +428,33 @@
 
         <h3>Transfer-Nachverfolgung</h3>
         <p class="muted">Zeigt nachvollziehbar: von welcher Quelle/Wallet ein Transfer kam und wohin er gematcht wurde.</p>
+        <div class="grid">
+          <div class="metric"><span>Legacy HNT gesendet</span><strong id="legacyHntSent">-</strong></div>
+          <div class="metric"><span>Legacy HNT erhalten</span><strong id="legacyHntReceived">-</strong></div>
+          <div class="metric"><span>Gegenparteien</span><strong id="legacyHntCounterparties">-</strong></div>
+          <div class="metric"><span>Legacy Zeitraum</span><strong id="legacyHntRange">-</strong></div>
+        </div>
+        <div class="row">
+          <button id="btnLegacyHntTransfers">Legacy-HNT Transfers laden</button>
+          <span class="muted">Für alte Helium-L1-Transfers vor der Solana-Migration, inkl. Staking-/Rücktransfer-Spuren.</span>
+        </div>
+        <div class="table-wrap">
+          <table id="legacyHntTransferTable">
+            <thead>
+              <tr>
+                <th>Gegenwallet</th>
+                <th class="num">Gesendet HNT</th>
+                <th class="num">Erhalten HNT</th>
+                <th class="num">Fees HNT</th>
+                <th class="num">Netto HNT</th>
+                <th>Von</th>
+                <th>Bis</th>
+                <th>Beispiel</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
         <div class="table-wrap">
           <table id="transferLedgerTable">
             <thead>
@@ -990,8 +1017,15 @@
         <section class="review-panel hidden" data-review-panel="transfers">
           <h3>Transfers</h3>
           <p class="muted">Zentrale Nachverfolgung für interne Transfers inkl. Quelle/Ziel und Haltefrist-Kontinuität.</p>
+          <div class="grid">
+            <div class="metric"><span>Legacy HNT gesendet</span><strong id="reviewLegacyHntSent">-</strong></div>
+            <div class="metric"><span>Legacy HNT erhalten</span><strong id="reviewLegacyHntReceived">-</strong></div>
+            <div class="metric"><span>Gegenparteien</span><strong id="reviewLegacyHntCounterparties">-</strong></div>
+            <div class="metric"><span>Legacy Zeitraum</span><strong id="reviewLegacyHntRange">-</strong></div>
+          </div>
           <div class="row">
             <button id="btnReviewTransferLoad" class="btn-primary">Transfer-Ledger laden</button>
+            <button id="btnReviewLegacyHntTransfers">Legacy-HNT laden</button>
             <input id="reviewTransferSearch" placeholder="Suche Asset/Wallet/Plattform/Match" />
             <label>Status
               <select id="reviewTransferStatus">
@@ -1034,6 +1068,23 @@
             <button id="btnIssueNext">▶</button>
             <span id="reviewIssuePageInfo" class="muted"></span>
             <button id="btnIssuesCsv">Issues CSV</button>
+          </div>
+          <div class="table-wrap">
+            <table id="reviewLegacyHntTransferTable">
+              <thead>
+                <tr>
+                  <th>Gegenwallet</th>
+                  <th class="num">Gesendet HNT</th>
+                  <th class="num">Erhalten HNT</th>
+                  <th class="num">Fees HNT</th>
+                  <th class="num">Netto HNT</th>
+                  <th>Von</th>
+                  <th>Bis</th>
+                  <th>Beispiel</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
           </div>
           <div class="table-wrap">
             <table id="reviewTransferTable">

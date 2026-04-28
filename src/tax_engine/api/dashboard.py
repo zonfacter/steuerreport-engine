@@ -319,6 +319,27 @@ def portfolio_integrations() -> StandardResponse:
     )
 
 
+@router.get("/api/v1/portfolio/helium-legacy-transfers", response_model=StandardResponse, tags=["dashboard"])
+def portfolio_helium_legacy_transfers() -> StandardResponse:
+    trace_id = str(uuid4())
+    overview = _build_helium_legacy_transfer_overview(STORE.list_raw_events())
+    write_audit(
+        trace_id=trace_id,
+        action="portfolio.helium_legacy_transfers",
+        payload={
+            "transfer_count": overview["summary"]["transfer_count"],
+            "counterparty_count": overview["summary"]["counterparty_count"],
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data=overview,
+        errors=[],
+        warnings=[],
+    )
+
+
 @router.get("/api/v1/dashboard/wallet-snapshots", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_wallet_snapshots(
     scope: str = "wallet",
@@ -405,6 +426,150 @@ def portfolio_lot_aging(as_of_utc: str | None = None, asset: str | None = None) 
         payload={"as_of_utc": as_of.isoformat(), "asset_filter": asset_filter, "lot_count": snapshot.get("lot_count", 0)},
     )
     return StandardResponse(trace_id=trace_id, status="success", data=snapshot, errors=[], warnings=[])
+
+
+def _build_helium_legacy_transfer_overview(events: list[dict[str, Any]]) -> dict[str, Any]:
+    origin_wallets: set[str] = set()
+    counterparties: dict[str, dict[str, Any]] = {}
+    transfers: list[dict[str, Any]] = []
+    sent_hnt = Decimal("0")
+    received_hnt = Decimal("0")
+    fees_hnt = Decimal("0")
+    first_ts = ""
+    last_ts = ""
+
+    for row in events:
+        payload = row.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("source") or "") != "helium_legacy_cointracking":
+            continue
+        if str(payload.get("event_type") or "").lower() != "legacy_transfer":
+            continue
+
+        asset = str(payload.get("asset") or "").upper()
+        if asset != "HNT":
+            continue
+        side = str(payload.get("side") or "").lower().strip()
+        qty = _safe_decimal(payload.get("quantity"))
+        fee = _safe_decimal(payload.get("fee"))
+        timestamp = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")
+        tx_id = str(payload.get("tx_id") or "")
+        wallet = str(payload.get("wallet_address") or "")
+        from_wallet = str(payload.get("from_wallet") or "")
+        to_wallet = str(payload.get("to_wallet") or "")
+        counterparty = str(payload.get("counterparty_wallet") or "")
+        comment = str(payload.get("raw_comment") or "")
+
+        if wallet:
+            origin_wallets.add(wallet)
+        if timestamp:
+            if not first_ts or timestamp < first_ts:
+                first_ts = timestamp
+            if not last_ts or timestamp > last_ts:
+                last_ts = timestamp
+        if side == "out":
+            sent_hnt += abs(qty)
+            fees_hnt += abs(fee)
+            direction = "out"
+        elif side == "in":
+            received_hnt += abs(qty)
+            direction = "in"
+        else:
+            direction = "unknown"
+
+        counterparty_key = counterparty or ("unknown_to" if direction == "out" else "unknown_from")
+        bucket = counterparties.setdefault(
+            counterparty_key,
+            {
+                "counterparty_wallet": counterparty_key,
+                "sent_hnt": Decimal("0"),
+                "received_hnt": Decimal("0"),
+                "fees_hnt": Decimal("0"),
+                "outbound_count": 0,
+                "inbound_count": 0,
+                "first_timestamp_utc": "",
+                "last_timestamp_utc": "",
+                "sample_tx_ids": [],
+                "sample_comments": [],
+            },
+        )
+        if direction == "out":
+            bucket["sent_hnt"] += abs(qty)
+            bucket["fees_hnt"] += abs(fee)
+            bucket["outbound_count"] += 1
+        elif direction == "in":
+            bucket["received_hnt"] += abs(qty)
+            bucket["inbound_count"] += 1
+        if timestamp:
+            if not bucket["first_timestamp_utc"] or timestamp < bucket["first_timestamp_utc"]:
+                bucket["first_timestamp_utc"] = timestamp
+            if not bucket["last_timestamp_utc"] or timestamp > bucket["last_timestamp_utc"]:
+                bucket["last_timestamp_utc"] = timestamp
+        if tx_id and len(bucket["sample_tx_ids"]) < 5:
+            bucket["sample_tx_ids"].append(tx_id)
+        if comment and len(bucket["sample_comments"]) < 3:
+            bucket["sample_comments"].append(comment)
+
+        transfers.append(
+            {
+                "timestamp_utc": timestamp,
+                "direction": direction,
+                "asset": asset,
+                "quantity_hnt": _decimal_to_plain(abs(qty)),
+                "fee_hnt": _decimal_to_plain(abs(fee)),
+                "wallet_address": wallet,
+                "from_wallet": from_wallet,
+                "to_wallet": to_wallet,
+                "counterparty_wallet": counterparty,
+                "tx_id": tx_id,
+                "comment": comment,
+            }
+        )
+
+    counterparty_rows: list[dict[str, Any]] = []
+    for bucket in counterparties.values():
+        net_hnt = _safe_decimal(bucket["received_hnt"]) - _safe_decimal(bucket["sent_hnt"]) - _safe_decimal(bucket["fees_hnt"])
+        counterparty_rows.append(
+            {
+                "counterparty_wallet": str(bucket["counterparty_wallet"]),
+                "sent_hnt": _decimal_to_plain(bucket["sent_hnt"]),
+                "received_hnt": _decimal_to_plain(bucket["received_hnt"]),
+                "fees_hnt": _decimal_to_plain(bucket["fees_hnt"]),
+                "net_hnt": _decimal_to_plain(net_hnt),
+                "outbound_count": int(bucket["outbound_count"]),
+                "inbound_count": int(bucket["inbound_count"]),
+                "first_timestamp_utc": str(bucket["first_timestamp_utc"]),
+                "last_timestamp_utc": str(bucket["last_timestamp_utc"]),
+                "sample_tx_ids": list(bucket["sample_tx_ids"]),
+                "sample_comments": list(bucket["sample_comments"]),
+            }
+        )
+    counterparty_rows.sort(
+        key=lambda item: (
+            -abs(_safe_decimal(item["sent_hnt"]) + _safe_decimal(item["received_hnt"])),
+            str(item["counterparty_wallet"]),
+        )
+    )
+    transfers.sort(key=lambda item: str(item.get("timestamp_utc") or ""))
+
+    return {
+        "summary": {
+            "origin_wallets": sorted(origin_wallets),
+            "transfer_count": len(transfers),
+            "counterparty_count": len(counterparty_rows),
+            "outbound_count": sum(int(item["outbound_count"]) for item in counterparty_rows),
+            "inbound_count": sum(int(item["inbound_count"]) for item in counterparty_rows),
+            "sent_hnt": _decimal_to_plain(sent_hnt),
+            "received_hnt": _decimal_to_plain(received_hnt),
+            "fees_hnt": _decimal_to_plain(fees_hnt),
+            "net_hnt": _decimal_to_plain(received_hnt - sent_hnt - fees_hnt),
+            "first_timestamp_utc": first_ts,
+            "last_timestamp_utc": last_ts,
+        },
+        "counterparties": counterparty_rows,
+        "transfers": transfers,
+    }
 
 
 def _safe_decimal(value: Any) -> Decimal:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -139,6 +140,25 @@ CONNECTOR_SPECS: dict[str, ConnectorSpec] = {
             "raw_payer": ("payer",),
             "raw_payee": ("payee",),
             "raw_block": ("block",),
+        },
+    ),
+    "helium_legacy_cointracking": ConnectorSpec(
+        connector_id="helium_legacy_cointracking",
+        label="Helium Legacy CoinTracking Export",
+        modes=("csv",),
+        aliases={
+            "timestamp": ("date",),
+            "type": ("type",),
+            "buy_amount": ("buyAmount", "buy amount"),
+            "buy_currency": ("buyCurrency", "buy currency"),
+            "sell_amount": ("sellAmount", "sell amount"),
+            "sell_currency": ("sellCurrency", "sell currency"),
+            "fee_amount": ("feeAmount", "fee amount"),
+            "fee_currency": ("feeCurrency", "fee currency"),
+            "tx_id": ("txId", "txid", "transaction id"),
+            "comment": ("comment",),
+            "buy_value_usd": ("buyValueUSD", "buy value usd"),
+            "sell_value_usd": ("sellValueUSD", "sell value usd"),
         },
     ),
 }
@@ -580,6 +600,150 @@ def _normalize_heliumgeek_row(spec: ConnectorSpec, row: dict[str, Any], idx: int
     return out_rows, warnings
 
 
+def _normalize_helium_legacy_cointracking_row(
+    spec: ConnectorSpec,
+    row: dict[str, Any],
+    idx: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    warnings: list[dict[str, str]] = []
+    timestamp_raw = _get_value(row, spec.aliases["timestamp"])
+    tx_id_raw = _get_value(row, spec.aliases["tx_id"])
+    type_raw = str(_get_value(row, spec.aliases["type"]) or "").strip()
+    comment = str(_get_value(row, spec.aliases["comment"]) or "").strip()
+
+    timestamp_utc: str | None = None
+    if timestamp_raw is not None:
+        parsed_ts, ts_error = parse_datetime_value(timestamp_raw)
+        if ts_error:
+            warnings.append({"row": str(idx), "code": ts_error, "field": "date"})
+            timestamp_utc = str(timestamp_raw)
+        else:
+            timestamp_utc = parsed_ts
+
+    def _num(value: Any, field: str) -> str:
+        if value is None:
+            return ""
+        parsed, parse_error = parse_decimal_value(value)
+        if parse_error:
+            warnings.append({"row": str(idx), "code": parse_error, "field": field})
+            return str(value)
+        if parsed is None:
+            return ""
+        return parsed.to_eng_string()
+
+    def _asset(value: Any) -> str:
+        raw = str(value or "").strip().upper()
+        return "HNT" if raw in {"HNT2", "HNT"} else raw
+
+    event_type_raw = type_raw.lower().replace(" ", "_")
+    legacy_wallet = _extract_legacy_wallet_from_tx(str(tx_id_raw or ""))
+    counterparty = _extract_helium_counterparty(comment)
+    base_tx = str(tx_id_raw).strip() if tx_id_raw is not None and str(tx_id_raw).strip() else f"helium-legacy-{idx}"
+
+    if event_type_raw == "mining":
+        qty = _num(_get_value(row, spec.aliases["buy_amount"]), "buyAmount")
+        asset = _asset(_get_value(row, spec.aliases["buy_currency"]))
+        value_usd = _num(_get_value(row, spec.aliases["buy_value_usd"]), "buyValueUSD")
+        if not qty or not asset:
+            warnings.append({"row": str(idx), "code": "row_not_mappable"})
+            return [], warnings
+        return [
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": asset,
+                "quantity": qty,
+                "price": "",
+                "value_usd": value_usd,
+                "side": "in",
+                "event_type": "mining_reward",
+                "tax_category": "INCOME_SO",
+                "tx_id": base_tx,
+                "wallet_address": legacy_wallet,
+                "source": "helium_legacy_cointracking",
+                "legacy_chain": "helium_l1",
+                "raw_row": row,
+            }
+        ], warnings
+
+    if event_type_raw in {"withdrawal", "deposit"}:
+        is_out = event_type_raw == "withdrawal"
+        qty = _num(
+            _get_value(row, spec.aliases["sell_amount"] if is_out else spec.aliases["buy_amount"]),
+            "sellAmount" if is_out else "buyAmount",
+        )
+        asset = _asset(_get_value(row, spec.aliases["sell_currency"] if is_out else spec.aliases["buy_currency"]))
+        value_usd = _num(
+            _get_value(row, spec.aliases["sell_value_usd"] if is_out else spec.aliases["buy_value_usd"]),
+            "sellValueUSD" if is_out else "buyValueUSD",
+        )
+        fee = _num(_get_value(row, spec.aliases["fee_amount"]), "feeAmount")
+        fee_asset = _asset(_get_value(row, spec.aliases["fee_currency"]))
+        if not qty or not asset:
+            warnings.append({"row": str(idx), "code": "row_not_mappable"})
+            return [], warnings
+        return [
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": asset,
+                "quantity": qty,
+                "price": "",
+                "value_usd": value_usd,
+                "fee": fee,
+                "fee_asset": fee_asset,
+                "side": "out" if is_out else "in",
+                "event_type": "legacy_transfer",
+                "tx_id": base_tx,
+                "wallet_address": legacy_wallet,
+                "from_wallet": legacy_wallet if is_out else counterparty,
+                "to_wallet": counterparty if is_out else legacy_wallet,
+                "counterparty_wallet": counterparty,
+                "legacy_chain": "helium_l1",
+                "source": "helium_legacy_cointracking",
+                "raw_comment": comment,
+                "raw_row": row,
+            }
+        ], warnings
+
+    if event_type_raw == "other_fee":
+        qty = _num(_get_value(row, spec.aliases["sell_amount"]), "sellAmount")
+        asset = _asset(_get_value(row, spec.aliases["sell_currency"]))
+        value_usd = _num(_get_value(row, spec.aliases["sell_value_usd"]), "sellValueUSD")
+        if not qty or not asset:
+            warnings.append({"row": str(idx), "code": "row_not_mappable"})
+            return [], warnings
+        return [
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": asset,
+                "quantity": qty,
+                "price": "",
+                "value_usd": value_usd,
+                "side": "out",
+                "event_type": "legacy_network_fee",
+                "tx_id": base_tx,
+                "wallet_address": legacy_wallet,
+                "legacy_chain": "helium_l1",
+                "source": "helium_legacy_cointracking",
+                "raw_comment": comment,
+                "raw_row": row,
+            }
+        ], warnings
+
+    warnings.append({"row": str(idx), "code": "row_not_mappable"})
+    return [], warnings
+
+
+def _extract_legacy_wallet_from_tx(tx_id: str) -> str:
+    if "+" not in tx_id:
+        return ""
+    return tx_id.rsplit("+", 1)[-1].strip()
+
+
+def _extract_helium_counterparty(comment: str) -> str:
+    match = re.search(r"\b(?:to|from)\s+([A-Za-z0-9]{20,80})\b", comment)
+    return match.group(1) if match else ""
+
+
 def normalize_connector_rows(
     connector_id: str,
     rows: list[dict[str, Any]],
@@ -607,6 +771,11 @@ def normalize_connector_rows(
             continue
         if connector_id.lower() == "heliumgeek":
             row_items, row_warnings = _normalize_heliumgeek_row(spec, row, idx)
+            warnings.extend(row_warnings)
+            normalized_rows.extend(row_items)
+            continue
+        if connector_id.lower() == "helium_legacy_cointracking":
+            row_items, row_warnings = _normalize_helium_legacy_cointracking_row(spec, row, idx)
             warnings.extend(row_warnings)
             normalized_rows.extend(row_items)
             continue

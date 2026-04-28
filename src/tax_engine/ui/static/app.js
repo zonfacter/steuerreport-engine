@@ -5,6 +5,7 @@ const state = {
   unmatchedOutbound: [],
   unmatchedInbound: [],
   transferLedger: [],
+  legacyHntTransfers: null,
   issues: [],
   lotRows: [],
   taxLines: [],
@@ -114,6 +115,18 @@ function formatCurrency(value, currency = "EUR") {
 
 function formatInt(value) {
   return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(toNumber(value));
+}
+
+function shortAddress(value) {
+  const raw = String(value || "").trim();
+  if (raw.length <= 18) return raw;
+  return `${raw.slice(0, 8)}...${raw.slice(-6)}`;
+}
+
+function shortText(value, maxLength = 60) {
+  const raw = String(value || "").trim();
+  if (raw.length <= maxLength) return raw;
+  return `${raw.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
 function rulesetForYear(year) {
@@ -1069,6 +1082,61 @@ function renderTransferLedger(rows) {
   updateWorkflowGuide();
 }
 
+function renderLegacyHntTransfers(data) {
+  const summary = data?.summary || {};
+  const rows = Array.isArray(data?.counterparties) ? data.counterparties : [];
+  const range = summary.first_timestamp_utc || summary.last_timestamp_utc
+    ? `${String(summary.first_timestamp_utc || "?").slice(0, 10)} bis ${String(summary.last_timestamp_utc || "?").slice(0, 10)}`
+    : "-";
+
+  [
+    ["legacyHntSent", summary.sent_hnt],
+    ["reviewLegacyHntSent", summary.sent_hnt],
+    ["legacyHntReceived", summary.received_hnt],
+    ["reviewLegacyHntReceived", summary.received_hnt],
+  ].forEach(([id, value]) => {
+    if (el(id)) el(id).textContent = `${formatQty(value || 0)} HNT`;
+  });
+  [
+    ["legacyHntCounterparties", summary.counterparty_count],
+    ["reviewLegacyHntCounterparties", summary.counterparty_count],
+  ].forEach(([id, value]) => {
+    if (el(id)) el(id).textContent = formatQty(value || 0);
+  });
+  ["legacyHntRange", "reviewLegacyHntRange"].forEach((id) => {
+    if (el(id)) el(id).textContent = range;
+  });
+
+  ["legacyHntTransferTable", "reviewLegacyHntTransferTable"].forEach((tableId) => {
+    const tbody = el(tableId)?.querySelector("tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    rows.slice(0, 50).forEach((item) => {
+      const sample = Array.isArray(item.sample_comments) && item.sample_comments.length
+        ? item.sample_comments[0]
+        : (Array.isArray(item.sample_tx_ids) ? item.sample_tx_ids[0] : "");
+      const net = toNumber(item.net_hnt || 0);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td title="${item.counterparty_wallet || ""}">${shortAddress(item.counterparty_wallet || "")}</td>
+        <td class="num num-neg">${formatQty(item.sent_hnt || 0)}</td>
+        <td class="num num-pos">${formatQty(item.received_hnt || 0)}</td>
+        <td class="num">${formatQty(item.fees_hnt || 0)}</td>
+        <td class="num ${net < 0 ? "num-neg" : net > 0 ? "num-pos" : ""}">${formatQty(item.net_hnt || 0)}</td>
+        <td>${String(item.first_timestamp_utc || "").slice(0, 10)}</td>
+        <td>${String(item.last_timestamp_utc || "").slice(0, 10)}</td>
+        <td title="${sample || ""}">${shortText(sample || "", 42)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="8">Keine Legacy-HNT-Transfers importiert.</td>';
+      tbody.appendChild(tr);
+    }
+  });
+}
+
 function renderLotAging(rows) {
   const tbody = el("dashLotTable")?.querySelector("tbody");
   if (!tbody) return;
@@ -1545,6 +1613,7 @@ async function loadDashboard() {
   const res = await callApi("/api/v1/dashboard/overview", "GET", null, null, true);
   if (res?.status === "success") {
     renderDashboard(res.data);
+    loadLegacyHntTransfers(true);
     const suggestedYear = res.data?.summary?.suggested_tax_year;
     const currentTaxYear = el("taxYear").value.trim();
     if (suggestedYear && (!currentTaxYear || currentTaxYear === "2026")) {
@@ -1677,6 +1746,13 @@ async function loadIntegrationOverview() {
   state.integrationRows = data.data?.rows ?? [];
   renderIntegrationTable(state.integrationRows);
   renderIntegrationMetrics();
+}
+
+async function loadLegacyHntTransfers(silent = true) {
+  const data = await callApi("/api/v1/portfolio/helium-legacy-transfers", "GET", null, null, silent);
+  if (data?.status !== "success") return;
+  state.legacyHntTransfers = data.data;
+  renderLegacyHntTransfers(state.legacyHntTransfers);
 }
 
 async function loadImportSourcesSummary() {
@@ -3755,9 +3831,12 @@ async function loadUnmatched() {
     state.transferLedger = data.data.rows ?? [];
     state.paging.transferPage = 1;
     renderTransferLedger(state.transferLedger);
+    await loadLegacyHntTransfers(true);
   }
   el("btnTransferLedger").addEventListener("click", loadTransferLedger);
   el("btnReviewTransferLoad")?.addEventListener("click", loadTransferLedger);
+  el("btnLegacyHntTransfers")?.addEventListener("click", () => loadLegacyHntTransfers(false));
+  el("btnReviewLegacyHntTransfers")?.addEventListener("click", () => loadLegacyHntTransfers(false));
   ["reviewTransferSearch", "reviewTransferStatus"].forEach((id) => {
     const node = el(id);
     if (!node) return;

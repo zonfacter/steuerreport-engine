@@ -28,6 +28,12 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Tax-Event-Overrides unterstützen jetzt `EXCLUDED`, damit ein Event mit Pflichtgrund und Notiz aus der Steuerberechnung ausgeschlossen werden kann, ohne `raw_events` zu verändern.
   - UI ergänzt vorausgewählte Ausschlussgründe für Duplikat, falsche Zuordnung, Spam/Dust, reinen Referenzimport und nicht steuerrelevante Vorgänge.
   - Side-by-Side Ruleset-Vergleiche nutzen dieselben steuerwirksamen Overrides wie reguläre Steuerläufe.
+- Helium-Legacy-Import ergänzt:
+  - CoinTracking-/Fairspot-kompatible Helium-L1-Exports werden als `helium_legacy_cointracking` erkannt.
+  - `HNT2` wird in `HNT` normalisiert; Mining-Rewards, Legacy-Transfers und Netzwerkgebühren werden getrennt klassifiziert.
+  - Legacy-Transfers werden nicht als Spot-Veräußerung behandelt.
+  - Neuer Endpoint `GET /api/v1/portfolio/helium-legacy-transfers` gruppiert Gegenwallets mit gesendeten/erhaltenen HNT, Fees, Nettofluss und Beispiel-Transaktionen.
+  - UI zeigt die Legacy-HNT-Transferübersicht im Transfer-Review an.
 - Solana-Importkontrolle erweitert:
   - Admin-Backfill-Status zeigt lokale Solana-Coverage mit Event-/TX-Zahl, Zeitraum und Chain-Start-Indikator.
   - Background-Scanner speichert künftig, ob der RPC-Import den Anfang der Signaturhistorie erreicht hat.

@@ -122,6 +122,41 @@ def test_solana_swap_transfers_are_classified_as_spot() -> None:
     assert result["tax_lines"][0]["asset"] == "SOL"
 
 
+def test_legacy_helium_transfers_and_network_fees_do_not_create_spot_disposals() -> None:
+    raw_events = [
+        {
+            "unique_event_id": "legacy-transfer",
+            "payload": {
+                "timestamp_utc": "2022-01-01T00:00:00+00:00",
+                "asset": "HNT",
+                "event_type": "legacy_transfer",
+                "side": "out",
+                "quantity": "10",
+                "value_usd": "100",
+                "source": "helium_legacy_cointracking",
+            },
+        },
+        {
+            "unique_event_id": "legacy-fee",
+            "payload": {
+                "timestamp_utc": "2022-01-01T00:01:00+00:00",
+                "asset": "HNT",
+                "event_type": "legacy_network_fee",
+                "side": "out",
+                "quantity": "0.0001",
+                "value_usd": "0.01",
+                "source": "helium_legacy_cointracking",
+            },
+        },
+    ]
+
+    result = process_events_for_year(raw_events=raw_events, tax_year=2022)
+
+    assert result["class_counts"]["transfer"] == 2
+    assert result["tax_line_count"] == 0
+    assert result["short_sell_violations"] == 0
+
+
 def test_stable_asset_events_convert_usd_to_eur_without_explicit_price_eur() -> None:
     raw_events = [
         {

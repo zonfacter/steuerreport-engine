@@ -263,7 +263,7 @@ def _classify(payload: dict[str, Any]) -> str:
 
     if any(token in text for token in ("reward", "staking", "mining", "claim")):
         return "reward"
-    if any(token in text for token in ("transfer", "deposit", "withdraw")):
+    if any(token in text for token in ("transfer", "deposit", "withdraw", "fee")):
         return "transfer"
     return "spot"
 

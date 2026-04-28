@@ -29,6 +29,7 @@ from tax_engine.api.app import (
     admin_token_aliases_upsert,
     dashboard_overview,
     dashboard_role_override,
+    portfolio_helium_legacy_transfers,
 )
 from tax_engine.ingestion.service import confirm_import
 from tax_engine.ingestion.store import STORE
@@ -188,6 +189,74 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
     source_breakdown = {(item["year"], item["source"]): item for item in activity["source_breakdown"]}
     assert source_breakdown[(2025, "blockpit")]["events"] == 2
     assert overview_resp.data["portfolio_value_history"]
+
+
+def test_portfolio_helium_legacy_transfers_groups_counterparties() -> None:
+    _reset_store()
+    legacy_wallet = "133rkwoKCfxLTTt1zGjge7c2nGLUSY5sTuG2V61zi6ik269Tf4j"
+    counterparty = "137tZvaxM4zjvfU9GcDzzmAsdMjkESCULx9XaVrGWKj989izPue"
+    confirm_import(
+        "helium_legacy_cointracking:test.csv",
+        [
+            {
+                "timestamp_utc": "2022-01-05T08:30:00+00:00",
+                "asset": "HNT",
+                "quantity": "2.25",
+                "fee": "0.00035",
+                "fee_asset": "HNT",
+                "side": "out",
+                "event_type": "legacy_transfer",
+                "tx_id": f"withdraw-tx+{legacy_wallet}",
+                "wallet_address": legacy_wallet,
+                "from_wallet": legacy_wallet,
+                "to_wallet": counterparty,
+                "counterparty_wallet": counterparty,
+                "legacy_chain": "helium_l1",
+                "source": "helium_legacy_cointracking",
+                "raw_comment": f"payment_v2 to {counterparty}",
+            },
+            {
+                "timestamp_utc": "2022-02-05T08:30:00+00:00",
+                "asset": "HNT",
+                "quantity": "1.25",
+                "side": "in",
+                "event_type": "legacy_transfer",
+                "tx_id": f"deposit-tx+{legacy_wallet}",
+                "wallet_address": legacy_wallet,
+                "from_wallet": counterparty,
+                "to_wallet": legacy_wallet,
+                "counterparty_wallet": counterparty,
+                "legacy_chain": "helium_l1",
+                "source": "helium_legacy_cointracking",
+                "raw_comment": f"payment_v1 from {counterparty}",
+            },
+            {
+                "timestamp_utc": "2022-03-05T08:30:00+00:00",
+                "asset": "HNT",
+                "quantity": "9",
+                "side": "in",
+                "event_type": "mining_reward",
+                "tx_id": f"reward-tx+{legacy_wallet}",
+                "wallet_address": legacy_wallet,
+                "source": "helium_legacy_cointracking",
+            },
+        ],
+    )
+
+    response = portfolio_helium_legacy_transfers()
+
+    assert response.status == "success"
+    summary = response.data["summary"]
+    assert summary["origin_wallets"] == [legacy_wallet]
+    assert summary["transfer_count"] == 2
+    assert summary["sent_hnt"] == "2.25"
+    assert summary["received_hnt"] == "1.25"
+    assert summary["fees_hnt"] == "0.00035"
+    assert summary["net_hnt"] == "-1.00035"
+    rows = response.data["counterparties"]
+    assert rows[0]["counterparty_wallet"] == counterparty
+    assert rows[0]["outbound_count"] == 1
+    assert rows[0]["inbound_count"] == 1
 
 
 def test_admin_ignored_tokens_upsert_list_delete_roundtrip() -> None:

@@ -48,6 +48,8 @@ _BULK_IMPORT_EXTENSIONS = {".csv", ".txt", ".json", ".xls", ".xlsx"}
 
 def detect_connector_from_filename(file_path: Path) -> str | None:
     name = file_path.name.lower()
+    if "helium" in name and "cointracking" in name:
+        return "helium_legacy_cointracking"
     if "blockpit" in name:
         return "blockpit"
     if "binance" in name:
@@ -67,6 +69,8 @@ def detect_connector_from_filename(file_path: Path) -> str | None:
 
 def detect_connector_from_source_name(source_name: str) -> str:
     normalized = str(source_name or "").lower()
+    if "helium_legacy_cointracking" in normalized or ("helium" in normalized and "cointracking" in normalized):
+        return "helium_legacy_cointracking"
     for connector in ("binance", "bitget", "coinbase", "pionex", "blockpit", "heliumgeek", "solana"):
         if connector in normalized:
             return connector

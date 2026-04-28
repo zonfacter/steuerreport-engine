@@ -186,10 +186,13 @@ Abnahme:
 
 ### Etappe E: Helium Legacy Vertiefung
 - Legacy-Importpfad und Migrations-/Staking-spezifische Klassifizierung.
+- CoinTracking-/Fairspot-kompatiblen Legacy-HNT-Export erkennen und ohne Duplikate importieren.
+- Transfergegenparteien tabellarisch sichtbar machen, damit ausgehende Staking-Transfers und spätere Rückflüsse überprüfbar sind.
 - Review-Fälle für unklare Legacy-Zuordnung.
 
 Abnahme:
 - Legacy-Daten sind im Portfolio-Set und Steuerlauf nutzbar.
+- Gegenwallets, gesendete/erhaltene HNT, Gebühren und Beispiel-Transaktionen sind im Transfer-Review sichtbar.
 
 ## Qualitäts- und Rechtsleitplanken
 - `Decimal`-Pflicht im Rechenkern.

@@ -19,7 +19,9 @@ def test_import_connectors_lists_supported_sources() -> None:
     response = import_connectors()
     assert response.status == "success"
     connector_ids = {item["connector_id"] for item in response.data["connectors"]}
-    assert {"binance", "bitget", "coinbase", "pionex", "blockpit", "heliumgeek"}.issubset(connector_ids)
+    assert {"binance", "bitget", "coinbase", "pionex", "blockpit", "heliumgeek", "helium_legacy_cointracking"}.issubset(
+        connector_ids
+    )
 
 
 def test_parse_preview_normalizes_binance_rows() -> None:
@@ -171,6 +173,88 @@ def test_parse_preview_heliumgeek_maps_monthly_rewards() -> None:
     assert assets == {"IOT", "MOBILE"}
     assert quantities["IOT"] == "10191.13605"
     assert quantities["MOBILE"] == "3.5"
+
+
+def test_parse_preview_helium_legacy_cointracking_maps_rewards_transfers_and_fees() -> None:
+    _reset_store()
+    legacy_wallet = "133rkwoKCfxLTTt1zGjge7c2nGLUSY5sTuG2V61zi6ik269Tf4j"
+    counterparty = "137tZvaxM4zjvfU9GcDzzmAsdMjkESCULx9XaVrGWKj989izPue"
+    response = import_parse_preview(
+        ConnectorParseRequest(
+            connector_id="helium_legacy_cointracking",
+            rows=[
+                {
+                    "type": "Mining",
+                    "buyAmount": "0.5",
+                    "buyCurrency": "HNT2",
+                    "exchange": "Helium Wallet History",
+                    "comment": "",
+                    "date": "2021-06-01 12:00:00",
+                    "txId": f"reward-tx+{legacy_wallet}",
+                    "buyValueUSD": "7.50",
+                },
+                {
+                    "type": "Withdrawal",
+                    "sellAmount": "2.25",
+                    "sellCurrency": "HNT2",
+                    "feeAmount": "0.00035",
+                    "feeCurrency": "HNT2",
+                    "exchange": "Helium Wallet History",
+                    "comment": f"payment_v2 to {counterparty}",
+                    "date": "2022-01-05 08:30:00",
+                    "txId": f"withdraw-tx+{legacy_wallet}",
+                    "sellValueUSD": "72.00",
+                },
+                {
+                    "type": "Deposit",
+                    "buyAmount": "1.25",
+                    "buyCurrency": "HNT2",
+                    "exchange": "Helium Wallet History",
+                    "comment": f"payment_v1 from {counterparty}",
+                    "date": "2022-02-05 08:30:00",
+                    "txId": f"deposit-tx+{legacy_wallet}",
+                    "buyValueUSD": "31.00",
+                },
+                {
+                    "type": "Other Fee",
+                    "sellAmount": "0.00001",
+                    "sellCurrency": "HNT2",
+                    "exchange": "Helium Wallet History",
+                    "comment": "fee",
+                    "date": "2022-03-05 08:30:00",
+                    "txId": f"fee-tx+{legacy_wallet}",
+                    "sellValueUSD": "0.01",
+                },
+            ],
+        )
+    )
+
+    assert response.status == "success"
+    assert response.data["count"] == 4
+    rows = response.data["normalized_rows"]
+    mining, withdrawal, deposit, fee = rows
+
+    assert mining["event_type"] == "mining_reward"
+    assert mining["asset"] == "HNT"
+    assert mining["quantity"] == "0.5"
+    assert mining["value_usd"] == "7.50"
+    assert mining["wallet_address"] == legacy_wallet
+
+    assert withdrawal["event_type"] == "legacy_transfer"
+    assert withdrawal["side"] == "out"
+    assert withdrawal["from_wallet"] == legacy_wallet
+    assert withdrawal["to_wallet"] == counterparty
+    assert withdrawal["fee"] == "0.00035"
+    assert withdrawal["fee_asset"] == "HNT"
+
+    assert deposit["event_type"] == "legacy_transfer"
+    assert deposit["side"] == "in"
+    assert deposit["from_wallet"] == counterparty
+    assert deposit["to_wallet"] == legacy_wallet
+
+    assert fee["event_type"] == "legacy_network_fee"
+    assert fee["side"] == "out"
+    assert fee["asset"] == "HNT"
 
 
 def test_upload_preview_parses_binance_xlsx_with_banner_rows() -> None:

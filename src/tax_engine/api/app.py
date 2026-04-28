@@ -95,6 +95,7 @@ from tax_engine.api.dashboard import (
     dashboard_overview,
     dashboard_role_override,
     dashboard_wallet_snapshots,
+    portfolio_helium_legacy_transfers,
     portfolio_integrations,
     portfolio_lot_aging,
 )
@@ -332,6 +333,7 @@ __all__ = [
     "issues_inbox",
     "issues_update_status",
     "portfolio_integrations",
+    "portfolio_helium_legacy_transfers",
     "portfolio_lot_aging",
     "process_compare_rulesets",
     "process_compare_rulesets_post",
