@@ -108,6 +108,20 @@ Externe Reports, z. B. Blockpit, sind als eigene Quelle zu klassifizieren:
 
 `reference_import` darf nicht unbesehen denselben wirtschaftlichen Wert wie Primärdaten erzeugen. Die UI muss Quellen ein-/abschaltbar machen und Widersprüche als Review-Issue anzeigen.
 
+## 7.1 Manuelle Korrekturen und Ausschlüsse
+
+Aus dem BMF-Schreiben vom 06.03.2025 folgt für die Software fachlich:
+- Transaktionsübersichten und Steuerreports können unvollständig sein; deren Vollständigkeit hängt wesentlich von den zugrunde gelegten Daten ab.
+- Angaben müssen plausibel, vollständig und nachvollziehbar sein; Kurse, Wallets, Handelsplattformen, Verbrauchsfolgeverfahren und Korrekturen müssen dokumentiert werden.
+- Im Betriebsvermögen gelten GoBD-nahe Aufzeichnungs- und Aufbewahrungspflichten; im Privatvermögen bleiben die Mitwirkungs- und Nachweispflichten beim Steuerpflichtigen.
+
+Technische Konsequenz:
+- `raw_events` werden nicht gelöscht oder überschrieben.
+- Manuelle Änderungen werden ausschließlich als Override über die Rohdaten gelegt.
+- Ausschlüsse aus der Steuerberechnung sind als technische Korrektur zulässig, wenn sie nachvollziehbar begründet sind, z. B. Duplikat, falsche Zuordnung, Spam/Dust, reiner Referenzimport oder nach manueller Prüfung nicht steuerrelevant.
+- Jeder Ausschluss benötigt `reason_code`, Notiz, Zeitstempel und Audit-Trail-Eintrag.
+- Jeder neue Steuerlauf muss diese Overrides reproduzierbar berücksichtigen und dadurch einen neuen Integritätszustand erzeugen.
+
 ## 8. Dokumentations- und Mitwirkungspflichten
 
 Export-/Auditpflichten:

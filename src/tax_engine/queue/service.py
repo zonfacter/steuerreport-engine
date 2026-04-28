@@ -38,17 +38,19 @@ def _load_tax_event_overrides() -> dict[str, dict[str, str]]:
         if not event_id or not isinstance(payload, dict):
             continue
         category = str(payload.get("tax_category", "")).strip().upper()
-        if category not in {"PRIVATE_SO", "BUSINESS"}:
+        if category not in {"PRIVATE_SO", "BUSINESS", "EXCLUDED"}:
             continue
         result[event_id] = {
             "tax_category": category,
+            "reason_code": str(payload.get("reason_code", "")).strip(),
+            "reason_label": str(payload.get("reason_label", "")).strip(),
             "note": str(payload.get("note", "")).strip(),
             "updated_at_utc": str(payload.get("updated_at_utc", "")).strip(),
         }
     return result
 
 
-def _apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+def apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     overrides = _load_tax_event_overrides()
     if not overrides:
         return raw_events, 0
@@ -66,6 +68,9 @@ def _apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[d
             continue
         payload_copy = dict(payload)
         category = override["tax_category"]
+        if category == "EXCLUDED":
+            applied += 1
+            continue
         payload_copy["tax_category"] = "BUSINESS" if category == "BUSINESS" else "INCOME_SO"
         payload_copy["tax_override_note"] = override.get("note", "")
         payload_copy["tax_override_updated_at_utc"] = override.get("updated_at_utc") or datetime.now(UTC).isoformat()
@@ -126,7 +131,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             current_step="load_events",
         )
         raw_events = STORE.list_raw_events()
-        effective_events, override_count = _apply_tax_event_overrides(raw_events)
+        effective_events, override_count = apply_tax_event_overrides(raw_events)
         fx_config = resolve_effective_runtime_config()
         runtime_fx = fx_config.get("runtime", {}).get("fx", {})
         fallback_rate = runtime_fx.get("usd_to_eur", 1.0)

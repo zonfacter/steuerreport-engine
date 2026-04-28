@@ -1155,21 +1155,32 @@
             <pre id="taxDomainSummaryOut" class="muted"></pre>
           </details>
 
-          <h4>Event-Umklassifizierung (Privat/Gewerbe)</h4>
-          <p class="muted">Für Mining/Staking/Rewards kannst du einzelne Events manuell in <code>PRIVATE_SO</code> oder <code>BUSINESS</code> klassifizieren. Nach Änderung bitte Process erneut laufen lassen.</p>
+          <h4>Event-Korrektur (Privat/Gewerbe/Ausschluss)</h4>
+          <p class="muted">RAW-Daten bleiben unverändert. Korrekturen werden als Override mit Pflichtbegründung über die Rohdaten gelegt. <code>EXCLUDED</code> entfernt ein Event nur aus der Steuerberechnung, nicht aus dem Audit-Trail.</p>
           <div class="row">
             <label class="grow">Source Event ID<input id="taxOverrideEventId" placeholder="unique_event_id" /></label>
             <label>Kategorie
               <select id="taxOverrideCategory">
                 <option value="PRIVATE_SO">PRIVATE_SO (Anlage SO)</option>
                 <option value="BUSINESS">BUSINESS (EÜR/Anlage G)</option>
+                <option value="EXCLUDED">EXCLUDED (nicht steuerwirksam)</option>
+              </select>
+            </label>
+            <label>Grund
+              <select id="taxOverrideReason">
+                <option value="">Kein Ausschluss</option>
+                <option value="duplicate_import">Duplikat</option>
+                <option value="wrong_assignment">Falsche Zuordnung</option>
+                <option value="spam_or_dust">Spam/Dust</option>
+                <option value="reference_import_only">Nur Referenzimport</option>
+                <option value="not_tax_relevant">Nicht steuerrelevant</option>
               </select>
             </label>
           </div>
           <div class="row">
             <label class="grow">Notiz<input id="taxOverrideNote" placeholder="Begründung / Dokumentation" /></label>
             <button id="btnTaxOverrideSave" class="btn-primary">Override speichern</button>
-            <button id="btnTaxOverrideDelete">Override löschen</button>
+            <button id="btnTaxOverrideDelete">Override entfernen</button>
             <button id="btnTaxOverrideLoad">Overrides laden</button>
           </div>
           <div class="table-wrap">
@@ -1178,6 +1189,7 @@
                 <tr>
                   <th>Event ID</th>
                   <th>Kategorie</th>
+                  <th>Grund</th>
                   <th>Notiz</th>
                   <th>Aktualisiert</th>
                 </tr>
@@ -1381,6 +1393,9 @@
                   <div><span>Letzter Lauf</span><strong id="backfillLastRun">-</strong></div>
                   <div><span>RPC Delay</span><strong id="backfillRpcDelay">-</strong></div>
                   <div><span>Rate-Limits</span><strong id="backfillRateLimits">-</strong></div>
+                  <div><span>Solana Events lokal</span><strong id="backfillCoverageEvents">-</strong></div>
+                  <div><span>Zeitraum lokal</span><strong id="backfillCoverageRange">-</strong></div>
+                  <div><span>Cursor bis Chain-Start</span><strong id="backfillReachedStart">-</strong></div>
                   <div><span>Regler</span><strong id="backfillRateMode">adaptiv</strong></div>
                 </div>
                 <div class="row">

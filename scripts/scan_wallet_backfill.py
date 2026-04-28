@@ -100,6 +100,7 @@ def main() -> int:
                 "total_inserted": total_inserted,
                 "total_duplicates": total_duplicates,
                 "last_before_signature": before_signature,
+                "reached_start": bool(preview.get("reached_start", False)) or signature_count == 0,
                 "rpc_rate_control": solana_rpc_rate_snapshot(),
             },
             is_secret=False,

@@ -810,19 +810,21 @@ function renderTaxEventOverrideTable(rows) {
     tr.innerHTML = `
       <td>${item.source_event_id || ""}</td>
       <td>${item.tax_category || ""}</td>
+      <td>${item.reason_label || item.reason_code || ""}</td>
       <td>${item.note || ""}</td>
       <td>${item.updated_at_utc || ""}</td>
     `;
     tr.addEventListener("click", () => {
       el("taxOverrideEventId").value = item.source_event_id || "";
       el("taxOverrideCategory").value = item.tax_category || "PRIVATE_SO";
+      if (el("taxOverrideReason")) el("taxOverrideReason").value = item.reason_code || "";
       el("taxOverrideNote").value = item.note || "";
     });
     tbody.appendChild(tr);
   });
   if (!(rows || []).length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="4">Keine Tax-Overrides vorhanden.</td>';
+    tr.innerHTML = '<td colspan="5">Keine Tax-Overrides vorhanden.</td>';
     tbody.appendChild(tr);
   }
 }
@@ -1502,6 +1504,18 @@ function renderBackfillService(data) {
   }
   if (el("backfillRateLimits")) {
     el("backfillRateLimits").textContent = rate ? formatInt(rate.backpressure_count ?? 0) : "-";
+  }
+  const coverage = data.import_coverage || {};
+  if (el("backfillCoverageEvents")) {
+    el("backfillCoverageEvents").textContent = `${formatInt(coverage.raw_event_count || 0)} Events / ${formatInt(coverage.distinct_tx_id_count || 0)} TX`;
+  }
+  if (el("backfillCoverageRange")) {
+    const first = String(coverage.first_timestamp_utc || "").slice(0, 10) || "?";
+    const last = String(coverage.last_timestamp_utc || "").slice(0, 10) || "?";
+    el("backfillCoverageRange").textContent = first === "?" && last === "?" ? "-" : `${first} bis ${last}`;
+  }
+  if (el("backfillReachedStart")) {
+    el("backfillReachedStart").textContent = data.scan_reached_start ? "ja" : "unbekannt";
   }
   if (el("backfillLogOut")) el("backfillLogOut").textContent = (data.log_tail || []).join("\n");
 }
@@ -4123,6 +4137,7 @@ async function loadUnmatched() {
       if (!eventId) return;
       el("taxOverrideEventId").value = eventId;
       if (el("taxOverrideCategory")) el("taxOverrideCategory").value = "PRIVATE_SO";
+      if (el("taxOverrideReason")) el("taxOverrideReason").value = "";
       el("taxOverrideNote").value = "";
       showToast(`Event ${eventId} für Umklassifizierung übernommen.`, "ok");
       return;
@@ -4187,6 +4202,7 @@ async function loadUnmatched() {
   el("btnTaxOverrideSave")?.addEventListener("click", async (e) => {
     const sourceEventId = (el("taxOverrideEventId")?.value || "").trim();
     const taxCategory = (el("taxOverrideCategory")?.value || "").trim();
+    const reasonCode = (el("taxOverrideReason")?.value || "").trim();
     const note = (el("taxOverrideNote")?.value || "").trim();
     if (!sourceEventId) {
       showToast("Source Event ID fehlt.", "warn");
@@ -4195,7 +4211,7 @@ async function loadUnmatched() {
     const data = await callApi(
       "/api/v1/tax/event-override/upsert",
       "POST",
-      { source_event_id: sourceEventId, tax_category: taxCategory, note: note || null },
+      { source_event_id: sourceEventId, tax_category: taxCategory, reason_code: reasonCode || null, note: note || null },
       e.currentTarget
     );
     if (data?.status === "success") {

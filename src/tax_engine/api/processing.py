@@ -32,6 +32,7 @@ from tax_engine.ingestion.store import STORE
 from tax_engine.queue import (
     ProcessRunRequest,
     WorkerRunNextRequest,
+    apply_tax_event_overrides,
     create_processing_job,
     get_processing_job,
     run_next_queued_job,
@@ -733,26 +734,27 @@ def _process_compare_rulesets_impl(
         )
 
     raw_events = STORE.list_raw_events()
-    if not raw_events:
+    effective_events, override_count = apply_tax_event_overrides(raw_events)
+    if not effective_events:
         return StandardResponse(
             trace_id=trace_id,
             status="error",
             data={},
-            errors=[{"code": "no_raw_events", "message": "No raw events available for comparison"}],
+            errors=[{"code": "no_effective_events", "message": "No effective events available for comparison"}],
             warnings=[],
         )
 
     tax_year = int(base_job["tax_year"])
     try:
         compare_result = process_events_for_year(
-            raw_events=raw_events,
+            raw_events=effective_events,
             tax_year=tax_year,
             ruleset_id=compare_ruleset_id,
             ruleset_version=compare_ruleset_version,
         )
-        derivative_result = process_derivatives_for_year(raw_events=raw_events, tax_year=tax_year)
+        derivative_result = process_derivatives_for_year(raw_events=effective_events, tax_year=tax_year)
         compare_summary = build_tax_domain_summary(
-            raw_events=raw_events,
+            raw_events=effective_events,
             tax_lines=compare_result.get("tax_lines", []),
             derivative_lines=derivative_result.get("lines", []),
             tax_year=tax_year,
@@ -791,6 +793,7 @@ def _process_compare_rulesets_impl(
                 "ruleset_version": compare_ruleset_version,
                 "result_summary": compare_result,
                 "tax_domain_summary": compare_summary,
+                "tax_event_override_count": override_count,
             },
         },
         errors=[],
@@ -980,4 +983,3 @@ def process_worker_run_next(payload: WorkerRunNextRequest) -> StandardResponse:
         },
     )
     return StandardResponse(trace_id=trace_id, status="success", data=processed, errors=[], warnings=[])
-

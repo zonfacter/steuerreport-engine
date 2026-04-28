@@ -279,6 +279,10 @@ def _build_solana_backfill_status() -> dict[str, Any]:
         except json.JSONDecodeError:
             cursor = cursor_row.get("value_json")
 
+    log_tail = _tail_file(_SOLANA_BACKFILL_LOG, max_lines=40)
+    scan_reached_start = bool(stats.get("reached_start", False)) if isinstance(stats, dict) else False
+    if not scan_reached_start:
+        scan_reached_start = any("signatures=0" in line for line in log_tail)
     return {
         "service_name": _SOLANA_BACKFILL_SERVICE,
         "enabled": enabled.stdout.strip() == "enabled",
@@ -292,8 +296,54 @@ def _build_solana_backfill_status() -> dict[str, Any]:
         "cursor_set": bool(cursor),
         "last_before_signature": cursor,
         "stats": stats,
+        "scan_reached_start": scan_reached_start,
+        "import_coverage": _build_solana_import_coverage(),
         "log_path": str(_SOLANA_BACKFILL_LOG),
-        "log_tail": _tail_file(_SOLANA_BACKFILL_LOG, max_lines=40),
+        "log_tail": log_tail,
+    }
+
+
+def _build_solana_import_coverage() -> dict[str, Any]:
+    wallet_row = STORE.get_setting("runtime.solana.default_wallet")
+    wallet = ""
+    if wallet_row is not None:
+        try:
+            loaded = json.loads(str(wallet_row.get("value_json", '""')))
+            wallet = str(loaded or "").strip()
+        except json.JSONDecodeError:
+            wallet = str(wallet_row.get("value_json", "")).strip().strip('"')
+
+    events = STORE.list_raw_events()
+    solana_events: list[dict[str, Any]] = []
+    tx_ids: set[str] = set()
+    source_files: set[str] = set()
+    timestamps: list[str] = []
+    for event in events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        source = str(payload.get("source", "")).lower()
+        event_wallet = str(payload.get("wallet_address", "")).strip()
+        if "solana" not in source and (not wallet or event_wallet != wallet):
+            continue
+        solana_events.append(event)
+        source_files.add(str(event.get("source_file_id", "")))
+        tx_id = str(payload.get("tx_id", "")).strip()
+        if tx_id:
+            tx_ids.add(tx_id)
+        ts = str(payload.get("timestamp_utc") or payload.get("timestamp") or "").strip()
+        if ts:
+            timestamps.append(ts)
+
+    timestamps.sort()
+    return {
+        "wallet_address": wallet,
+        "raw_event_count": len(solana_events),
+        "distinct_tx_id_count": len(tx_ids),
+        "source_file_count": len([item for item in source_files if item]),
+        "first_timestamp_utc": timestamps[0] if timestamps else "",
+        "last_timestamp_utc": timestamps[-1] if timestamps else "",
+        "completeness_note": "Coverage zeigt nur lokal importierte Solana-Events; Vollständigkeit hängt vom Backfill-Cursor und RPC-Ergebnis ab.",
     }
 
 

@@ -40,6 +40,7 @@ class IssueStatusUpdateRequest(BaseModel):
 class TaxEventOverrideUpsertRequest(BaseModel):
     source_event_id: str = Field(min_length=8, max_length=200)
     tax_category: str = Field(min_length=3, max_length=30)
+    reason_code: str | None = Field(default=None, min_length=3, max_length=80)
     note: str | None = Field(default=None, max_length=500)
 
 
@@ -48,6 +49,15 @@ class TaxEventOverrideDeleteRequest(BaseModel):
 
 
 router = APIRouter()
+
+
+EXCLUSION_REASON_CATALOG: dict[str, str] = {
+    "duplicate_import": "Duplikat aus Mehrfachimport oder Referenzreport",
+    "wrong_assignment": "Falsche automatische Zuordnung/Klassifizierung",
+    "spam_or_dust": "Spam-/Dust-Token ohne belastbaren wirtschaftlichen Vorgang",
+    "reference_import_only": "Nur Referenzimport, Primärdaten sind bereits vorhanden",
+    "not_tax_relevant": "Nach manueller Prüfung nicht steuerrelevant",
+}
 
 
 def _safe_decimal(value: Any) -> Decimal:
@@ -323,7 +333,12 @@ def tax_event_override_upsert(payload: TaxEventOverrideUpsertRequest) -> Standar
             trace_id=trace_id,
             status="error",
             data={},
-            errors=[{"code": "invalid_tax_category", "message": "tax_category muss PRIVATE_SO oder BUSINESS sein"}],
+            errors=[
+                {
+                    "code": "invalid_tax_category",
+                    "message": "tax_category muss PRIVATE_SO, BUSINESS oder EXCLUDED sein",
+                }
+            ],
             warnings=[],
         )
 
@@ -339,9 +354,43 @@ def tax_event_override_upsert(payload: TaxEventOverrideUpsertRequest) -> Standar
         )
 
     overrides = _load_tax_event_overrides()
+    reason_code = str(payload.reason_code or "").strip()
+    note = (payload.note or "").strip()
+    if category == "EXCLUDED":
+        if reason_code not in EXCLUSION_REASON_CATALOG:
+            return StandardResponse(
+                trace_id=trace_id,
+                status="error",
+                data={"allowed_reason_codes": EXCLUSION_REASON_CATALOG},
+                errors=[
+                    {
+                        "code": "invalid_exclusion_reason",
+                        "message": "Ausschluss benötigt einen gültigen vorausgewählten reason_code.",
+                    }
+                ],
+                warnings=[],
+            )
+        if not note:
+            return StandardResponse(
+                trace_id=trace_id,
+                status="error",
+                data={},
+                errors=[
+                    {
+                        "code": "exclusion_note_required",
+                        "message": "Ausschluss benötigt eine manuelle Begründung/Notiz.",
+                    }
+                ],
+                warnings=[],
+            )
+    elif reason_code and reason_code not in EXCLUSION_REASON_CATALOG:
+        reason_code = ""
+
     entry = {
         "tax_category": category,
-        "note": (payload.note or "").strip(),
+        "reason_code": reason_code,
+        "reason_label": EXCLUSION_REASON_CATALOG.get(reason_code, ""),
+        "note": note,
         "updated_at_utc": datetime.now(UTC).isoformat(),
     }
     overrides[event_id] = entry
@@ -546,6 +595,8 @@ def _normalize_tax_event_category(value: str) -> str | None:
         return "PRIVATE_SO"
     if raw in {"BUSINESS", "GEWERBE", "ANLAGE_G", "EUER"}:
         return "BUSINESS"
+    if raw in {"EXCLUDED", "EXCLUDE", "IGNORE", "IGNORED", "AUSSCHLUSS"}:
+        return "EXCLUDED"
     return None
 
 
@@ -569,6 +620,8 @@ def _load_tax_event_overrides() -> dict[str, dict[str, str]]:
             continue
         result[event_id] = {
             "tax_category": category,
+            "reason_code": str(payload.get("reason_code", "")),
+            "reason_label": str(payload.get("reason_label", "")),
             "note": str(payload.get("note", "")),
             "updated_at_utc": str(payload.get("updated_at_utc", "")),
         }

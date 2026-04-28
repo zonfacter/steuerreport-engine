@@ -24,6 +24,13 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Symbol-Aliasse für SOL/HNT/IOT/MOBILE/JUP/USDT/USDC ergänzt, damit bekannte Assets nicht mehr als unbekannte Token erscheinen.
   - Portfolio-Wertentwicklung als separate Monatskurve ergänzt; sie basiert auf rekonstruierten Beständen und lokalem Preis-Cache und wird bewusst nicht mit Trading-/Wirtschaftswert vermischt.
   - Unit-Test mit SOL/USDT und HNT/USDC ergänzt, damit die Regel asset-unabhängig abgesichert ist.
+- Review- und Korrekturworkflow gehärtet:
+  - Tax-Event-Overrides unterstützen jetzt `EXCLUDED`, damit ein Event mit Pflichtgrund und Notiz aus der Steuerberechnung ausgeschlossen werden kann, ohne `raw_events` zu verändern.
+  - UI ergänzt vorausgewählte Ausschlussgründe für Duplikat, falsche Zuordnung, Spam/Dust, reinen Referenzimport und nicht steuerrelevante Vorgänge.
+  - Side-by-Side Ruleset-Vergleiche nutzen dieselben steuerwirksamen Overrides wie reguläre Steuerläufe.
+- Solana-Importkontrolle erweitert:
+  - Admin-Backfill-Status zeigt lokale Solana-Coverage mit Event-/TX-Zahl, Zeitraum und Chain-Start-Indikator.
+  - Background-Scanner speichert künftig, ob der RPC-Import den Anfang der Signaturhistorie erreicht hat.
 - BMF-2025-Fachlogik ergänzt:
   - Neues Dossier `docs/19_BMF_2025_STEUERREGELN_UND_PFLICHTEN.md` als technische Umsetzung des BMF-Schreibens vom 06.03.2025.
   - Ruleset-Modell um `other_services_exemption_limit` erweitert, damit §22-Nr.-3-EStG-Freigrenze (`256.00` EUR) getrennt von §23-Freigrenze geführt wird.
