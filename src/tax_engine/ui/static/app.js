@@ -2083,7 +2083,7 @@ function renderYearlyAssetActivity(activity) {
   const selectedYear = (el("yearlyYearFilter")?.value || "").trim();
   const selectedSources = selectedYearlySources(sourceBreakdown, rows);
   const sourceFilterActive = selectedSources.active;
-  const mode = (el("yearlyScaleMode")?.value || "events").trim();
+  const mode = normalizeYearlyScaleMode(el("yearlyScaleMode")?.value || "events");
   const yearRows = selectedYear ? rows.filter((row) => String(row.year || "") === selectedYear) : rows;
   const sourceRows = sourceFilterActive ? yearRows.filter((row) => selectedSources.values.has(String(row.source || "unknown"))) : yearRows;
   const visibleRows = filter
@@ -2362,34 +2362,40 @@ function renderPortfolioValueHistory(points, selectedYear = "") {
 }
 
 function yearlyMetricValue(item, mode) {
-  if (mode === "usd") return item.value_usd || 0;
   if (mode === "trading_usd") return item.trading_value_usd || 0;
   if (mode === "trading_eur") return item.trading_value_eur || 0;
   if (mode === "events") return item.events || 0;
   if (mode === "quantity_log") return item.quantity_abs > 0 ? Math.log10(item.quantity_abs) : 0;
-  return item.value_eur || 0;
+  return item.events || 0;
 }
 
 function yearlyMetricLabel(mode) {
-  if (mode === "usd") return "Bewertungsvolumen USD";
   if (mode === "trading_usd") return "Dedupliziertes Swap-/Handelsvolumen USD";
   if (mode === "trading_eur") return "Dedupliziertes Swap-/Handelsvolumen EUR";
   if (mode === "events") return "Transaktionen";
   if (mode === "quantity_log") return "Menge normalisiert (log10)";
-  return "Bewertungsvolumen EUR";
+  return "Transaktionen";
 }
 
 function formatYearlyMetric(value, mode) {
-  if (mode === "eur" || mode === "trading_eur") return formatCurrency(value, "EUR");
-  if (mode === "usd" || mode === "trading_usd") return formatCurrency(value, "USD");
+  if (mode === "trading_eur") return formatCurrency(value, "EUR");
+  if (mode === "trading_usd") return formatCurrency(value, "USD");
   if (mode === "quantity_log") return `${Number(value).toFixed(2)} log10`;
   return formatInt(value);
 }
 
 function formatYearlyAxis(value, mode) {
-  if (mode === "eur" || mode === "usd" || mode === "trading_eur" || mode === "trading_usd") return compactNumber(value);
+  if (mode === "trading_eur" || mode === "trading_usd") return compactNumber(value);
   if (mode === "quantity_log") return `${Number(value).toFixed(1)}`;
   return compactNumber(value);
+}
+
+function normalizeYearlyScaleMode(raw) {
+  const mode = String(raw || "events").trim();
+  if (["events", "trading_eur", "trading_usd", "quantity_log"].includes(mode)) return mode;
+  const select = el("yearlyScaleMode");
+  if (select) select.value = "events";
+  return "events";
 }
 
 function compactNumber(value) {
