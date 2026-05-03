@@ -32,6 +32,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Das Hauptdashboard zeigt offene Prüfungen jetzt als priorisierte Issue-Pile mit Severity, Kategorie und Kurztext.
   - Ein Klick auf eine Issue-Kachel öffnet direkt den Review-Bereich und filtert die Review-Issues auf die konkrete ID.
   - Dadurch sind Blocker nicht mehr nur im technischen Review-Tab sichtbar, sondern direkt im Startbildschirm handlungsleitend.
+- Fehler-UX verbessert:
+  - API-/Netzwerkfehler werden im Frontend zusätzlich in einem einheitlichen Fehlerpanel mit Pfad, HTTP-Status und Trace-ID angezeigt.
+  - Nicht-JSON-Antworten führen nicht mehr zu kryptischen Browser-Parse-Meldungen, sondern zu einer verwertbaren Fehlermeldung.
 - Integrationssteuerung ergänzt:
   - `GET /api/v1/portfolio/integrations` liefert jetzt pro Quelle den steuerlichen Modus `active`, `reference` oder `disabled`.
   - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.

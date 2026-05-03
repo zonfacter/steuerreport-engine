@@ -915,6 +915,26 @@ pre {
   border-color: rgba(224, 93, 103, 0.45);
 }
 
+.api-error-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  border: 1px solid rgba(224, 93, 103, 0.45);
+  background: rgba(224, 93, 103, 0.12);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+
+.api-error-panel.hidden {
+  display: none;
+}
+
+.api-error-panel p {
+  margin: 4px 0;
+}
+
 .table-wrap {
   border: 1px solid var(--line);
   background: #101722;

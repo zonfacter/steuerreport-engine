@@ -827,6 +827,34 @@ function setResponse(json) {
   el("responseOut").textContent = JSON.stringify(json, null, 2);
 }
 
+function clearApiErrorPanel() {
+  const panel = el("apiErrorPanel");
+  if (!panel) return;
+  panel.classList.add("hidden");
+}
+
+function showApiErrorPanel({ title = "API-Fehler", message = "", path = "", status = "", traceId = "" } = {}) {
+  const panel = el("apiErrorPanel");
+  if (!panel) return;
+  el("apiErrorTitle").textContent = title;
+  el("apiErrorMessage").textContent = message || "Die Anfrage konnte nicht verarbeitet werden.";
+  const meta = [
+    path ? `Pfad: ${path}` : "",
+    status ? `Status: ${status}` : "",
+    traceId ? `Trace: ${traceId}` : "",
+  ].filter(Boolean);
+  el("apiErrorMeta").textContent = meta.join(" · ");
+  panel.classList.remove("hidden");
+}
+
+function apiErrorMessage(json, res = null) {
+  const first = Array.isArray(json?.errors) ? json.errors[0] : null;
+  const msg = first?.message || first?.code || res?.statusText || "";
+  if (msg) return String(msg);
+  if (res?.status) return `HTTP ${res.status}`;
+  return "Unbekannter API-Fehler";
+}
+
 function applyRuntimeDefaults(runtimeData) {
   const solana = runtimeData?.runtime?.solana;
   const fx = runtimeData?.runtime?.fx;
@@ -1143,16 +1171,32 @@ async function callApi(path, method = "GET", body = null, btn = null, silent = f
     setResponse(json);
     if (!silent) {
       if (!res.ok || json.status === "error") {
-        showToast(`Fehler: ${json.errors?.[0]?.message ?? res.statusText}`, "err");
+        const message = apiErrorMessage(json, res);
+        showApiErrorPanel({
+          title: "API-Anfrage fehlgeschlagen",
+          message,
+          path,
+          status: res.status ? String(res.status) : "",
+          traceId: json.trace_id || "",
+        });
+        showToast(`Fehler: ${message}`, "err");
       } else if (json.warnings?.length) {
+        clearApiErrorPanel();
         showToast(`Hinweis: ${json.warnings[0].message}`, "warn");
       } else {
+        clearApiErrorPanel();
         showToast("Aktion erfolgreich.", "ok");
       }
     }
     return json;
   } catch (error) {
-    showToast(`Netzwerkfehler: ${error}`, "err");
+    const message = error?.message || String(error);
+    showApiErrorPanel({
+      title: "Netzwerkfehler",
+      message,
+      path,
+    });
+    showToast(`Netzwerkfehler: ${message}`, "err");
     return null;
   } finally {
     if (btn) btn.disabled = false;
@@ -5865,6 +5909,7 @@ async function loadUnmatched() {
     } catch (_) {}
     showToast("Ansicht zurückgesetzt. Bitte Seite neu laden.", "ok");
   });
+  el("btnApiErrorClose")?.addEventListener("click", clearApiErrorPanel);
   el("btnPresetSave")?.addEventListener("click", () => {
     const scope = currentScopeKey();
     const name = (el("uiPresetName")?.value || "").trim();
