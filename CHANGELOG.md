@@ -36,6 +36,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Neues Integrations-Konfliktcenter `GET /api/v1/review/integration-conflicts` gruppiert starke Überschneidungen zwischen aktiven Primärquellen und Referenzimporten nach Tag, Asset, Richtung und Menge.
   - Review-Inbox erzeugt für solche Überschneidungen eigene `integration_conflict`-Issues, damit Blockpit-/Referenzdaten nicht unbemerkt doppelt in die Prüfung laufen.
   - UI zeigt Konfliktgruppen direkt im Integrations-Hub und springt von dort in die Transaktionssuche zur Detailprüfung.
+  - Neuer Endpoint `POST /api/v1/review/integration-conflicts/resolve` verarbeitet markierte Konfliktgruppen als Massenentscheidung.
+  - Massenentscheidungen können Referenz-Events auditierbar als `EXCLUDED` markieren, Referenzquellen deaktivieren oder den Referenzmodus bestätigen; Pflichtgrund und Notiz sind erforderlich.
+  - UI ergänzt Markierung, Auswahl der Aktion, Grund und Pflichtnotiz im Integrations-Konfliktcenter.
 - Review- und Korrekturworkflow gehärtet:
   - Tax-Event-Overrides unterstützen jetzt `EXCLUDED`, damit ein Event mit Pflichtgrund und Notiz aus der Steuerberechnung ausgeschlossen werden kann, ohne `raw_events` zu verändern.
   - UI ergänzt vorausgewählte Ausschlussgründe für Duplikat, falsche Zuordnung, Spam/Dust, reinen Referenzimport und nicht steuerrelevante Vorgänge.

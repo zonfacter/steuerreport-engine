@@ -233,12 +233,32 @@
             </div>
             <div class="row compact-row">
               <button id="btnIntegrationConflictsLoad" type="button">Konflikte prüfen</button>
+              <button id="btnIntegrationConflictsSelectAll" type="button">Alle markieren</button>
+              <button id="btnIntegrationConflictsSelectNone" type="button">Markierung löschen</button>
+              <label>Aktion
+                <select id="integrationConflictAction">
+                  <option value="exclude_reference_events" selected>Referenz-Events ausschließen</option>
+                  <option value="disable_reference_sources">Referenzquellen deaktivieren</option>
+                  <option value="confirm_reference_only">Referenzmodus bestätigen</option>
+                </select>
+              </label>
+              <label>Grund
+                <select id="integrationConflictReason">
+                  <option value="duplicate_import" selected>Duplikat / Referenzreport</option>
+                  <option value="reference_import_only">Nur Referenzimport</option>
+                  <option value="wrong_assignment">Falsche Zuordnung</option>
+                  <option value="not_tax_relevant">Nicht steuerrelevant</option>
+                </select>
+              </label>
+              <input id="integrationConflictNote" placeholder="Pflichtnotiz für Audit-Trail" />
+              <button id="btnIntegrationConflictsResolve" type="button" class="btn-primary">Markierte anwenden</button>
               <span id="integrationConflictInfo" class="muted">Noch nicht geprüft.</span>
             </div>
             <div class="table-wrap">
               <table id="integrationConflictTable">
                 <thead>
                   <tr>
+                    <th>Auswahl</th>
                     <th>Tag</th>
                     <th>Asset</th>
                     <th class="num">Menge</th>

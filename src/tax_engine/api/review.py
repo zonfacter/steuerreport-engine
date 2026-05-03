@@ -13,7 +13,11 @@ from pydantic import BaseModel, Field
 from tax_engine.admin import put_admin_setting
 from tax_engine.ingestion import write_audit
 from tax_engine.ingestion.store import STORE
-from tax_engine.integrations import effective_integration_mode, integration_source_from_event
+from tax_engine.integrations import (
+    effective_integration_mode,
+    integration_source_from_event,
+    upsert_integration_mode,
+)
 from tax_engine.queue import get_processing_job
 from tax_engine.reconciliation import (
     AutoMatchRequest,
@@ -61,6 +65,13 @@ class ReviewCommentRequest(BaseModel):
     source_event_id: str = Field(min_length=8, max_length=200)
     comment: str = Field(min_length=3, max_length=1000)
     reason_code: str | None = Field(default=None, min_length=3, max_length=80)
+
+
+class IntegrationConflictResolveRequest(BaseModel):
+    conflict_ids: list[str] = Field(min_length=1, max_length=200)
+    action: str = Field(min_length=3, max_length=40)
+    reason_code: str = Field(min_length=3, max_length=80)
+    note: str = Field(min_length=3, max_length=500)
 
 
 class ReviewTimezoneCorrectRequest(BaseModel):
@@ -760,6 +771,124 @@ def review_integration_conflicts(limit: int = 200) -> StandardResponse:
         data={"count": len(conflicts), "limit": safe_limit, "conflicts": conflicts},
         errors=[],
         warnings=[],
+    )
+
+
+@router.post("/api/v1/review/integration-conflicts/resolve", response_model=StandardResponse, tags=["review"])
+def review_integration_conflicts_resolve(payload: IntegrationConflictResolveRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    action = str(payload.action or "").strip().lower()
+    allowed_actions = {"exclude_reference_events", "disable_reference_sources", "confirm_reference_only"}
+    if action not in allowed_actions:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={"allowed_actions": sorted(allowed_actions)},
+            errors=[
+                {
+                    "code": "invalid_conflict_action",
+                    "message": "Aktion muss exclude_reference_events|disable_reference_sources|confirm_reference_only sein.",
+                }
+            ],
+            warnings=[],
+        )
+    if payload.reason_code not in EXCLUSION_REASON_CATALOG:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={"allowed_reason_codes": EXCLUSION_REASON_CATALOG},
+            errors=[
+                {
+                    "code": "invalid_exclusion_reason",
+                    "message": "Massenentscheidung benötigt einen gültigen vorausgewählten reason_code.",
+                }
+            ],
+            warnings=[],
+        )
+    conflict_ids = {str(item or "").strip() for item in payload.conflict_ids if str(item or "").strip()}
+    if not conflict_ids:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "conflict_ids_required", "message": "Mindestens eine conflict_id ist erforderlich."}],
+            warnings=[],
+        )
+
+    conflict_map = {str(item["conflict_id"]): item for item in _build_integration_conflicts(limit=1000)}
+    selected = [conflict_map[item] for item in sorted(conflict_ids) if item in conflict_map]
+    missing_ids = sorted(conflict_ids.difference(conflict_map.keys()))
+    overrides = _load_tax_event_overrides()
+    excluded_event_ids: list[str] = []
+    disabled_sources: list[str] = []
+    resolved_issue_ids: list[str] = []
+    now = datetime.now(UTC).isoformat()
+
+    for conflict in selected:
+        resolved_issue_ids.append(f"integration_conflict:{conflict['conflict_id']}")
+        if action == "exclude_reference_events":
+            for event_id in conflict.get("reference_event_ids", []):
+                event_id_str = str(event_id or "").strip()
+                if not event_id_str:
+                    continue
+                overrides[event_id_str] = {
+                    "tax_category": "EXCLUDED",
+                    "reason_code": payload.reason_code,
+                    "reason_label": EXCLUSION_REASON_CATALOG.get(payload.reason_code, ""),
+                    "note": payload.note.strip(),
+                    "updated_at_utc": now,
+                }
+                excluded_event_ids.append(event_id_str)
+        elif action == "disable_reference_sources":
+            for source in conflict.get("reference_sources", []):
+                entry = upsert_integration_mode(
+                    str(source),
+                    "disabled",
+                    f"Integration-Konfliktentscheidung: {payload.note.strip()}",
+                )
+                disabled_sources.append(entry["integration_id"])
+        elif action == "confirm_reference_only":
+            for source in conflict.get("reference_sources", []):
+                entry = upsert_integration_mode(
+                    str(source),
+                    "reference",
+                    f"Referenzimport bestätigt: {payload.note.strip()}",
+                )
+                disabled_sources.append(entry["integration_id"])
+
+    if excluded_event_ids:
+        put_admin_setting("runtime.tax_event_overrides", overrides, is_secret=False)
+    if resolved_issue_ids:
+        issue_overrides = _load_issue_overrides()
+        for issue_id in resolved_issue_ids:
+            issue_overrides[issue_id] = {"status": "resolved", "note": payload.note.strip(), "updated_at_utc": now}
+        put_admin_setting("runtime.issue_status_overrides", issue_overrides, is_secret=False)
+
+    result = {
+        "action": action,
+        "requested_count": len(conflict_ids),
+        "resolved_count": len(selected),
+        "missing_conflict_ids": missing_ids,
+        "excluded_event_count": len(set(excluded_event_ids)),
+        "excluded_event_ids": sorted(set(excluded_event_ids))[:200],
+        "disabled_or_confirmed_sources": sorted(set(disabled_sources)),
+        "resolved_issue_ids": resolved_issue_ids,
+    }
+    write_audit(
+        trace_id=trace_id,
+        action="review.integration_conflicts.resolve",
+        payload=result,
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="partial" if missing_ids else "success",
+        data=result,
+        errors=[],
+        warnings=(
+            [{"code": "conflict_ids_not_found", "message": f"{len(missing_ids)} Konflikt-IDs wurden nicht gefunden."}]
+            if missing_ids
+            else []
+        ),
     )
 
 

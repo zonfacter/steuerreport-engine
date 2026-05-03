@@ -32,6 +32,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Portfolio-Sets können Quellen/Integrationen zugeordnet bekommen und zeigen eine Set-spezifische Wertkurve.
 - Integrationen haben einen steuerlichen Modus (`active`, `reference`, `disabled`); Preflight und Steuerlauf nutzen standardmäßig nur aktive Quellen, um Referenzimporte nicht doppelt zu zählen.
 - Das Integrations-Konfliktcenter gruppiert starke Überschneidungen zwischen aktiven Primärquellen und Referenzimporten und schreibt diese zusätzlich als Review-Issues.
+- Integrations-Konflikte können als Massenentscheidung verarbeitet werden: Referenz-Events ausschließen, Referenzquellen deaktivieren oder Referenzmodus bestätigen. Jede Entscheidung benötigt Pflichtgrund und Notiz.
 - Review-Ignore und Review-Kommentare sind als auditierbare Endpunkte umgesetzt; Ausschlüsse verlangen Pflichtgrund und Notiz, Raw Events werden nicht gelöscht.
 - Die Transaktionssuche kann Events direkt in den Korrektur-/Ausschlussdialog übernehmen.
 - Versionierte Review-Actions sind umgesetzt: Zeitzonen-Korrekturen werden beim Steuerlauf angewendet; Merge/Split-Entscheidungen werden ohne RAW-Löschung auditierbar dokumentiert.
@@ -180,5 +181,5 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 ## Nächste konkrete Arbeitspakete (Backlog)
 1. Snapshot-Wiederherstellungsworkflow mit explizitem, nicht destruktivem Restore-Plan modellieren.
 2. Review-Merge/Split fachlich auf die Steuer-Arbeitskopie anwenden, sobald die genaue Split-Semantik je Connector definiert ist.
-3. Integrations-Konfliktcenter um manuelle Massenentscheidung erweitern: Referenzgruppe bestätigen, Quelle deaktivieren oder Einzelereignisse mit Pflichtgrund ausschließen.
+3. Integrations-Konfliktcenter um manuelle Massenentscheidung erweitern: umgesetzt für markierte Konfliktgruppen mit `exclude_reference_events`, `disable_reference_sources` und `confirm_reference_only`.
 4. Transfer-Chain-Detailansicht ergänzen: vollständige mehrstufige Timeline pro Chain-ID statt nur direkter Zeile.

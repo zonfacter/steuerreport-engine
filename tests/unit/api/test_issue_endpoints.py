@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from tax_engine.api.app import (
+    IntegrationConflictResolveRequest,
     IssueStatusUpdateRequest,
     ReviewMergeRequest,
     ReviewSplitRequest,
@@ -13,9 +14,11 @@ from tax_engine.api.app import (
     review_actions,
     review_gates,
     review_integration_conflicts,
+    review_integration_conflicts_resolve,
     review_merge,
     review_split,
     review_timezone_correct,
+    tax_event_overrides_list,
 )
 from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
@@ -189,6 +192,61 @@ def test_integration_conflicts_compare_reference_and_primary_sources() -> None:
 
     inbox = issues_inbox()
     assert any(str(item.get("type")) == "integration_conflict" for item in inbox.data.get("issues", []))
+
+
+def test_integration_conflict_resolve_excludes_reference_events() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="primary.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T12:00:00Z",
+                    "source": "binance",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "0.5",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="blockpit_reference.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T14:00:00Z",
+                    "source": "blockpit",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "0.500000000",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+    conflict = review_integration_conflicts().data["conflicts"][0]
+
+    result = review_integration_conflicts_resolve(
+        IntegrationConflictResolveRequest(
+            conflict_ids=[conflict["conflict_id"]],
+            action="exclude_reference_events",
+            reason_code="duplicate_import",
+            note="Blockpit ist nur Referenz, Primärdaten sind vorhanden.",
+        )
+    )
+
+    assert result.status == "success"
+    assert result.data["resolved_count"] == 1
+    assert result.data["excluded_event_count"] == 1
+    overrides = tax_event_overrides_list()
+    assert overrides.data["rows"][0]["tax_category"] == "EXCLUDED"
+    inbox = issues_inbox()
+    conflict_issues = [item for item in inbox.data["issues"] if item["type"] == "integration_conflict"]
+    assert conflict_issues[0]["status"] == "resolved"
 
 
 def test_review_timezone_correction_closes_timezone_issue_and_is_applied() -> None:

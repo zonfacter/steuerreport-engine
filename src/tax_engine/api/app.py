@@ -172,6 +172,7 @@ from tax_engine.api.reporting import (
     build_report_file_index as _build_report_file_index,
 )
 from tax_engine.api.review import (
+    IntegrationConflictResolveRequest,
     IssueStatusUpdateRequest,
     ReviewCommentRequest,
     ReviewIgnoreRequest,
@@ -198,6 +199,7 @@ from tax_engine.api.review import (
     review_gates,
     review_ignore,
     review_integration_conflicts,
+    review_integration_conflicts_resolve,
     review_merge,
     review_split,
     review_timezone_correct,
@@ -252,6 +254,7 @@ __all__ = [
     "IgnoredTokenDeleteRequest",
     "IgnoredTokenUpsertRequest",
     "IssueStatusUpdateRequest",
+    "IntegrationConflictResolveRequest",
     "ProcessCompareRulesetsRequest",
     "ProcessPreflightRequest",
     "ReportSnapshotCreateRequest",
@@ -396,6 +399,7 @@ __all__ = [
     "review_comments",
     "review_exclusion_reasons",
     "review_integration_conflicts",
+    "review_integration_conflicts_resolve",
     "review_merge",
     "review_split",
     "review_timezone_correct",

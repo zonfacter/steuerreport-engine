@@ -1999,6 +1999,7 @@ function renderIntegrationConflicts(rows) {
   (rows || []).forEach((item) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
+      <td><input type="checkbox" class="integration-conflict-select" value="${escapeHtml(item.conflict_id || "")}" /></td>
       <td>${escapeHtml(item.day || "")}</td>
       <td>${escapeHtml(item.asset || "")}</td>
       <td class="num">${formatQty(item.quantity || 0)}</td>
@@ -2011,7 +2012,7 @@ function renderIntegrationConflicts(rows) {
   });
   if (!(rows || []).length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="7">Keine starken Referenz-/Primär-Konflikte gefunden.</td>';
+    tr.innerHTML = '<td colspan="8">Keine starken Referenz-/Primär-Konflikte gefunden.</td>';
     tbody.appendChild(tr);
   }
   if (info) {
@@ -2027,6 +2028,39 @@ async function loadIntegrationConflicts(trigger = null) {
   state.integrationConflicts = data.data?.conflicts ?? [];
   renderIntegrationConflicts(state.integrationConflicts);
   renderIssues(state.issues);
+}
+
+async function resolveSelectedIntegrationConflicts(trigger = null) {
+  const selected = Array.from(document.querySelectorAll(".integration-conflict-select:checked"))
+    .map((node) => String(node.value || "").trim())
+    .filter(Boolean);
+  if (!selected.length) {
+    showToast("Keine Integrationskonflikte markiert.", "warn");
+    return;
+  }
+  const note = String(el("integrationConflictNote")?.value || "").trim();
+  if (note.length < 3) {
+    showToast("Pflichtnotiz fehlt.", "warn");
+    return;
+  }
+  const data = await callApi(
+    "/api/v1/review/integration-conflicts/resolve",
+    "POST",
+    {
+      conflict_ids: selected,
+      action: el("integrationConflictAction")?.value || "exclude_reference_events",
+      reason_code: el("integrationConflictReason")?.value || "duplicate_import",
+      note,
+    },
+    trigger
+  );
+  if (!data || data.status === "error") return;
+  showToast(`${data.data?.resolved_count || 0} Konfliktgruppen verarbeitet.`, data.status === "partial" ? "warn" : "ok");
+  await loadIntegrationOverview();
+  await loadIntegrationConflicts(null);
+  await loadTaxEventOverrides(true);
+  await loadIssues();
+  syncTaxRunSelection();
 }
 
 function renderImportSourcesTable(rows) {
@@ -4677,6 +4711,19 @@ function init() {
   el("btnIntegrationConflictsLoad")?.addEventListener("click", async (event) => {
     await loadIntegrationConflicts(event.currentTarget);
     showToast("Integrationskonflikte geprüft.", "ok");
+  });
+  el("btnIntegrationConflictsSelectAll")?.addEventListener("click", () => {
+    document.querySelectorAll(".integration-conflict-select").forEach((node) => {
+      node.checked = true;
+    });
+  });
+  el("btnIntegrationConflictsSelectNone")?.addEventListener("click", () => {
+    document.querySelectorAll(".integration-conflict-select").forEach((node) => {
+      node.checked = false;
+    });
+  });
+  el("btnIntegrationConflictsResolve")?.addEventListener("click", async (event) => {
+    await resolveSelectedIntegrationConflicts(event.currentTarget);
   });
   el("integrationConflictTable")?.addEventListener("click", (event) => {
     const target = event.target;
