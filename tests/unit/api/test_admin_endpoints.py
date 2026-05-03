@@ -76,6 +76,22 @@ def test_admin_runtime_config_masks_secret() -> None:
     assert "..." in str(credentials.get("alchemy_api_key_masked", ""))
 
 
+def test_admin_runtime_config_ignores_corrupt_secret() -> None:
+    _reset_store()
+    STORE.upsert_setting(
+        setting_key="secret.coingecko.api_key",
+        value_json="v1:corrupt",
+        is_secret=True,
+    )
+
+    runtime_resp = admin_runtime_config()
+
+    assert runtime_resp.status == "success"
+    credentials = runtime_resp.data.get("credentials", {})
+    assert credentials.get("coingecko_configured") is False
+    assert credentials.get("coingecko_api_key_masked") == ""
+
+
 def test_dashboard_role_override_and_overview() -> None:
     _reset_store()
     override_resp = dashboard_role_override(DashboardRoleOverrideRequest(mode="business"))

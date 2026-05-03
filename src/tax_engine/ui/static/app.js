@@ -1579,6 +1579,7 @@ function renderIssueSummary(rows) {
     div.innerHTML = `<span>${item.label}</span><strong>${item.value}</strong><small class="sub">${item.sub}</small>`;
     host.appendChild(div);
   });
+  renderCockpitIssuePile();
 }
 
 function renderReviewGates(gates) {
@@ -3296,6 +3297,7 @@ function renderCockpit() {
     host.appendChild(div);
   });
   renderCockpitSources();
+  renderCockpitIssuePile();
 
   buildChart("chartCockpitPortfolioTax", {
     type: "bar",
@@ -3314,6 +3316,32 @@ function renderCockpit() {
     },
     options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
   });
+}
+
+function renderCockpitIssuePile() {
+  const host = el("cockpitIssuePile");
+  if (!host) return;
+  const severityRank = { high: 0, medium: 1, low: 2 };
+  const openIssues = (state.issues || [])
+    .filter((item) => String(item.status || "open") === "open")
+    .sort((a, b) => {
+      const sevA = severityRank[String(a.severity || "low")] ?? 9;
+      const sevB = severityRank[String(b.severity || "low")] ?? 9;
+      if (sevA !== sevB) return sevA - sevB;
+      return String(a.created_hint_utc || "").localeCompare(String(b.created_hint_utc || ""));
+    });
+  const topRows = openIssues.slice(0, 8);
+  if (!topRows.length) {
+    host.innerHTML = '<div class="empty-state">Keine offenen Prüfungen im aktuellen Datenstand.</div>';
+    return;
+  }
+  host.innerHTML = topRows.map((item) => `
+    <button type="button" class="issue-chip issue-chip-${escapeHtml(item.severity || "low")}" data-issue-id="${escapeHtml(item.issue_id || "")}">
+      <span>${escapeHtml(item.severity || "low")} · ${escapeHtml(item.type || "issue")}</span>
+      <strong>${escapeHtml(item.title || item.issue_id || "")}</strong>
+      <small>${escapeHtml(item.asset || "-")} · ${escapeHtml(String(item.detail || "").slice(0, 120))}</small>
+    </button>
+  `).join("");
 }
 
 function renderCockpitSources() {
@@ -5564,6 +5592,20 @@ async function loadUnmatched() {
   el("btnCockpitOpenImports")?.addEventListener("click", () => switchStep("1"));
   el("btnCockpitOpenTax")?.addEventListener("click", () => switchReviewTab("tax"));
   el("btnCockpitOpenHoldings")?.addEventListener("click", () => switchReviewTab("holdings"));
+  el("btnCockpitOpenIssues")?.addEventListener("click", () => switchReviewTab("transfers"));
+  el("cockpitIssuePile")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".issue-chip");
+    if (!(btn instanceof HTMLElement)) return;
+    switchReviewTab("transfers");
+    if (el("reviewIssueSearch")) {
+      el("reviewIssueSearch").value = btn.dataset.issueId || "";
+      savePref("field.reviewIssueSearch", el("reviewIssueSearch").value);
+    }
+    state.paging.issuePage = 1;
+    renderIssues(state.issues);
+  });
   el("globalSearch")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       applyGlobalSearch();

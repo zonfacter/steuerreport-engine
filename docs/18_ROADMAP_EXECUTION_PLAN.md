@@ -38,6 +38,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Integrationen haben einen steuerlichen Modus (`active`, `reference`, `disabled`); Preflight und Steuerlauf nutzen standardmäßig nur aktive Quellen, um Referenzimporte nicht doppelt zu zählen.
 - Das Integrations-Konfliktcenter gruppiert starke Überschneidungen zwischen aktiven Primärquellen und Referenzimporten und schreibt diese zusätzlich als Review-Issues.
 - Integrations-Konflikte können als Massenentscheidung verarbeitet werden: Referenz-Events ausschließen, Referenzquellen deaktivieren oder Referenzmodus bestätigen. Jede Entscheidung benötigt Pflichtgrund und Notiz.
+- Das Cockpit zeigt offene Review-Issues als priorisierte Kacheln im Hauptbildschirm; Klick auf eine Kachel springt direkt in den gefilterten Review-Bereich.
 - Review-Ignore und Review-Kommentare sind als auditierbare Endpunkte umgesetzt; Ausschlüsse verlangen Pflichtgrund und Notiz, Raw Events werden nicht gelöscht.
 - Die Transaktionssuche kann Events direkt in den Korrektur-/Ausschlussdialog übernehmen.
 - Versionierte Review-Actions sind umgesetzt: Zeitzonen-Korrekturen werden beim Steuerlauf angewendet; Merge/Split-Entscheidungen werden ohne RAW-Löschung auditierbar dokumentiert.
@@ -132,6 +133,7 @@ Ziel: Das System wird benutzbar wie ein Steuer-Tool (nicht nur wie eine Import-A
   - Historie (Zeitachse)
   - Quellenbeitrag je Integration
 - Zeige offene Issues direkt im Hauptbildschirm als Prioritäts-Pile.
+- Stand: Issue-Pile im Cockpit umgesetzt, inkl. direktem Sprung in den gefilterten Review-Bereich.
 
 ### 3.3 Rollen-/Steuerlogik im Frontend
 - Rollenerkennung (`auto/private/business`) als UI-Schaltfläche mit Überschreibmöglichkeit.

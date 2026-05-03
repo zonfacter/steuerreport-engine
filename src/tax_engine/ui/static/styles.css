@@ -597,6 +597,50 @@ body {
   margin: 6px 0;
 }
 
+.issue-pile {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.issue-chip {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+  border-color: rgba(255, 211, 126, 0.35);
+  background: rgba(255, 211, 126, 0.08);
+}
+
+.issue-chip-high {
+  border-color: rgba(255, 111, 125, 0.6);
+  background: rgba(255, 111, 125, 0.12);
+}
+
+.issue-chip-medium {
+  border-color: rgba(255, 211, 126, 0.55);
+}
+
+.issue-chip span {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.issue-chip strong {
+  color: var(--text);
+}
+
+.issue-chip small {
+  color: var(--muted);
+}
+
+.empty-state {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  color: var(--muted);
+}
+
 .tax-run-preview span {
   border: 1px solid var(--line);
   background: rgba(13, 17, 23, 0.36);

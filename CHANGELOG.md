@@ -28,6 +28,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Wallet-Gruppen können optional Importquellen wie `solana_rpc`, `binance_api`, Blockpit oder Helium Legacy zugeordnet bekommen.
   - Neues Dashboard-Endpoint `GET /api/v1/dashboard/portfolio-set-history` erzeugt eine Set-spezifische Wertkurve aus den zugeordneten Quellen.
   - UI zeigt Quellenchips, Quellen-/Event-Anzahl je virtueller Wallet und nutzt die Set-Kurve im Wertverlaufs-Chart.
+- Cockpit-Review ergänzt:
+  - Das Hauptdashboard zeigt offene Prüfungen jetzt als priorisierte Issue-Pile mit Severity, Kategorie und Kurztext.
+  - Ein Klick auf eine Issue-Kachel öffnet direkt den Review-Bereich und filtert die Review-Issues auf die konkrete ID.
+  - Dadurch sind Blocker nicht mehr nur im technischen Review-Tab sichtbar, sondern direkt im Startbildschirm handlungsleitend.
 - Integrationssteuerung ergänzt:
   - `GET /api/v1/portfolio/integrations` liefert jetzt pro Quelle den steuerlichen Modus `active`, `reference` oder `disabled`.
   - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.
@@ -66,6 +70,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Solana-Importkontrolle erweitert:
   - Admin-Backfill-Status zeigt lokale Solana-Coverage mit Event-/TX-Zahl, Zeitraum und Chain-Start-Indikator.
   - Background-Scanner speichert künftig, ob der RPC-Import den Anfang der Signaturhistorie erreicht hat.
+- Admin-/Secret-Stabilität gehärtet:
+  - Beschädigte oder mit altem Master-Key gespeicherte Secrets brechen Dashboard-/Runtime-Config-Endpunkte nicht mehr mit HTTP 500.
+  - Solche Secrets werden als nicht konfiguriert behandelt und müssen im Admin-Bereich neu gespeichert werden.
 - BMF-2025-Fachlogik ergänzt:
   - Neues Dossier `docs/19_BMF_2025_STEUERREGELN_UND_PFLICHTEN.md` als technische Umsetzung des BMF-Schreibens vom 06.03.2025.
   - Ruleset-Modell um `other_services_exemption_limit` erweitert, damit §22-Nr.-3-EStG-Freigrenze (`256.00` EUR) getrennt von §23-Freigrenze geführt wird.
