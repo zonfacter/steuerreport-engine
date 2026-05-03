@@ -24,6 +24,7 @@ const state = {
   processingJobsCount: 0,
   taxEventOverrides: [],
   integrationRows: [],
+  integrationConflicts: [],
   importSources: [],
   importJobs: [],
   transactionSearchRows: [],
@@ -1823,6 +1824,44 @@ async function saveIntegrationMode(integrationId, mode, trigger = null) {
   await loadIntegrationOverview();
   syncTaxRunSelection();
   showToast(`Integration ${id} ist jetzt ${selectedMode}.`, "ok");
+}
+
+function renderIntegrationConflicts(rows) {
+  const tbody = el("integrationConflictTable")?.querySelector("tbody");
+  const info = el("integrationConflictInfo");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (rows || []).forEach((item) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.day || "")}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.quantity || 0)}</td>
+      <td>${escapeHtml(item.direction || "")}</td>
+      <td>${escapeHtml((item.primary_sources || []).join(", "))}<br><small class="muted">${formatQty(item.primary_event_count || 0)} Events</small></td>
+      <td>${escapeHtml((item.reference_sources || []).join(", "))}<br><small class="muted">${formatQty(item.reference_event_count || 0)} Events</small></td>
+      <td><button type="button" class="btn-small btn-conflict-open" data-reference-id="${escapeHtml((item.reference_event_ids || [])[0] || "")}">Referenz prüfen</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!(rows || []).length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="7">Keine starken Referenz-/Primär-Konflikte gefunden.</td>';
+    tbody.appendChild(tr);
+  }
+  if (info) {
+    info.textContent = rows?.length
+      ? `${formatQty(rows.length)} Konfliktgruppen gefunden.`
+      : "Keine starken Konflikte gefunden.";
+  }
+}
+
+async function loadIntegrationConflicts(trigger = null) {
+  const data = await callApi("/api/v1/review/integration-conflicts?limit=200", "GET", null, trigger, true);
+  if (data?.status !== "success") return;
+  state.integrationConflicts = data.data?.conflicts ?? [];
+  renderIntegrationConflicts(state.integrationConflicts);
+  renderIssues(state.issues);
 }
 
 function renderImportSourcesTable(rows) {
@@ -4323,6 +4362,20 @@ function init() {
     if (!(target instanceof HTMLSelectElement)) return;
     if (!target.classList.contains("integration-mode-select")) return;
     await saveIntegrationMode(target.dataset.integrationId || "", target.value, target);
+  });
+  el("btnIntegrationConflictsLoad")?.addEventListener("click", async (event) => {
+    await loadIntegrationConflicts(event.currentTarget);
+    showToast("Integrationskonflikte geprüft.", "ok");
+  });
+  el("integrationConflictTable")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".btn-conflict-open");
+    if (!(btn instanceof HTMLElement)) return;
+    const eventId = btn.dataset.referenceId || "";
+    if (!eventId) return;
+    if (el("txSearchQ")) el("txSearchQ").value = eventId;
+    runTransactionSearch(btn);
   });
 
   el("btnImportSourcesRefresh")?.addEventListener("click", async () => {

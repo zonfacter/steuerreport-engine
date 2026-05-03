@@ -33,6 +33,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.
   - Blockpit/CoinTracking-nahe Quellen werden standardmäßig als Referenz behandelt; Steuerläufe und Preflight verwenden standardmäßig nur aktive Quellen.
   - UI erlaubt die Modusänderung direkt in der Integrationsübersicht und übergibt aktive Quellen an den Steuerlauf.
+  - Neues Integrations-Konfliktcenter `GET /api/v1/review/integration-conflicts` gruppiert starke Überschneidungen zwischen aktiven Primärquellen und Referenzimporten nach Tag, Asset, Richtung und Menge.
+  - Review-Inbox erzeugt für solche Überschneidungen eigene `integration_conflict`-Issues, damit Blockpit-/Referenzdaten nicht unbemerkt doppelt in die Prüfung laufen.
+  - UI zeigt Konfliktgruppen direkt im Integrations-Hub und springt von dort in die Transaktionssuche zur Detailprüfung.
 - Review- und Korrekturworkflow gehärtet:
   - Tax-Event-Overrides unterstützen jetzt `EXCLUDED`, damit ein Event mit Pflichtgrund und Notiz aus der Steuerberechnung ausgeschlossen werden kann, ohne `raw_events` zu verändern.
   - UI ergänzt vorausgewählte Ausschlussgründe für Duplikat, falsche Zuordnung, Spam/Dust, reinen Referenzimport und nicht steuerrelevante Vorgänge.

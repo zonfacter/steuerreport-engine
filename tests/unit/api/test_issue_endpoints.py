@@ -8,6 +8,7 @@ from tax_engine.api.app import (
     process_run,
     process_worker_run_next,
     review_gates,
+    review_integration_conflicts,
 )
 from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
@@ -134,3 +135,50 @@ def test_issues_inbox_contains_missing_fx_rate_issue(monkeypatch) -> None:
     assert resp.status == "success"
     issues = resp.data.get("issues", [])
     assert any(str(item.get("type")) == "missing_fx_rate" for item in issues)
+
+
+def test_integration_conflicts_compare_reference_and_primary_sources() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="primary.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T12:00:00Z",
+                    "source": "binance",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "0.5",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="blockpit_reference.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T14:00:00Z",
+                    "source": "blockpit",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "0.500000000",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+
+    conflicts = review_integration_conflicts()
+    assert conflicts.status == "success"
+    assert conflicts.data["count"] == 1
+    row = conflicts.data["conflicts"][0]
+    assert row["asset"] == "BTC"
+    assert row["primary_sources"] == ["binance"]
+    assert row["reference_sources"] == ["blockpit"]
+
+    inbox = issues_inbox()
+    assert any(str(item.get("type")) == "integration_conflict" for item in inbox.data.get("issues", []))

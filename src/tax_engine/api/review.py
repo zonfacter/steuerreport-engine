@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from pydantic import BaseModel, Field
 from tax_engine.admin import put_admin_setting
 from tax_engine.ingestion import write_audit
 from tax_engine.ingestion.store import STORE
+from tax_engine.integrations import effective_integration_mode, integration_source_from_event
 from tax_engine.queue import get_processing_job
 from tax_engine.reconciliation import (
     AutoMatchRequest,
@@ -541,6 +543,25 @@ def review_comments(source_event_id: str | None = None) -> StandardResponse:
     )
 
 
+@router.get("/api/v1/review/integration-conflicts", response_model=StandardResponse, tags=["review"])
+def review_integration_conflicts(limit: int = 200) -> StandardResponse:
+    trace_id = str(uuid4())
+    safe_limit = min(max(int(limit), 1), 1000)
+    conflicts = _build_integration_conflicts(limit=safe_limit)
+    write_audit(
+        trace_id=trace_id,
+        action="review.integration_conflicts",
+        payload={"count": len(conflicts), "limit": safe_limit},
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={"count": len(conflicts), "limit": safe_limit, "conflicts": conflicts},
+        errors=[],
+        warnings=[],
+    )
+
+
 
 
 def _build_issue_inbox() -> list[dict[str, Any]]:
@@ -656,8 +677,122 @@ def _build_issue_inbox() -> list[dict[str, Any]]:
             )
         )
 
+    # 5) Starke Kandidaten fuer Doppelzaehlung zwischen Referenz- und Primaerquellen.
+    for conflict in _build_integration_conflicts(limit=100):
+        issue_id = f"integration_conflict:{conflict['conflict_id']}"
+        primary_ids = ", ".join(conflict.get("primary_event_ids", [])[:3])
+        reference_ids = ", ".join(conflict.get("reference_event_ids", [])[:3])
+        issues.append(
+            _build_issue_row(
+                issue_id=issue_id,
+                issue_type="integration_conflict",
+                severity="medium",
+                title="Referenzimport überschneidet sich mit Primärdaten",
+                detail=(
+                    f"{conflict['day']} {conflict['asset']} {conflict['quantity']} "
+                    f"liegt in Primärquelle(n) {conflict['primary_sources']} und Referenzquelle(n) "
+                    f"{conflict['reference_sources']} vor. Primary: {primary_ids}; Reference: {reference_ids}"
+                ),
+                source_event_id=str(conflict.get("reference_event_ids", [""])[0]),
+                payload={
+                    "asset": conflict["asset"],
+                    "timestamp_utc": conflict["day"],
+                    "source": ",".join(conflict.get("reference_sources", [])),
+                },
+                overrides=overrides,
+            )
+        )
+
     issues.sort(key=lambda item: (item.get("status") != "open", item.get("severity"), item.get("created_hint_utc")))
     return issues
+
+
+def _build_integration_conflicts(limit: int = 200) -> list[dict[str, Any]]:
+    buckets: dict[tuple[str, str, str, str], dict[str, list[dict[str, Any]]]] = defaultdict(
+        lambda: {"primary": [], "reference": []}
+    )
+    for event in STORE.list_raw_events():
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        mode = effective_integration_mode(integration_source_from_event(event))
+        if mode not in {"active", "reference"}:
+            continue
+        key = _reference_conflict_key(payload)
+        if key is None:
+            continue
+        bucket_key = key
+        bucket_side = "reference" if mode == "reference" else "primary"
+        buckets[bucket_key][bucket_side].append(event)
+
+    rows: list[dict[str, Any]] = []
+    for (day, asset, quantity, direction), grouped in buckets.items():
+        primary = grouped["primary"]
+        reference = grouped["reference"]
+        if not primary or not reference:
+            continue
+        primary_sources = sorted({integration_source_from_event(event) for event in primary})
+        reference_sources = sorted({integration_source_from_event(event) for event in reference})
+        primary_ids = [str(event.get("unique_event_id", "")) for event in primary[:10]]
+        reference_ids = [str(event.get("unique_event_id", "")) for event in reference[:10]]
+        rows.append(
+            {
+                "conflict_id": f"{day}:{asset}:{quantity}:{direction}",
+                "day": day,
+                "asset": asset,
+                "quantity": quantity,
+                "direction": direction,
+                "primary_sources": primary_sources,
+                "reference_sources": reference_sources,
+                "primary_event_count": len(primary),
+                "reference_event_count": len(reference),
+                "primary_event_ids": primary_ids,
+                "reference_event_ids": reference_ids,
+                "severity": "medium",
+                "suggested_action": "Referenzquelle als reference belassen oder einzelne Events mit Pflichtgrund ausschliessen.",
+            }
+        )
+    rows.sort(key=lambda item: (item["day"], item["asset"], item["quantity"]))
+    return rows[:limit]
+
+
+def _reference_conflict_key(payload: dict[str, Any]) -> tuple[str, str, str, str] | None:
+    day = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")[:10]
+    asset = str(payload.get("asset") or "").strip().upper()
+    quantity = _event_quantity_for_conflict(payload)
+    direction = _event_direction_for_conflict(payload)
+    if len(day) != 10 or not asset or quantity <= 0 or not direction:
+        return None
+    return day, asset, _decimal_key(quantity), direction
+
+
+def _event_quantity_for_conflict(payload: dict[str, Any]) -> Decimal:
+    for key in ("quantity", "amount", "qty"):
+        value = _safe_decimal(payload.get(key))
+        if value != 0:
+            return abs(value)
+    return Decimal("0")
+
+
+def _event_direction_for_conflict(payload: dict[str, Any]) -> str:
+    side = str(payload.get("side", "")).lower().strip()
+    event_type = str(payload.get("event_type", "")).lower().strip()
+    if side in {"in", "buy"}:
+        return "in"
+    if side in {"out", "sell"}:
+        return "out"
+    if any(token in event_type for token in ("deposit", "reward", "income", "buy", "in")):
+        return "in"
+    if any(token in event_type for token in ("withdraw", "sell", "fee", "out")):
+        return "out"
+    return ""
+
+
+def _decimal_key(value: Decimal) -> str:
+    with localcontext() as ctx:
+        ctx.prec = max(50, len(value.as_tuple().digits) + 18)
+        normalized = value.quantize(Decimal("0.000000000000000001")).normalize()
+    return format(normalized, "f")
 
 
 def _build_issue_row(
