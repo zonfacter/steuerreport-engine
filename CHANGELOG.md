@@ -32,6 +32,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Tax-Event-Overrides unterstützen jetzt `EXCLUDED`, damit ein Event mit Pflichtgrund und Notiz aus der Steuerberechnung ausgeschlossen werden kann, ohne `raw_events` zu verändern.
   - UI ergänzt vorausgewählte Ausschlussgründe für Duplikat, falsche Zuordnung, Spam/Dust, reinen Referenzimport und nicht steuerrelevante Vorgänge.
   - Side-by-Side Ruleset-Vergleiche nutzen dieselben steuerwirksamen Overrides wie reguläre Steuerläufe.
+  - Roadmap-kompatible Review-Endpunkte `POST /api/v1/review/ignore`, `POST /api/v1/review/comment`, `GET /api/v1/review/comments` und `GET /api/v1/review/exclusion-reasons` ergänzt.
+  - Transaktionssuche kann Events direkt in den Korrektur-/Ausschlussdialog übernehmen; Raw Events bleiben unverändert.
 - Helium-Legacy-Import ergänzt:
   - CoinTracking-/Fairspot-kompatible Helium-L1-Exports werden als `helium_legacy_cointracking` erkannt.
   - `HNT2` wird in `HNT` normalisiert; Mining-Rewards, Legacy-Transfers und Netzwerkgebühren werden getrennt klassifiziert.

@@ -23,6 +23,8 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Preflight-Blocker und Warnungen verlinken per Guided Action direkt zur passenden Korrekturansicht.
 - Das Import-Aktivitätsprotokoll ist im Import-Hub als eigenes Modul mit Connector-/Statusfilter, Detailauswahl und Wiederholsprung sichtbar.
 - Portfolio-Sets können Quellen/Integrationen zugeordnet bekommen und zeigen eine Set-spezifische Wertkurve.
+- Review-Ignore und Review-Kommentare sind als auditierbare Endpunkte umgesetzt; Ausschlüsse verlangen Pflichtgrund und Notiz, Raw Events werden nicht gelöscht.
+- Die Transaktionssuche kann Events direkt in den Korrektur-/Ausschlussdialog übernehmen.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)
@@ -167,3 +169,4 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 ## Nächste konkrete Arbeitspakete (Backlog)
 1. Lot-Nachvollzug im Export um `transfer_chain_id` erweitern.
 2. Snapshot-Wiederherstellungsvorschau in der UI ergänzen.
+3. Review-Merge/Split und Zeitzonen-Korrektur als versionierte Overrides modellieren.

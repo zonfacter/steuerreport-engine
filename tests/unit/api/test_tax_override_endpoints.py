@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from tax_engine.api.app import (
+    ReviewCommentRequest,
+    ReviewIgnoreRequest,
     TaxEventOverrideDeleteRequest,
     TaxEventOverrideUpsertRequest,
     import_confirm,
     process_run,
     process_tax_lines,
     process_worker_run_next,
+    review_comment,
+    review_comments,
+    review_exclusion_reasons,
+    review_ignore,
     tax_event_override_delete,
     tax_event_override_upsert,
     tax_event_overrides_list,
@@ -141,3 +147,71 @@ def test_tax_override_exclusion_requires_reason_and_note() -> None:
     )
     assert missing_note.status == "error"
     assert missing_note.errors[0]["code"] == "exclusion_note_required"
+
+
+def test_review_ignore_alias_excludes_with_catalog_reason() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="review_ignore.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T00:00:00Z",
+                    "asset": "SPAM",
+                    "side": "in",
+                    "amount": "1",
+                }
+            ],
+        )
+    )
+    event_id = STORE.list_raw_events()[0]["unique_event_id"]
+
+    catalog = review_exclusion_reasons()
+    assert catalog.status == "success"
+    assert any(item["reason_code"] == "spam_or_dust" for item in catalog.data["reasons"])
+
+    response = review_ignore(
+        ReviewIgnoreRequest(
+            source_event_id=event_id,
+            reason_code="spam_or_dust",
+            note="Spam-Airdrop nach manueller Prüfung ausgeschlossen",
+        )
+    )
+    assert response.status == "success"
+    assert response.data["tax_category"] == "EXCLUDED"
+    assert response.data["reason_code"] == "spam_or_dust"
+    assert len(STORE.list_raw_events()) == 1
+
+
+def test_review_comment_persists_without_changing_raw_event() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="review_comment.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T00:00:00Z",
+                    "asset": "HNT",
+                    "event_type": "legacy_transfer",
+                    "amount": "10",
+                }
+            ],
+        )
+    )
+    event_id = STORE.list_raw_events()[0]["unique_event_id"]
+
+    saved = review_comment(
+        ReviewCommentRequest(
+            source_event_id=event_id,
+            reason_code="wrong_assignment",
+            comment="Transfer zu Staking-Wallet, Gegenbuchung später prüfen",
+        )
+    )
+    assert saved.status == "success"
+    assert saved.data["saved"] is True
+    assert len(STORE.list_raw_events()) == 1
+
+    listed = review_comments(source_event_id=event_id)
+    assert listed.status == "success"
+    assert listed.data["count"] == 1
+    assert listed.data["rows"][0]["comment"] == "Transfer zu Staking-Wallet, Gegenbuchung später prüfen"

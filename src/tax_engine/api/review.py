@@ -48,6 +48,18 @@ class TaxEventOverrideDeleteRequest(BaseModel):
     source_event_id: str = Field(min_length=8, max_length=200)
 
 
+class ReviewIgnoreRequest(BaseModel):
+    source_event_id: str = Field(min_length=8, max_length=200)
+    reason_code: str = Field(min_length=3, max_length=80)
+    note: str = Field(min_length=3, max_length=500)
+
+
+class ReviewCommentRequest(BaseModel):
+    source_event_id: str = Field(min_length=8, max_length=200)
+    comment: str = Field(min_length=3, max_length=1000)
+    reason_code: str | None = Field(default=None, min_length=3, max_length=80)
+
+
 router = APIRouter()
 
 
@@ -324,6 +336,29 @@ def tax_event_overrides_list() -> StandardResponse:
     )
 
 
+@router.get("/api/v1/review/exclusion-reasons", response_model=StandardResponse, tags=["review"])
+def review_exclusion_reasons() -> StandardResponse:
+    trace_id = str(uuid4())
+    write_audit(
+        trace_id=trace_id,
+        action="review.exclusion_reasons",
+        payload={"count": len(EXCLUSION_REASON_CATALOG)},
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "count": len(EXCLUSION_REASON_CATALOG),
+            "reasons": [
+                {"reason_code": reason_code, "label": label}
+                for reason_code, label in sorted(EXCLUSION_REASON_CATALOG.items(), key=lambda item: item[0])
+            ],
+        },
+        errors=[],
+        warnings=[],
+    )
+
+
 @router.post("/api/v1/tax/event-override/upsert", response_model=StandardResponse, tags=["tax"])
 def tax_event_override_upsert(payload: TaxEventOverrideUpsertRequest) -> StandardResponse:
     trace_id = str(uuid4())
@@ -409,6 +444,19 @@ def tax_event_override_upsert(payload: TaxEventOverrideUpsertRequest) -> Standar
     )
 
 
+@router.post("/api/v1/review/ignore", response_model=StandardResponse, tags=["review"])
+def review_ignore(payload: ReviewIgnoreRequest) -> StandardResponse:
+    # Deutsche Kommentare: fachlicher Alias fuer den Roadmap-Review-Flow; Raw Events bleiben unveraendert.
+    return tax_event_override_upsert(
+        TaxEventOverrideUpsertRequest(
+            source_event_id=payload.source_event_id,
+            tax_category="EXCLUDED",
+            reason_code=payload.reason_code,
+            note=payload.note,
+        )
+    )
+
+
 @router.post("/api/v1/tax/event-override/delete", response_model=StandardResponse, tags=["tax"])
 def tax_event_override_delete(payload: TaxEventOverrideDeleteRequest) -> StandardResponse:
     trace_id = str(uuid4())
@@ -427,6 +475,67 @@ def tax_event_override_delete(payload: TaxEventOverrideDeleteRequest) -> Standar
         trace_id=trace_id,
         status="success",
         data={"source_event_id": event_id, "deleted": deleted},
+        errors=[],
+        warnings=[],
+    )
+
+
+@router.post("/api/v1/review/comment", response_model=StandardResponse, tags=["review"])
+def review_comment(payload: ReviewCommentRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    event_id = payload.source_event_id.strip()
+    raw_event = STORE.get_raw_event(event_id)
+    if raw_event is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "source_event_not_found", "message": f"Event nicht gefunden: {event_id}"}],
+            warnings=[],
+        )
+    comments = _load_event_comments()
+    entry = {
+        "source_event_id": event_id,
+        "comment": payload.comment.strip(),
+        "reason_code": str(payload.reason_code or "").strip(),
+        "updated_at_utc": datetime.now(UTC).isoformat(),
+    }
+    comments[event_id] = entry
+    put_admin_setting("runtime.event_comments", comments, is_secret=False)
+    write_audit(
+        trace_id=trace_id,
+        action="review.comment",
+        payload={"source_event_id": event_id, "reason_code": entry["reason_code"]},
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={**entry, "saved": True},
+        errors=[],
+        warnings=[],
+    )
+
+
+@router.get("/api/v1/review/comments", response_model=StandardResponse, tags=["review"])
+def review_comments(source_event_id: str | None = None) -> StandardResponse:
+    trace_id = str(uuid4())
+    comments = _load_event_comments()
+    event_id = str(source_event_id or "").strip()
+    rows = [
+        item
+        for item in comments.values()
+        if not event_id or str(item.get("source_event_id", "")).strip() == event_id
+    ]
+    rows.sort(key=lambda item: (str(item.get("updated_at_utc", "")), str(item.get("source_event_id", ""))))
+    write_audit(
+        trace_id=trace_id,
+        action="review.comments",
+        payload={"count": len(rows), "source_event_id": event_id},
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={"count": len(rows), "rows": rows},
         errors=[],
         warnings=[],
     )
@@ -624,6 +733,33 @@ def _load_tax_event_overrides() -> dict[str, dict[str, str]]:
             "reason_label": str(payload.get("reason_label", "")),
             "note": str(payload.get("note", "")),
             "updated_at_utc": str(payload.get("updated_at_utc", "")),
+        }
+    return result
+
+
+def _load_event_comments() -> dict[str, dict[str, str]]:
+    row = STORE.get_setting("runtime.event_comments")
+    if row is None:
+        return {}
+    try:
+        raw = json.loads(str(row.get("value_json", "{}")))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, dict[str, str]] = {}
+    for event_id_raw, payload in raw.items():
+        event_id = str(event_id_raw).strip()
+        if not event_id or not isinstance(payload, dict):
+            continue
+        comment = str(payload.get("comment", "")).strip()
+        if not comment:
+            continue
+        result[event_id] = {
+            "source_event_id": event_id,
+            "comment": comment,
+            "reason_code": str(payload.get("reason_code", "")).strip(),
+            "updated_at_utc": str(payload.get("updated_at_utc", "")).strip(),
         }
     return result
 

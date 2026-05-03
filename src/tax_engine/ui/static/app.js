@@ -2537,13 +2537,17 @@ function renderTransactionSearchRows(rows) {
       <td><span title="${row.tx_id || ""}">${shortHash(row.tx_id || "")}</span></td>
       <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
       <td><span title="${row.unique_event_id || ""}">${shortHash(row.unique_event_id || "")}</span></td>
+      <td>
+        <button type="button" class="btn-small btn-tx-override" data-index="${index}">Korrektur</button>
+        <button type="button" class="btn-small btn-tx-exclude" data-index="${index}">Ausschluss</button>
+      </td>
     `;
     tr.addEventListener("click", () => renderTransactionSearchDetail(index));
     tbody.appendChild(tr);
   });
   if (!rows.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="9">Keine Transaktionen gefunden.</td>';
+    tr.innerHTML = '<td colspan="10">Keine Transaktionen gefunden.</td>';
     tbody.appendChild(tr);
   }
 }
@@ -2553,6 +2557,30 @@ function renderTransactionSearchDetail(index) {
   if (!host) return;
   const row = state.transactionSearchRows[index];
   host.textContent = row ? JSON.stringify(row, null, 2) : "Keine Transaktion ausgewählt.";
+}
+
+function prepareTaxOverrideFromTransaction(index, mode = "classify") {
+  const row = state.transactionSearchRows[index];
+  const eventId = row?.unique_event_id || "";
+  if (!eventId) {
+    showToast("Keine Source Event ID im Suchtreffer vorhanden.", "warn");
+    return;
+  }
+  if (el("taxOverrideEventId")) el("taxOverrideEventId").value = eventId;
+  if (el("taxOverrideCategory")) el("taxOverrideCategory").value = mode === "exclude" ? "EXCLUDED" : "PRIVATE_SO";
+  if (el("taxOverrideReason")) el("taxOverrideReason").value = mode === "exclude" ? "wrong_assignment" : "";
+  if (el("taxOverrideNote")) {
+    el("taxOverrideNote").value = mode === "exclude"
+      ? `Manuell aus Transaktionssuche vorbereitet: ${row.source || ""} ${row.event_type || ""} ${row.symbol || row.asset || ""}`
+      : "";
+  }
+  switchReviewTab("tax");
+  showToast(
+    mode === "exclude"
+      ? "Ausschluss vorbereitet. Bitte Grund prüfen und Notiz fachlich ergänzen, dann speichern."
+      : "Event für Korrektur übernommen.",
+    "ok"
+  );
 }
 
 function formatWalletCell(row) {
@@ -4858,6 +4886,21 @@ async function loadUnmatched() {
   });
   el("btnTxSearch")?.addEventListener("click", (e) => {
     runTransactionSearch(e.currentTarget);
+  });
+  el("transactionSearchTable")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const overrideButton = target.closest(".btn-tx-override");
+    if (overrideButton instanceof HTMLElement) {
+      event.stopPropagation();
+      prepareTaxOverrideFromTransaction(Number(overrideButton.dataset.index || "-1"), "classify");
+      return;
+    }
+    const excludeButton = target.closest(".btn-tx-exclude");
+    if (excludeButton instanceof HTMLElement) {
+      event.stopPropagation();
+      prepareTaxOverrideFromTransaction(Number(excludeButton.dataset.index || "-1"), "exclude");
+    }
   });
   ["txSearchQ", "txSearchYear", "txSearchSource", "txSearchAsset", "txSearchWallet", "txSearchType"].forEach((id) => {
     el(id)?.addEventListener("keydown", (e) => {

@@ -694,6 +694,20 @@ button:hover {
   background: var(--btn-hover);
 }
 
+.btn-small {
+  padding: 5px 7px;
+  margin: 2px;
+  font-size: 12px;
+  border-radius: 8px;
+  border-color: #315371;
+  background: #172536;
+  color: #cde8ff;
+}
+
+.btn-small:hover {
+  background: #203650;
+}
+
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
