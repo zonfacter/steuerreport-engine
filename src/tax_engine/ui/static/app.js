@@ -1404,7 +1404,8 @@ function renderLegacyHntTransfers(data) {
   });
 }
 
-function renderLotAging(rows) {
+function renderLotAging(rows, assets = []) {
+  renderLotAgingSummary(rows, assets);
   const tbody = el("dashLotTable")?.querySelector("tbody");
   if (!tbody) return;
   tbody.innerHTML = "";
@@ -1413,21 +1414,69 @@ function renderLotAging(rows) {
     const statusClass = status === "exempt" ? "status-badge status-alias" : "status-badge status-default";
     const qty = toNumber(item.qty || 0);
     const holdDays = toNumber(item.hold_days || 0);
+    const daysToExempt = toNumber(item.days_to_exempt || 0);
+    const progress = Math.max(0, Math.min(1, toNumber(item.holding_progress_ratio || 0)));
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${item.asset || ""}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
       <td class="num ${qty < 0 ? "num-neg" : qty > 0 ? "num-pos" : ""}">${formatQty(qty)}</td>
-      <td>${item.buy_timestamp_utc || ""}</td>
+      <td>${escapeHtml(item.buy_timestamp_utc || "")}</td>
       <td class="num">${Number.isFinite(holdDays) ? Math.floor(holdDays) : ""}</td>
+      <td class="num">${status === "exempt" ? "0" : Math.floor(daysToExempt)}</td>
+      <td>${renderHoldingProgress(progress)}</td>
       <td><span class="${statusClass}">${status}</span></td>
     `;
     tbody.appendChild(tr);
   });
   if (!rows?.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="5">Keine Lots vorhanden.</td>';
+    tr.innerHTML = '<td colspan="7">Keine Lots vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function renderLotAgingSummary(rows, assets) {
+  const totalLots = (rows || []).length;
+  const exemptLots = (rows || []).filter((row) => row.tax_status === "exempt").length;
+  const taxableLots = Math.max(totalLots - exemptLots, 0);
+  const totalQty = (assets || []).reduce((sum, item) => sum + toNumber(item.total_qty || 0), 0);
+  renderMetricCards("dashLotSummaryCards", [
+    { label: "Offene Lots", value: String(totalLots), sub: "FIFO-Bestand" },
+    { label: "Steuerfrei", value: String(exemptLots), sub: "Haltedauer erfüllt" },
+    { label: "Noch steuerpflichtig", value: String(taxableLots), sub: "unter 12 Monaten" },
+    { label: "Gesamtmenge", value: formatQty(totalQty), sub: "gefilterte Assets" },
+  ]);
+
+  const tbody = el("dashLotAssetSummaryTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (assets || []).forEach((item) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.total_qty || 0)}</td>
+      <td class="num num-pos">${formatQty(item.qty_exempt || 0)}</td>
+      <td class="num">${formatQty(item.qty_taxable || 0)}</td>
+      <td class="num">${escapeHtml(item.lot_count || 0)}</td>
+      <td class="num">${escapeHtml(item.oldest_hold_days || 0)} Tage</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!assets?.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6">Keine Asset-Zusammenfassung vorhanden.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderHoldingProgress(progress) {
+  const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
+  return `
+    <div class="hold-progress" title="${pct}% der Haltefrist erreicht">
+      <span style="width:${pct}%"></span>
+      <em>${pct}%</em>
+    </div>
+  `;
 }
 
 function renderIssues(rows) {
@@ -4791,7 +4840,7 @@ async function loadUnmatched() {
     const data = await callApi(`/api/v1/portfolio/lot-aging?${params.toString()}`, "GET", null, null, true);
     if (!data?.data) return;
     state.lotRows = data.data.lot_rows ?? [];
-    renderLotAging(state.lotRows);
+    renderLotAging(state.lotRows, data.data.assets ?? []);
   }
   el("btnLoadLotAging").addEventListener("click", loadLotAging);
 

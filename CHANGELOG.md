@@ -88,6 +88,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Steuer-Tab kann einen aktuellen Lauf gegen ein zweites Ruleset vergleichen.
   - Snapshot-Erstellung aus der Oberfläche ergänzt, inklusive Notizfeld für Nachprüfungsstände.
   - Nicht-destruktive Snapshot-Vorschau ergänzt: Snapshot-ID lädt Integritätsdaten, Steuerjahr, Ruleset, Zeilenzahlen, SO-Zusammenfassung und Beispielzeilen.
+- Lot-Aging-Ansicht erweitert:
+  - Offene FIFO-Lots liefern jetzt `days_to_exempt` und `holding_progress_ratio`.
+  - Asset-Zusammenfassung zeigt Gesamtmenge, steuerfreie Menge, noch steuerpflichtige Menge, Lot-Anzahl und älteste Haltedauer.
+  - UI zeigt Haltefrist-Fortschritt je Lot als Balken statt nur als Zahlentabelle.
 - CI-Security-Fix:
   - FastAPI/Starlette/Cryptography Constraints angehoben, damit `pip-audit` bekannte CVEs in GitHub Actions nicht mehr blockiert.
   - `types-reportlab` als Dev-Dependency ergänzt, damit der GitHub-Mypy-Lauf den PDF-Export ohne fehlende Stub-Pakete prüfen kann.

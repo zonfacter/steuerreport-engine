@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 from collections import defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -283,6 +284,15 @@ def _resolve_tax_status(
     return "exempt" if status == TaxStatus.EXEMPT else "taxable"
 
 
+def _add_months(value: datetime, months: int) -> datetime:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    max_day = calendar.monthrange(year, month)[1]
+    day = min(value.day, max_day)
+    return value.replace(year=year, month=month, day=day)
+
+
 def _extract_side(payload: dict[str, Any], qty: Decimal) -> str:
     side = str(payload.get("side", "")).lower().strip()
     if side in ("buy", "bid"):
@@ -497,17 +507,25 @@ def build_open_lot_aging_snapshot(
         total_qty = Decimal("0")
         qty_exempt = Decimal("0")
         qty_taxable = Decimal("0")
+        oldest_hold_days = 0
+        lot_count = 0
         for lot in lots:
             qty = lot.remaining_qty
             if qty <= Decimal("0"):
                 continue
             hold_days = (as_of.date() - lot.buy_timestamp.date()).days
+            threshold_timestamp = _add_months(lot.buy_timestamp, strategy.ruleset.holding_period_months)
+            total_required_days = max((threshold_timestamp.date() - lot.buy_timestamp.date()).days, 1)
+            days_to_exempt = max((threshold_timestamp.date() - as_of.date()).days, 0)
+            holding_progress_ratio = min(Decimal("1"), Decimal(max(hold_days, 0)) / Decimal(total_required_days))
             tax_status = _resolve_tax_status(
                 strategy=strategy,
                 acquisition_timestamp=lot.buy_timestamp,
                 disposal_timestamp=as_of,
             )
             total_qty += qty
+            oldest_hold_days = max(oldest_hold_days, hold_days)
+            lot_count += 1
             if tax_status == "exempt":
                 qty_exempt += qty
             else:
@@ -518,6 +536,8 @@ def build_open_lot_aging_snapshot(
                     "qty": qty.to_eng_string(),
                     "buy_timestamp_utc": lot.buy_timestamp.isoformat(),
                     "hold_days": hold_days,
+                    "days_to_exempt": days_to_exempt,
+                    "holding_progress_ratio": holding_progress_ratio.quantize(Decimal("0.0001")).to_eng_string(),
                     "tax_status": tax_status,
                     "source_event_id": lot.source_event_id,
                 }
@@ -530,6 +550,8 @@ def build_open_lot_aging_snapshot(
                     "total_qty": total_qty.to_eng_string(),
                     "qty_exempt": qty_exempt.to_eng_string(),
                     "qty_taxable": qty_taxable.to_eng_string(),
+                    "lot_count": lot_count,
+                    "oldest_hold_days": oldest_hold_days,
                 }
             )
 

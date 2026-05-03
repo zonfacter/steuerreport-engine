@@ -1031,6 +1031,22 @@
             <label>As-Of UTC<input id="dashLotAsOf" placeholder="2026-12-31T23:59:59Z" /></label>
             <button id="btnLoadLotAging">Lot Aging laden</button>
           </div>
+          <div id="dashLotSummaryCards" class="metrics"></div>
+          <div class="table-wrap">
+            <table id="dashLotAssetSummaryTable">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th class="num">Gesamtmenge</th>
+                  <th class="num">Steuerfrei</th>
+                  <th class="num">Noch steuerpflichtig</th>
+                  <th class="num">Lots</th>
+                  <th class="num">Älteste Haltedauer</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
           <div class="table-wrap">
             <table id="dashLotTable">
               <thead>
@@ -1039,6 +1055,8 @@
                   <th class="num">Menge</th>
                   <th>Kaufzeitpunkt</th>
                   <th class="num">Haltedauer (Tage)</th>
+                  <th class="num">Tage bis frei</th>
+                  <th>Fortschritt</th>
                   <th>Status</th>
                 </tr>
               </thead>

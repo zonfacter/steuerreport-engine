@@ -23,6 +23,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - `GET /api/v1/import/jobs` nutzt persistierte Importquellen und unterstützt Filter nach `integration` und `status`.
 - Die UI zeigt Export-Artefakte im Steuer-Tab als klickbare Karten und bietet Ruleset-Vergleich sowie Snapshot-Erstellung an.
 - Die UI bietet eine nicht-destruktive Snapshot-Vorschau mit Integritätsdaten, Zeilenzahlen und Beispielzeilen.
+- Lot-Aging ist UI-ready: offene FIFO-Lots zeigen Menge, Anschaffungszeitpunkt, Haltedauer, Tage bis Steuerfreiheit, Fortschritt und Asset-Zusammenfassung.
 - `GET /api/v1/process/options` liefert validierte Steuerlauf-Optionen fuer den Wizard.
 - `POST /api/v1/process/preflight` prueft Importdaten, Ruleset, offene High-Issues, unmatched Transfers und Bewertungsabdeckung vor dem Lauf.
 - Die UI fuehrt vor `POST /api/v1/process/run` automatisch einen Preflight aus und blockiert den Steuerlauf bei harten Blockern.
@@ -97,6 +98,7 @@ Ziel: Nutzer bekommt belastbares Endprodukt statt technischer Rohdatenansicht.
 - Ergänze API/Service, das Haltedauer-Verteilungen ausgibt:
   - Beispielstruktur: `[{ asset, qty, holding_days, acquisition_date, open_lot_id }]`
 - Nutze bereits vorhandene offene Lot-Sicht als Basis (`build_open_lot_aging_snapshot`) und erweitere auf UI-ready JSON.
+- Stand: umgesetzt mit `days_to_exempt`, `holding_progress_ratio`, Asset-Summen, steuerfreier Menge und steuerpflichtiger Menge.
 
 **Acceptance Criteria Sprint-2**
 - PDF und CSV exportierbar und wiederholbar.

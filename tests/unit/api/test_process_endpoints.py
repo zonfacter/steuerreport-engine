@@ -506,3 +506,10 @@ def test_portfolio_lot_aging_shows_split_lots() -> None:
     assert len(rows) == 3
     qtys = sorted([row["qty"] for row in rows])
     assert qtys == ["3", "4", "8"]
+    first = rows[0]
+    assert "days_to_exempt" in first
+    assert "holding_progress_ratio" in first
+    assets = resp.data.get("assets", [])
+    assert assets[0]["lot_count"] == 3
+    assert assets[0]["qty_exempt"] == "7"
+    assert assets[0]["qty_taxable"] == "8"
