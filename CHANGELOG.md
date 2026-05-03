@@ -35,6 +35,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Fehler-UX verbessert:
   - API-/Netzwerkfehler werden im Frontend zusätzlich in einem einheitlichen Fehlerpanel mit Pfad, HTTP-Status und Trace-ID angezeigt.
   - Nicht-JSON-Antworten führen nicht mehr zu kryptischen Browser-Parse-Meldungen, sondern zu einer verwertbaren Fehlermeldung.
+- Operations-Cockpit ergänzt:
+  - Das Steuer-Cockpit zeigt jetzt Solana-Backfill, Import-Aktivität und Steuerjobs als eigene Statuskarten.
+  - Statuskarten zeigen laufende/offene Jobs, lokale Solana-Coverage, RPC-Delay und Rate-Limit-Zähler.
+  - Klicks springen direkt zur passenden Bedienseite (`Services`, `Import-Aktivität`, `Steuerlauf`).
 - Integrationssteuerung ergänzt:
   - `GET /api/v1/portfolio/integrations` liefert jetzt pro Quelle den steuerlichen Modus `active`, `reference` oder `disabled`.
   - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.

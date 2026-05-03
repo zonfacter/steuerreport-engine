@@ -1272,6 +1272,43 @@ button.source-card {
   border-color: rgba(147, 163, 181, 0.22);
 }
 
+.ops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.ops-card {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: linear-gradient(180deg, #172433 0%, #101822 100%);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ops-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(243, 186, 47, 0.5);
+  box-shadow: 0 12px 28px var(--shadow);
+}
+
+.ops-card strong {
+  font-size: 18px;
+}
+
+.ops-card em {
+  font-style: normal;
+  color: var(--text);
+}
+
+.ops-card small {
+  color: var(--muted);
+}
+
 .timeline-list {
   margin: 0;
   padding-left: 20px;

@@ -1949,6 +1949,7 @@ function renderBackfillService(data) {
     el("backfillReachedStart").textContent = data.scan_reached_start ? "ja" : "unbekannt";
   }
   if (el("backfillLogOut")) el("backfillLogOut").textContent = (data.log_tail || []).join("\n");
+  renderCockpitOperations();
 }
 
 function firstRateControl(rateControl) {
@@ -2170,6 +2171,7 @@ function renderImportJobsTable(rows) {
     tr.innerHTML = '<td colspan="7">Noch keine Import-Aktivität für die aktuelle Filterung vorhanden.</td>';
     tbody.appendChild(tr);
   }
+  renderCockpitOperations();
 }
 
 function renderImportJobDetail(item) {
@@ -3342,6 +3344,7 @@ function renderCockpit() {
   });
   renderCockpitSources();
   renderCockpitIssuePile();
+  renderCockpitOperations();
 
   buildChart("chartCockpitPortfolioTax", {
     type: "bar",
@@ -3384,6 +3387,99 @@ function renderCockpitIssuePile() {
       <span>${escapeHtml(item.severity || "low")} · ${escapeHtml(item.type || "issue")}</span>
       <strong>${escapeHtml(item.title || item.issue_id || "")}</strong>
       <small>${escapeHtml(item.asset || "-")} · ${escapeHtml(String(item.detail || "").slice(0, 120))}</small>
+    </button>
+  `).join("");
+}
+
+function terminalImportStatus(status) {
+  return ["completed", "duplicate", "empty", "partial", "failed", "error"].includes(String(status || "").toLowerCase());
+}
+
+function terminalProcessStatus(status) {
+  return ["completed", "failed", "cancelled"].includes(String(status || "").toLowerCase());
+}
+
+function cockpitOpsStatusClass(kind, value) {
+  const status = String(value || "").toLowerCase();
+  if (kind === "backfill") {
+    if (status === "active") return "status-ok";
+    if (status === "failed" || status === "inactive") return "status-warn";
+    return "status-default";
+  }
+  if (status === "completed" || status === "active") return "status-ok";
+  if (status === "running" || status === "pending" || status === "queued") return "status-running";
+  if (status === "partial" || status === "duplicate" || status === "empty") return "status-warn";
+  if (status === "failed" || status === "error") return "status-fail";
+  return "status-default";
+}
+
+function latestByTimestamp(rows, fields) {
+  return [...(rows || [])].sort((a, b) => {
+    const av = fields.map((field) => String(a?.[field] || "")).find(Boolean) || "";
+    const bv = fields.map((field) => String(b?.[field] || "")).find(Boolean) || "";
+    return bv.localeCompare(av);
+  })[0] || null;
+}
+
+function renderCockpitOperations() {
+  const host = el("cockpitOpsGrid");
+  if (!host) return;
+  const backfill = state.admin.backfillService || {};
+  const backfillStats = backfill.stats || {};
+  const rate = firstRateControl(backfillStats.rpc_rate_control);
+  const coverage = backfill.import_coverage || {};
+  const importRows = state.importJobs || [];
+  const processRows = state.processingJobs || [];
+  const runningImports = importRows.filter((row) => !terminalImportStatus(row.status)).length;
+  const partialImports = importRows.filter((row) => String(row.status || "").toLowerCase() === "partial").length;
+  const latestImport = latestByTimestamp(importRows, ["started_at_utc", "created_at_utc"]);
+  const runningProcess = processRows.filter((row) => !terminalProcessStatus(row.status)).length;
+  const latestProcess = latestByTimestamp(processRows, ["updated_at_utc", "created_at_utc"]);
+  const backfillStatus = backfill.active_state || "unknown";
+  const importStatus = runningImports ? "running" : partialImports ? "partial" : latestImport?.status || "unknown";
+  const processStatus = runningProcess ? "running" : latestProcess?.status || "unknown";
+  const reachedStart = backfill.scan_reached_start ? "Chain-Start erreicht" : "Historie ggf. unvollständig";
+  const first = String(coverage.first_timestamp_utc || "").slice(0, 10) || "?";
+  const last = String(coverage.last_timestamp_utc || "").slice(0, 10) || "?";
+  const cards = [
+    {
+      key: "backfill",
+      title: "Solana Backfill",
+      status: backfillStatus,
+      statusClass: cockpitOpsStatusClass("backfill", backfillStatus),
+      metric: `${formatInt(coverage.raw_event_count || 0)} Events`,
+      detail: `${reachedStart} · ${first} bis ${last}`,
+      sub: `RPC Delay: ${rate ? `${rate.delay_seconds}s` : "-"} · Rate-Limits: ${rate ? formatInt(rate.backpressure_count || 0) : "-"}`,
+      action: "admin-services",
+    },
+    {
+      key: "imports",
+      title: "Import-Aktivität",
+      status: importStatus,
+      statusClass: cockpitOpsStatusClass("import", importStatus),
+      metric: `${formatInt(runningImports)} laufend / ${formatInt(importRows.length)} geladen`,
+      detail: latestImport ? `${latestImport.connector || "unknown"} · ${latestImport.source_name || "-"}` : "Noch keine Importjobs geladen",
+      sub: latestImport ? `Letzter Import: ${String(latestImport.started_at_utc || "-").replace("T", " ").slice(0, 16)}` : "Import-Hub öffnen",
+      action: "imports",
+    },
+    {
+      key: "process",
+      title: "Steuerjobs",
+      status: processStatus,
+      statusClass: cockpitOpsStatusClass("process", processStatus),
+      metric: `${formatInt(runningProcess)} offen / ${formatInt(processRows.length)} geladen`,
+      detail: latestProcess ? `${latestProcess.job_id || "-"} · ${formatMoney(latestProcess.progress || 0)}%` : "Noch keine Steuerjobs geladen",
+      sub: latestProcess ? `Update: ${String(latestProcess.updated_at_utc || "-").replace("T", " ").slice(0, 16)}` : "Steuerlauf öffnen",
+      action: "process",
+    },
+  ];
+  host.innerHTML = cards.map((card) => `
+    <button type="button" class="ops-card" data-ops-action="${escapeHtml(card.action)}">
+      <span class="status-badge ${escapeHtml(card.statusClass)}">${escapeHtml(card.status)}</span>
+      <strong>${escapeHtml(card.title)}</strong>
+      <em>${escapeHtml(card.metric)}</em>
+      <small>${escapeHtml(card.detail)}</small>
+      <small>${escapeHtml(card.sub)}</small>
     </button>
   `).join("");
 }
@@ -5628,6 +5724,9 @@ async function loadUnmatched() {
   el("btnCockpitRefresh")?.addEventListener("click", async () => {
     await refreshUsdEurRateBestEffort();
     await loadDashboard();
+    await loadBackfillService();
+    await loadImportJobs(true);
+    await loadProcessJobs(true);
     if (currentJobId()) {
       await loadTaxDomainSummary(currentJobId(), true);
     }
@@ -5636,6 +5735,38 @@ async function loadUnmatched() {
   el("btnCockpitOpenImports")?.addEventListener("click", () => switchStep("1"));
   el("btnCockpitOpenTax")?.addEventListener("click", () => switchReviewTab("tax"));
   el("btnCockpitOpenHoldings")?.addEventListener("click", () => switchReviewTab("holdings"));
+  el("btnCockpitOpenAdminServices")?.addEventListener("click", () => {
+    switchStep("5");
+    switchAdminTab("services");
+    void loadBackfillService();
+  });
+  el("btnCockpitOpsRefresh")?.addEventListener("click", async () => {
+    await loadBackfillService();
+    await loadImportJobs(true);
+    await loadProcessJobs(true);
+    renderCockpitOperations();
+    showToast("Operations-Status aktualisiert.", "ok");
+  });
+  el("cockpitOpsGrid")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".ops-card");
+    if (!(btn instanceof HTMLElement)) return;
+    const action = btn.dataset.opsAction || "";
+    if (action === "admin-services") {
+      switchStep("5");
+      switchAdminTab("services");
+      void loadBackfillService();
+    } else if (action === "imports") {
+      switchStep("1");
+      const targetEl = el("importActivity");
+      if (targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      void loadImportJobs(false);
+    } else if (action === "process") {
+      switchStep("3");
+      void loadProcessJobs(false);
+    }
+  });
   el("btnCockpitOpenIssues")?.addEventListener("click", () => switchReviewTab("transfers"));
   el("cockpitIssuePile")?.addEventListener("click", (event) => {
     const target = event.target;
@@ -6360,6 +6491,7 @@ function renderProcessJobs() {
     info.textContent = `${rows.length} von ${state.processingJobs.length} aktuell geladenen Jobs (${state.processingJobsCount || state.processingJobs.length} Datensätze).`;
   }
   renderProcessJobsMetrics();
+  renderCockpitOperations();
 }
 
 function syncProcessJobsAutoRefresh() {

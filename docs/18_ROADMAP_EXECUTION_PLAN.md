@@ -44,6 +44,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Versionierte Review-Actions sind umgesetzt: Zeitzonen-Korrekturen werden beim Steuerlauf angewendet; Merge/Split-Entscheidungen werden ohne RAW-Löschung auditierbar dokumentiert.
 - Review-Merge/Split wird in der Steuer-Arbeitskopie angewendet: Merge annotiert Events mit gemeinsamer `economic_event_id`, Split ersetzt ein Rohereignis durch dokumentierte Teil-Events.
 - Frontend-Fehlerausgaben sind vereinheitlicht: API-/Netzwerkfehler zeigen Pfad, HTTP-Status und Trace-ID in einem Bedienpanel statt roher Parse-/JSON-Fehler.
+- Das Cockpit enthält eine Operations-Statusleiste für Solana-Backfill, Import-Aktivität und Steuerjobs inklusive RPC-Delay/Rate-Limit-Hinweis und direktem Sprung zur passenden Bedienseite.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)
@@ -143,7 +144,7 @@ Ziel: Das System wird benutzbar wie ein Steuer-Tool (nicht nur wie eine Import-A
 ### 3.4 Verfügbarkeits- und Limit-Failover UX
 - RPC- und API-Connector-Fails müssen im UI als laufender Job-Status angezeigt werden, inkl. Ursache und Retry-Option.
 - Einheitliches Fehlerfenster statt roher JSON/HTTP-Textausgaben.
-- Stand: Einheitliches Fehlerpanel für API-/Netzwerkfehler umgesetzt; Connector-spezifische Retry-Steuerung bleibt nächster Ausbau.
+- Stand: Einheitliches Fehlerpanel und Cockpit-Operations-Status umgesetzt; Connector-spezifische Retry-Steuerung bleibt nächster Ausbau.
 
 **Acceptance Criteria Sprint-3**
 - Nutzer kann mit Standardfall (1 Integration + 1 Export) vollständig arbeiten, ohne Roh-API-Schritte.
