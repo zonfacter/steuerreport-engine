@@ -94,6 +94,14 @@ def _safe_decimal(value: Any) -> Decimal:
         return Decimal("0")
 
 
+def _safe_json_object(value: Any) -> dict[str, Any]:
+    try:
+        decoded = json.loads(str(value or "{}"))
+    except Exception:
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
 def _preflight_needs_valuation(payload: dict[str, Any]) -> bool:
     event_type = str(payload.get("event_type") or "").lower()
     side = str(payload.get("side") or "").lower()
@@ -975,6 +983,78 @@ def get_snapshot(snapshot_id: str) -> StandardResponse:
         errors=[],
         warnings=[],
     )
+
+
+@router.get("/api/v1/snapshots/preview/{snapshot_id}", response_model=StandardResponse, tags=["integrity"])
+def preview_snapshot(snapshot_id: str) -> StandardResponse:
+    trace_id = str(uuid4())
+    snapshot = STORE.get_report_snapshot(snapshot_id)
+    if snapshot is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "snapshot_not_found", "message": f"Snapshot not found: {snapshot_id}"}],
+            warnings=[],
+        )
+    payload = _safe_json_object(snapshot.get("payload_json", "{}"))
+    summary = _safe_json_object(snapshot.get("summary_json", "{}"))
+    job = get_processing_job(str(snapshot["job_id"]))
+    integrity = STORE.get_report_integrity(str(snapshot["job_id"])) or {}
+    tax_lines = STORE.get_tax_lines(str(snapshot["job_id"]))
+    derivative_lines = STORE.get_derivative_lines(str(snapshot["job_id"]))
+    preview_rows = [
+        {
+            "line_type": "tax",
+            "line_no": row.get("line_no"),
+            "asset": row.get("asset"),
+            "qty": row.get("qty"),
+            "gain_loss_eur": row.get("gain_loss_eur"),
+            "tax_status": row.get("tax_status"),
+            "source_event_id": row.get("source_event_id"),
+            "lot_source_event_id": row.get("lot_source_event_id"),
+            "transfer_chain_id": row.get("transfer_chain_id"),
+        }
+        for row in tax_lines[:5]
+    ]
+    preview_rows.extend(
+        {
+            "line_type": "derivative",
+            "line_no": row.get("line_no"),
+            "asset": row.get("asset"),
+            "gain_loss_eur": row.get("gain_loss_eur"),
+            "tax_status": row.get("loss_bucket"),
+            "source_event_id": row.get("source_event_id"),
+        }
+        for row in derivative_lines[:5]
+    )
+    data = {
+        "snapshot_id": snapshot["snapshot_id"],
+        "job_id": snapshot["job_id"],
+        "created_at_utc": snapshot["created_at_utc"],
+        "notes": snapshot.get("notes"),
+        "job_status": job.get("status") if job else "missing",
+        "tax_year": job.get("tax_year") if job else None,
+        "ruleset_id": job.get("ruleset_id") if job else "",
+        "ruleset_version": job.get("ruleset_version") if job else "",
+        "report_integrity_id": integrity.get("report_integrity_id", ""),
+        "config_hash": integrity.get("config_hash", ""),
+        "data_hash": integrity.get("data_hash", ""),
+        "event_count": integrity.get("event_count", payload.get("processed_events", 0)),
+        "tax_line_count": len(tax_lines),
+        "derivative_line_count": len(derivative_lines),
+        "short_sell_violations": payload.get("short_sell_violations", 0),
+        "summary": summary,
+        "preview_rows": preview_rows,
+        "restore_supported": False,
+        "restore_note": "Nicht-destruktive Vorschau. Ein Restore wird erst nach explizitem Snapshot-Workflow implementiert.",
+    }
+    write_audit(
+        trace_id=trace_id,
+        action="snapshot.preview",
+        payload={"snapshot_id": snapshot_id, "job_id": snapshot["job_id"]},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
 
 
 @router.get("/api/v1/integrity/event/{unique_event_id}", response_model=StandardResponse, tags=["integrity"])

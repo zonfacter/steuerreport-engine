@@ -3784,7 +3784,66 @@ async function createCurrentSnapshot(trigger = null) {
     { label: "Erstellt", value: data.data?.created_at_utc || "-" },
     { label: "Notiz", value: data.data?.notes || "-" },
   ]);
+  if (data.data?.snapshot_id && el("snapshotPreviewId")) {
+    el("snapshotPreviewId").value = data.data.snapshot_id;
+  }
   showToast("Snapshot erstellt.", "ok");
+}
+
+async function previewSnapshot(trigger = null) {
+  const snapshotId = (el("snapshotPreviewId")?.value || "").trim();
+  if (!snapshotId) {
+    showToast("Bitte Snapshot-ID eintragen.", "warn");
+    return;
+  }
+  const data = await callApi(`/api/v1/snapshots/preview/${encodeURIComponent(snapshotId)}`, "GET", null, trigger);
+  if (data?.status !== "success") return;
+  renderSnapshotPreview(data.data || {});
+  showToast("Snapshot-Vorschau geladen.", "ok");
+}
+
+function renderSnapshotPreview(data) {
+  const host = el("snapshotPreviewResult");
+  if (!host) return;
+  const rows = data.preview_rows || [];
+  const summary = data.summary || {};
+  const so = summary.anlage_so || {};
+  host.innerHTML = `
+    <div class="metrics">
+      <div class="metric"><span>Snapshot</span><strong>${escapeHtml(shortHash(data.snapshot_id || ""))}</strong></div>
+      <div class="metric"><span>Steuerjahr</span><strong>${escapeHtml(data.tax_year || "-")}</strong></div>
+      <div class="metric"><span>Tax Lines</span><strong>${formatQty(data.tax_line_count || 0)}</strong></div>
+      <div class="metric"><span>Derivate</span><strong>${formatQty(data.derivative_line_count || 0)}</strong></div>
+      <div class="metric"><span>Short-Sell Issues</span><strong>${formatQty(data.short_sell_violations || 0)}</strong></div>
+      <div class="metric"><span>SO steuerpflichtig</span><strong>${formatCurrency(so.private_veraeusserung_net_taxable_eur || 0, "EUR")}</strong></div>
+    </div>
+    <div class="kv-list">
+      <div><span>Job</span><strong>${escapeHtml(data.job_id || "-")}</strong></div>
+      <div><span>Ruleset</span><strong>${escapeHtml(`${data.ruleset_id || ""} ${data.ruleset_version || ""}`.trim() || "-")}</strong></div>
+      <div><span>Report Integrity</span><strong title="${escapeHtml(data.report_integrity_id || "")}">${escapeHtml(shortHash(data.report_integrity_id || ""))}</strong></div>
+      <div><span>Erstellt</span><strong>${escapeHtml(data.created_at_utc || "-")}</strong></div>
+      <div><span>Notiz</span><strong>${escapeHtml(data.notes || "-")}</strong></div>
+      <div><span>Restore</span><strong>${escapeHtml(data.restore_note || "-")}</strong></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Typ</th><th>#</th><th>Asset</th><th>Menge</th><th>Gewinn/Verlust</th><th>Status</th><th>Event</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.line_type || "")}</td>
+              <td>${escapeHtml(row.line_no || "")}</td>
+              <td>${escapeHtml(row.asset || "")}</td>
+              <td class="num">${formatQty(row.qty || 0)}</td>
+              <td class="num">${formatCurrency(row.gain_loss_eur || 0, "EUR")}</td>
+              <td>${escapeHtml(row.tax_status || "")}</td>
+              <td title="${escapeHtml(row.source_event_id || "")}">${escapeHtml(shortHash(row.source_event_id || ""))}</td>
+            </tr>
+          `).join("") || '<tr><td colspan="7">Keine Beispielzeilen im Snapshot-Kontext.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 async function loadTaxEventOverrides(silent = true) {
@@ -4664,6 +4723,9 @@ async function loadUnmatched() {
   });
   el("btnCreateSnapshot")?.addEventListener("click", async (e) => {
     await createCurrentSnapshot(e.currentTarget);
+  });
+  el("btnPreviewSnapshot")?.addEventListener("click", async (e) => {
+    await previewSnapshot(e.currentTarget);
   });
   ["reviewIssueSearch", "reviewIssueStatus"].forEach((id) => {
     const node = el(id);

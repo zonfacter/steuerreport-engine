@@ -29,6 +29,7 @@ from tax_engine.api.app import (
     import_confirm,
     integrity_event,
     integrity_report,
+    preview_snapshot,
     process_run,
     process_worker_run_next,
     report_export,
@@ -210,7 +211,13 @@ def test_report_export_integrity_snapshot_and_compliance_paths() -> None:
     fetched_snapshot = get_snapshot(snapshot_id)
     assert fetched_snapshot.status == "success"
     assert fetched_snapshot.data["summary"]
+    snapshot_preview = preview_snapshot(snapshot_id)
+    assert snapshot_preview.status == "success"
+    assert snapshot_preview.data["snapshot_id"] == snapshot_id
+    assert snapshot_preview.data["restore_supported"] is False
+    assert "preview_rows" in snapshot_preview.data
     assert get_snapshot("missing").errors[0]["code"] == "snapshot_not_found"
+    assert preview_snapshot("missing").errors[0]["code"] == "snapshot_not_found"
 
     event_id = STORE.list_raw_events()[0]["unique_event_id"]
     event_resp = integrity_event(str(event_id))

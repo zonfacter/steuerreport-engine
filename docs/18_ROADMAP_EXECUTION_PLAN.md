@@ -18,6 +18,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - `POST /api/v1/process/compare-rulesets` ist ergänzend zum GET-Endpunkt implementiert.
 - `GET /api/v1/import/jobs` nutzt persistierte Importquellen und unterstützt Filter nach `integration` und `status`.
 - Die UI zeigt Export-Artefakte im Steuer-Tab als klickbare Karten und bietet Ruleset-Vergleich sowie Snapshot-Erstellung an.
+- Die UI bietet eine nicht-destruktive Snapshot-Vorschau mit Integritätsdaten, Zeilenzahlen und Beispielzeilen.
 - `GET /api/v1/process/options` liefert validierte Steuerlauf-Optionen fuer den Wizard.
 - `POST /api/v1/process/preflight` prueft Importdaten, Ruleset, offene High-Issues, unmatched Transfers und Bewertungsabdeckung vor dem Lauf.
 - Die UI fuehrt vor `POST /api/v1/process/run` automatisch einen Preflight aus und blockiert den Steuerlauf bei harten Blockern.
@@ -171,7 +172,7 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 - UI-Angemessenheit bei 30k+ Zeilen: Performance mit virtualisierten Tabellen erforderlich.
 
 ## Nächste konkrete Arbeitspakete (Backlog)
-1. Snapshot-Wiederherstellungsvorschau in der UI ergänzen.
+1. Snapshot-Wiederherstellungsworkflow mit explizitem, nicht destruktivem Restore-Plan modellieren.
 2. Review-Merge/Split fachlich auf die Steuer-Arbeitskopie anwenden, sobald die genaue Split-Semantik je Connector definiert ist.
 3. Integrations-Konfliktcenter um manuelle Massenentscheidung erweitern: Referenzgruppe bestätigen, Quelle deaktivieren oder Einzelereignisse mit Pflichtgrund ausschließen.
 4. Transfer-Chain-IDs über mehrstufige Wallet-Wechsel aggregieren, statt nur den direkten Match zu referenzieren.
