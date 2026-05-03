@@ -42,6 +42,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Import-Job-Erklärbarkeit erweitert:
   - `GET /api/v1/import/jobs` liefert je Job jetzt `status_reason`, `severity`, `can_retry`, `retry_action` und konkrete Warnungen.
   - Import-Detailansicht zeigt den Statusgrund und die Warnungen direkt an, damit `partial`, `duplicate` oder `empty` nicht mehr interpretiert werden müssen.
+- Dashboard-Performance verbessert:
+  - Dashboard-Bewertung nutzt innerhalb eines Requests FX-/Asset-Preis-Caches, statt dieselben Kursabfragen pro Event mehrfach gegen SQLite auszuführen.
+  - Zusätzlich kann der lokale `fx_cache` für Dashboard-Auswertungen vorab in einen Lookup geladen werden.
 - Integrationssteuerung ergänzt:
   - `GET /api/v1/portfolio/integrations` liefert jetzt pro Quelle den steuerlichen Modus `active`, `reference` oder `disabled`.
   - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.

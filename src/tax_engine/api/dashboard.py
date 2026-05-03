@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from bisect import bisect_right
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -54,6 +55,7 @@ class IntegrationModeUpdateRequest(BaseModel):
 router = APIRouter()
 
 _STABLE_ASSET_SYMBOLS = {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"}
+_FxLookup = dict[tuple[str, str], list[tuple[str, Decimal]]]
 
 @router.post("/api/v1/dashboard/role-override", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_role_override(payload: DashboardRoleOverrideRequest) -> StandardResponse:
@@ -88,6 +90,9 @@ def dashboard_overview() -> StandardResponse:
     yearly_event_buckets: dict[tuple[int, str], dict[str, Any]] = {}
     yearly_source_buckets: dict[tuple[int, str], dict[str, Any]] = {}
     runtime_fx = _runtime_usd_to_eur_rate()
+    fx_rate_cache: dict[str, Decimal] = {}
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] = {}
+    fx_lookup = _load_fx_lookup()
 
     reward_events = 0
     mining_events = 0
@@ -115,7 +120,15 @@ def dashboard_overview() -> StandardResponse:
             continue
         qty = _dashboard_event_quantity(payload)
         if year is not None and asset:
-            value = _estimate_event_values(payload=payload, asset=asset, quantity=qty, runtime_fx=runtime_fx)
+            value = _estimate_event_values(
+                payload=payload,
+                asset=asset,
+                quantity=qty,
+                runtime_fx=runtime_fx,
+                fx_rate_cache=fx_rate_cache,
+                asset_usd_price_cache=asset_usd_price_cache,
+                fx_lookup=fx_lookup,
+            )
             value_counts = _is_dashboard_value_event(payload)
             _accumulate_yearly_event_breakdown(
                 yearly_event_buckets=yearly_event_buckets,
@@ -259,7 +272,14 @@ def dashboard_overview() -> StandardResponse:
         "by_event_type": by_event_type,
         "activity_history": activity_history,
         "activity_years": activity_years,
-        "portfolio_value_history": _build_portfolio_value_history(events, ignored_mints, runtime_fx),
+        "portfolio_value_history": _build_portfolio_value_history(
+            events,
+            ignored_mints,
+            runtime_fx,
+            fx_rate_cache=fx_rate_cache,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        ),
         "yearly_asset_activity": yearly_asset_activity,
         "asset_balances": balances,
         "wallet_groups": _decorate_wallet_groups_with_sources(wallet_groups, by_source),
@@ -589,7 +609,14 @@ def dashboard_portfolio_set_history(
 
     runtime_fx = _runtime_usd_to_eur_rate()
     ignored_mints = set(_load_ignored_tokens().keys())
-    points = _build_portfolio_value_history(events, ignored_mints, runtime_fx)
+    points = _build_portfolio_value_history(
+        events,
+        ignored_mints,
+        runtime_fx,
+        fx_rate_cache={},
+        asset_usd_price_cache={},
+        fx_lookup=_load_fx_lookup(),
+    )
     if window_days > 0:
         cutoff = datetime.now(UTC) - timedelta(days=window_days)
         filtered_points: list[dict[str, Any]] = []
@@ -814,7 +841,49 @@ def _runtime_usd_to_eur_rate() -> Decimal:
     return rate if rate > 0 else Decimal("1")
 
 
-def _estimate_event_values(payload: dict[str, Any], asset: str, quantity: Decimal, runtime_fx: Decimal) -> dict[str, Any]:
+def _load_fx_lookup() -> _FxLookup:
+    lookup: _FxLookup = {}
+    for row in STORE.list_fx_rates():
+        rate = _safe_decimal(row.get("rate"))
+        if rate <= 0:
+            continue
+        key = (str(row.get("base_ccy") or "").upper(), str(row.get("quote_ccy") or "").upper())
+        lookup.setdefault(key, []).append((str(row.get("rate_date") or ""), rate))
+    return lookup
+
+
+def _lookup_fx_rate(
+    lookup: _FxLookup | None,
+    *,
+    rate_date: str,
+    base_ccy: str,
+    quote_ccy: str,
+    on_or_before: bool,
+) -> Decimal:
+    if lookup is None or len(rate_date) < 10:
+        return Decimal("0")
+    rows = lookup.get((base_ccy.upper(), quote_ccy.upper()), [])
+    if not rows:
+        return Decimal("0")
+    needle = rate_date[:10]
+    if not on_or_before:
+        idx = bisect_right(rows, (needle, Decimal("Infinity"))) - 1
+        if idx >= 0 and rows[idx][0] == needle:
+            return rows[idx][1]
+        return Decimal("0")
+    idx = bisect_right(rows, (needle, Decimal("Infinity"))) - 1
+    return rows[idx][1] if idx >= 0 else Decimal("0")
+
+
+def _estimate_event_values(
+    payload: dict[str, Any],
+    asset: str,
+    quantity: Decimal,
+    runtime_fx: Decimal,
+    fx_rate_cache: dict[str, Decimal] | None = None,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> dict[str, Any]:
     eur_direct = _first_positive_decimal(
         payload,
         (
@@ -851,7 +920,12 @@ def _estimate_event_values(payload: dict[str, Any], asset: str, quantity: Decima
     event_date = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")[:10]
     fx_rate = _safe_decimal(payload.get("fx_rate_usd_eur"))
     if fx_rate <= 0:
-        fx_rate = _usd_to_eur_rate_for_date(event_date, runtime_fx)
+        fx_rate = _usd_to_eur_rate_for_date(
+            event_date,
+            runtime_fx,
+            fx_rate_cache=fx_rate_cache,
+            fx_lookup=fx_lookup,
+        )
 
     eur = eur_direct
     usd = usd_direct
@@ -866,9 +940,19 @@ def _estimate_event_values(payload: dict[str, Any], asset: str, quantity: Decima
     if usd <= 0 and _is_stable_asset_symbol(quote_symbol) and price > 0 and qty_abs > 0:
         usd = price * qty_abs
     if usd <= 0 and qty_abs > 0:
-        cached = _cached_asset_usd_price(asset=asset, rate_date=event_date)
+        cached = _cached_asset_usd_price(
+            asset=asset,
+            rate_date=event_date,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        )
         if cached <= 0:
-            cached = _cached_asset_usd_price_on_or_before(asset=asset, rate_date=event_date)
+            cached = _cached_asset_usd_price_on_or_before(
+                asset=asset,
+                rate_date=event_date,
+                asset_usd_price_cache=asset_usd_price_cache,
+                fx_lookup=fx_lookup,
+            )
         if cached > 0:
             usd = cached * qty_abs
     if eur <= 0 and usd > 0 and fx_rate > 0:
@@ -883,14 +967,32 @@ def _estimate_event_values(payload: dict[str, Any], asset: str, quantity: Decima
     }
 
 
-def _usd_to_eur_rate_for_date(rate_date: str, fallback_rate: Decimal) -> Decimal:
+def _usd_to_eur_rate_for_date(
+    rate_date: str,
+    fallback_rate: Decimal,
+    fx_rate_cache: dict[str, Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> Decimal:
     if len(rate_date) >= 10:
+        key = rate_date[:10]
+        if fx_rate_cache is not None and key in fx_rate_cache:
+            return fx_rate_cache[key]
+        lookup_rate = _lookup_fx_rate(fx_lookup, rate_date=key, base_ccy="USD", quote_ccy="EUR", on_or_before=True)
+        if lookup_rate > 0:
+            if fx_rate_cache is not None:
+                fx_rate_cache[key] = lookup_rate
+            return lookup_rate
         row = STORE.get_fx_rate_on_or_before(rate_date=rate_date[:10], base_ccy="USD", quote_ccy="EUR")
         if row:
             rate = _safe_decimal(row.get("rate"))
             if rate > 0:
+                if fx_rate_cache is not None:
+                    fx_rate_cache[key] = rate
                 return rate
-    return fallback_rate if fallback_rate > 0 else Decimal("1")
+    fallback = fallback_rate if fallback_rate > 0 else Decimal("1")
+    if len(rate_date) >= 10 and fx_rate_cache is not None:
+        fx_rate_cache[rate_date[:10]] = fallback
+    return fallback
 
 
 def _dashboard_event_quantity(payload: dict[str, Any]) -> Decimal:
@@ -917,46 +1019,91 @@ def _heliumgeek_display_quantity(payload: dict[str, Any]) -> Decimal:
     return Decimal("0")
 
 
-def _cached_asset_usd_price(asset: str, rate_date: str) -> Decimal:
+def _cached_asset_usd_price(
+    asset: str,
+    rate_date: str,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> Decimal:
     if not asset or len(rate_date) < 10:
         return Decimal("0")
+    cache_key = ("exact", asset.upper(), rate_date[:10])
+    if asset_usd_price_cache is not None and cache_key in asset_usd_price_cache:
+        return asset_usd_price_cache[cache_key]
     candidates = [asset.upper()]
     meta = _resolve_token_display(asset)
     symbol = str(meta.get("symbol") or "").upper().strip()
     if _is_stable_asset_symbol(symbol) or _is_stable_asset_symbol(candidates[0]):
+        if asset_usd_price_cache is not None:
+            asset_usd_price_cache[cache_key] = Decimal("1")
         return Decimal("1")
     if symbol and symbol not in candidates:
         candidates.append(symbol)
     for candidate in candidates:
+        lookup_rate = _lookup_fx_rate(fx_lookup, rate_date=rate_date[:10], base_ccy=candidate, quote_ccy="USD", on_or_before=False)
+        if lookup_rate > 0:
+            if asset_usd_price_cache is not None:
+                asset_usd_price_cache[cache_key] = lookup_rate
+            return lookup_rate
         row = STORE.get_fx_rate(rate_date=rate_date, base_ccy=candidate, quote_ccy="USD")
         if row:
             rate = _safe_decimal(row.get("rate"))
             if rate > 0:
+                if asset_usd_price_cache is not None:
+                    asset_usd_price_cache[cache_key] = rate
                 return rate
+    if asset_usd_price_cache is not None:
+        asset_usd_price_cache[cache_key] = Decimal("0")
     return Decimal("0")
 
 
-def _cached_asset_usd_price_on_or_before(asset: str, rate_date: str) -> Decimal:
+def _cached_asset_usd_price_on_or_before(
+    asset: str,
+    rate_date: str,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> Decimal:
     if not asset or len(rate_date) < 10:
         return Decimal("0")
     normalized = asset.upper()
+    cache_key = ("on_or_before", normalized, rate_date[:10])
+    if asset_usd_price_cache is not None and cache_key in asset_usd_price_cache:
+        return asset_usd_price_cache[cache_key]
     candidates = [normalized]
     meta = _resolve_token_display(normalized)
     symbol = str(meta.get("symbol") or "").upper().strip()
     if _is_stable_asset_symbol(normalized) or _is_stable_asset_symbol(symbol):
+        if asset_usd_price_cache is not None:
+            asset_usd_price_cache[cache_key] = Decimal("1")
         return Decimal("1")
     if symbol and symbol not in candidates:
         candidates.append(symbol)
     for candidate in candidates:
+        lookup_rate = _lookup_fx_rate(fx_lookup, rate_date=rate_date[:10], base_ccy=candidate, quote_ccy="USD", on_or_before=True)
+        if lookup_rate > 0:
+            if asset_usd_price_cache is not None:
+                asset_usd_price_cache[cache_key] = lookup_rate
+            return lookup_rate
         row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy=candidate, quote_ccy="USD")
         if row:
             rate = _safe_decimal(row.get("rate"))
             if rate > 0:
+                if asset_usd_price_cache is not None:
+                    asset_usd_price_cache[cache_key] = rate
                 return rate
+    if asset_usd_price_cache is not None:
+        asset_usd_price_cache[cache_key] = Decimal("0")
     return Decimal("0")
 
 
-def _build_portfolio_value_history(events: list[dict[str, Any]], ignored_mints: set[str], runtime_fx: Decimal) -> list[dict[str, Any]]:
+def _build_portfolio_value_history(
+    events: list[dict[str, Any]],
+    ignored_mints: set[str],
+    runtime_fx: Decimal,
+    fx_rate_cache: dict[str, Decimal] | None = None,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> list[dict[str, Any]]:
     timeline: list[tuple[str, dict[str, Any]]] = []
     for row in events:
         payload = row.get("payload", {})
@@ -1002,13 +1149,18 @@ def _build_portfolio_value_history(events: list[dict[str, Any]], ignored_mints: 
         for balance_asset, balance_qty in running_balances.items():
             if balance_qty == 0:
                 continue
-            price = _cached_asset_usd_price_on_or_before(balance_asset, day)
+            price = _cached_asset_usd_price_on_or_before(
+                balance_asset,
+                day,
+                asset_usd_price_cache=asset_usd_price_cache,
+                fx_lookup=fx_lookup,
+            )
             if price > 0:
                 value_usd += balance_qty * price
                 priced_assets += 1
             else:
                 unpriced_assets += 1
-        fx_rate = _usd_to_eur_rate_for_date(day, runtime_fx)
+        fx_rate = _usd_to_eur_rate_for_date(day, runtime_fx, fx_rate_cache=fx_rate_cache, fx_lookup=fx_lookup)
         value_eur = value_usd * fx_rate if fx_rate > 0 else value_usd
         points.append(
             {

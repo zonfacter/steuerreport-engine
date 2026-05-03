@@ -1335,6 +1335,35 @@ class SQLiteImportStore:
             "updated_at_utc": str(row["updated_at_utc"]),
         }
 
+    def list_fx_rates(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    rate_date,
+                    base_ccy,
+                    quote_ccy,
+                    rate,
+                    source,
+                    source_rate_date,
+                    updated_at_utc
+                FROM fx_cache
+                ORDER BY base_ccy, quote_ccy, rate_date
+                """
+            ).fetchall()
+        return [
+            {
+                "rate_date": str(row["rate_date"]),
+                "base_ccy": str(row["base_ccy"]),
+                "quote_ccy": str(row["quote_ccy"]),
+                "rate": str(row["rate"]),
+                "source": str(row["source"]),
+                "source_rate_date": str(row["source_rate_date"] or ""),
+                "updated_at_utc": str(row["updated_at_utc"]),
+            }
+            for row in rows
+        ]
+
     def get_fx_rate_on_or_before(self, rate_date: str, base_ccy: str, quote_ccy: str) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
