@@ -543,6 +543,20 @@ body {
   gap: 8px;
 }
 
+.tax-run-preview h4,
+.tax-run-preview p,
+.tax-run-preview .metrics,
+.tax-run-preview .detail-grid,
+.tax-run-preview .table-wrap {
+  grid-column: 1 / -1;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
 .tax-run-preview span {
   border: 1px solid var(--line);
   background: rgba(13, 17, 23, 0.36);
@@ -706,6 +720,19 @@ button:hover {
 
 .btn-small:hover {
   background: #203650;
+}
+
+.btn-link {
+  border: 0;
+  background: transparent;
+  color: #8cc8ff;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.btn-link:hover {
+  background: transparent;
+  color: #f3ba2f;
 }
 
 button:disabled {

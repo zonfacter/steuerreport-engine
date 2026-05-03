@@ -5,6 +5,7 @@ const state = {
   unmatchedOutbound: [],
   unmatchedInbound: [],
   transferLedger: [],
+  transferChainDetail: null,
   legacyHntTransfers: null,
   issues: [],
   lotRows: [],
@@ -1219,7 +1220,10 @@ function renderTransferLedgerTable(tableId, rows) {
       <td title="${item.from_counterparty || ""}">${item.from_wallet || ""}<br><small class="muted">${item.from_depot_id || ""}</small></td>
       <td>${item.to_platform || ""}</td>
       <td title="${item.to_counterparty || ""}">${item.to_wallet || ""}<br><small class="muted">${item.to_depot_id || ""}</small></td>
-      <td title="${item.transfer_chain_id || ""}">${shortHash(item.transfer_chain_id || "")}<br><small class="muted">${formatTransferPath(item)}</small></td>
+      <td title="${escapeHtml(item.transfer_chain_id || "")}">
+        ${renderTransferChainButton(item.transfer_chain_id)}
+        <br><small class="muted">${escapeHtml(formatTransferPath(item))}</small>
+      </td>
       <td>${item.method || ""}${confidence}</td>
     `;
     tbody.appendChild(tr);
@@ -1230,6 +1234,12 @@ function renderTransferLedgerTable(tableId, rows) {
     tr.innerHTML = '<td colspan="11">Keine Transfer-Daten vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function renderTransferChainButton(chainId) {
+  const value = String(chainId || "").trim();
+  if (!value) return '<span class="muted">-</span>';
+  return `<button type="button" class="btn-link btn-chain-detail" data-chain-id="${escapeHtml(value)}">${escapeHtml(shortHash(value))}</button>`;
 }
 
 function formatTransferPath(item) {
@@ -1276,6 +1286,67 @@ function renderTransferLedger(rows) {
   if (prev) prev.disabled = state.paging.transferPage <= 1;
   if (next) next.disabled = state.paging.transferPage >= totalPages;
   updateWorkflowGuide();
+}
+
+function renderTransferChainDetail(data) {
+  state.transferChainDetail = data || null;
+  ["transferChainDetail", "reviewTransferChainDetail"].forEach((id) => {
+    const box = el(id);
+    if (!box) return;
+    if (!data) {
+      box.innerHTML = `
+        <h4>Transfer-Chain Detail</h4>
+        <p class="muted">Klicke auf eine Transfer Chain, um die vollständige interne Transferkette mit Haltefrist-Fortführung zu prüfen.</p>
+      `;
+      return;
+    }
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const holding = data.holding_period_continues ? "fortlaufend" : "prüfen";
+    const walletPath = Array.isArray(data.wallet_path) && data.wallet_path.length
+      ? data.wallet_path.map((item) => `<code title="${escapeHtml(item)}">${escapeHtml(shortHash(item))}</code>`).join(" -> ")
+      : "-";
+    box.innerHTML = `
+      <h4>Transfer-Chain Detail</h4>
+      <div class="metrics">
+        <div class="metric"><span>Chain</span><strong title="${escapeHtml(data.transfer_chain_id || "")}">${escapeHtml(shortHash(data.transfer_chain_id || ""))}</strong></div>
+        <div class="metric"><span>Schritte</span><strong>${escapeHtml(data.row_count || rows.length || 0)}</strong></div>
+        <div class="metric"><span>Assets</span><strong>${escapeHtml((data.assets || []).join(", ") || "-")}</strong></div>
+        <div class="metric"><span>Haltefrist</span><strong>${escapeHtml(holding)}</strong></div>
+      </div>
+      <div class="detail-grid">
+        <div><span>Zeitraum</span><strong>${escapeHtml(data.first_timestamp_utc || "-")} bis ${escapeHtml(data.last_timestamp_utc || "-")}</strong></div>
+        <div><span>Wallet-Pfad</span><strong>${walletPath}</strong></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Status</th>
+              <th>Asset</th>
+              <th class="num">Menge</th>
+              <th>Von</th>
+              <th>An</th>
+              <th>Nachweis</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${escapeHtml(row.timestamp_utc || "")}</td>
+                <td>${escapeHtml(row.status || "")}</td>
+                <td>${escapeHtml(row.asset || "")}</td>
+                <td class="num">${escapeHtml(formatQty(row.quantity || 0))}</td>
+                <td>${escapeHtml(row.from_platform || "")}<br><small class="muted" title="${escapeHtml(row.from_wallet || "")}">${escapeHtml(shortHash(row.from_wallet || row.from_depot_id || ""))}</small></td>
+                <td>${escapeHtml(row.to_platform || "")}<br><small class="muted" title="${escapeHtml(row.to_wallet || "")}">${escapeHtml(shortHash(row.to_wallet || row.to_depot_id || ""))}</small></td>
+                <td>${escapeHtml(row.method || "")}<br><small class="muted" title="${escapeHtml(row.match_id || "")}">${escapeHtml(shortHash(row.match_id || ""))}</small></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  });
 }
 
 function renderLegacyHntTransfers(data) {
@@ -4625,8 +4696,25 @@ async function loadUnmatched() {
     renderTransferLedger(state.transferLedger);
     await loadLegacyHntTransfers(true);
   }
+  async function loadTransferChainDetail(chainId, btn = null) {
+    const value = String(chainId || "").trim();
+    if (!value) return;
+    const data = await callApi(`/api/v1/audit/transfer-chain/${encodeURIComponent(value)}`, "GET", null, btn, true);
+    if (!data?.data || data.status === "error") return;
+    renderTransferChainDetail(data.data);
+    showToast("Transfer-Chain geladen.", "ok");
+  }
   el("btnTransferLedger").addEventListener("click", loadTransferLedger);
   el("btnReviewTransferLoad")?.addEventListener("click", loadTransferLedger);
+  ["transferLedgerTable", "reviewTransferTable"].forEach((id) => {
+    el(id)?.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const btn = target.closest(".btn-chain-detail");
+      if (!(btn instanceof HTMLElement)) return;
+      loadTransferChainDetail(btn.dataset.chainId || "", btn);
+    });
+  });
   el("btnLegacyHntTransfers")?.addEventListener("click", () => loadLegacyHntTransfers(false));
   el("btnReviewLegacyHntTransfers")?.addEventListener("click", () => loadLegacyHntTransfers(false));
   ["reviewTransferSearch", "reviewTransferStatus"].forEach((id) => {
@@ -4667,6 +4755,7 @@ async function loadUnmatched() {
         item.to_wallet,
         item.method,
         item.match_id,
+        item.transfer_chain_id,
         item.status,
       ].map((v) => String(v || "").toLowerCase()).join(" ");
       return hay.includes(search);
@@ -4688,6 +4777,7 @@ async function loadUnmatched() {
       "method",
       "confidence_score",
       "match_id",
+      "transfer_chain_id",
     ]);
     downloadCsv("transfer_ledger_filtered.csv", csv);
   });

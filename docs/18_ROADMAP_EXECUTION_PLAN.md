@@ -17,6 +17,8 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Tax Lines enthalten `lot_source_event_id` und `transfer_chain_id` für Lot-/Transfer-Nachvollzug im Export.
 - Transfer-Chain-IDs werden über zusammenhängende Transfer-Matches deterministisch aggregiert, nicht nur über den direkten Match.
 - Transfer-Review-Tabellen zeigen Chain-ID und direkten Depot-Pfad als sichtbare Spur.
+- `GET /api/v1/audit/transfer-chain/{transfer_chain_id}` liefert die vollständige Transferketten-Detailspur inklusive Wallet-Pfad, Assets, Zeitraum, Einzelschritten und Haltefrist-Fortführung.
+- Die UI kann Transfer Chains aus Transfer-Review und Haupt-Transfer-Ledger direkt öffnen und als prüfbare Timeline anzeigen.
 - `POST /api/v1/process/compare-rulesets` ist ergänzend zum GET-Endpunkt implementiert.
 - `GET /api/v1/import/jobs` nutzt persistierte Importquellen und unterstützt Filter nach `integration` und `status`.
 - Die UI zeigt Export-Artefakte im Steuer-Tab als klickbare Karten und bietet Ruleset-Vergleich sowie Snapshot-Erstellung an.

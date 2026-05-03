@@ -72,6 +72,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Steuer-UI und Tax-CSV enthalten die neuen Trace-Spalten für Lot und Transfer Chain.
   - `transfer_chain_id` wird jetzt deterministisch über zusammenhängende Transfer-Matches gebildet, damit mehrstufige Eigenüberträge über mehrere Wallets dieselbe Chain erhalten.
   - Transfer-Review-Tabellen zeigen die `transfer_chain_id` und den direkten Depot-Pfad als lesbare Spur.
+  - Neuer Audit-Endpunkt `GET /api/v1/audit/transfer-chain/{transfer_chain_id}` liefert die vollständige interne Transferkette mit Wallet-Pfad, Zeitraum, Assetliste, Einzelschritten und Haltefrist-Fortführung.
+  - Transfer-UI kann Chain-IDs anklicken und zeigt die Detailspur als prüfbare Timeline statt nur als Kurz-ID.
   - Processing-End-to-End-Test prüft jetzt, dass Report-Artefakte nach einem erfolgreichen Lauf auffindbar sind.
 - Ruleset-Vergleich ergänzt:
   - `POST /api/v1/process/compare-rulesets` ist zusätzlich zum bestehenden GET-Endpunkt verfügbar, damit der API-Vertrag aus der Roadmap ohne Freitext-/Query-Workaround nutzbar ist.

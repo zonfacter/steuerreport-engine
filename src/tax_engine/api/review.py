@@ -19,6 +19,7 @@ from tax_engine.reconciliation import (
     AutoMatchRequest,
     ManualMatchRequest,
     auto_match_and_persist,
+    get_transfer_chain,
     list_transfer_ledger,
     list_unmatched_transfers,
     manual_match,
@@ -288,6 +289,31 @@ def reconcile_ledger(limit: int = 200, offset: int = 0) -> StandardResponse:
         trace_id=trace_id,
         action="reconcile.ledger",
         payload={"limit": safe_limit, "offset": safe_offset, "row_count": len(result.get("rows", []))},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=result, errors=[], warnings=[])
+
+
+@router.get("/api/v1/audit/transfer-chain/{transfer_chain_id}", response_model=StandardResponse, tags=["audit"])
+def audit_transfer_chain(transfer_chain_id: str) -> StandardResponse:
+    trace_id = str(uuid4())
+    result = get_transfer_chain(transfer_chain_id)
+    if result is None:
+        write_audit(
+            trace_id=trace_id,
+            action="audit.transfer_chain",
+            payload={"transfer_chain_id": transfer_chain_id, "found": False},
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "transfer_chain_not_found", "message": f"Transfer Chain nicht gefunden: {transfer_chain_id}"}],
+            warnings=[],
+        )
+    write_audit(
+        trace_id=trace_id,
+        action="audit.transfer_chain",
+        payload={"transfer_chain_id": transfer_chain_id, "row_count": result.get("row_count", 0)},
     )
     return StandardResponse(trace_id=trace_id, status="success", data=result, errors=[], warnings=[])
 

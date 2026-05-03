@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from tax_engine.api.app import (
+    audit_transfer_chain,
     import_confirm,
     reconcile_auto_match,
     reconcile_ledger,
@@ -123,4 +124,24 @@ def test_reconcile_ledger_contains_from_to_trace() -> None:
     assert row.get("status") == "matched"
     assert row.get("from_wallet") == "binance-wallet"
     assert row.get("to_wallet") == "phantom-wallet"
-    assert str(row.get("transfer_chain_id", "")).startswith("transfer-chain:")
+    chain_id = str(row.get("transfer_chain_id", ""))
+    assert chain_id.startswith("transfer-chain:")
+
+    chain = audit_transfer_chain(chain_id)
+
+    assert chain.status == "success"
+    assert chain.data["transfer_chain_id"] == chain_id
+    assert chain.data["row_count"] == 1
+    assert chain.data["assets"] == ["SOL"]
+    assert chain.data["wallet_path"] == ["trace.csv:binance-wallet", "trace.csv:phantom-wallet"]
+    assert chain.data["holding_period_continues"] is True
+    assert chain.data["rows"][0]["from_wallet"] == "binance-wallet"
+
+
+def test_audit_transfer_chain_returns_error_for_unknown_chain() -> None:
+    _reset_store()
+
+    result = audit_transfer_chain("transfer-chain:missing")
+
+    assert result.status == "error"
+    assert result.errors[0]["code"] == "transfer_chain_not_found"

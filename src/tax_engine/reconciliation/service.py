@@ -95,6 +95,48 @@ def manual_match(outbound_event_id: str, inbound_event_id: str, note: str | None
 
 
 def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    rows = _build_transfer_ledger_rows()
+    total_count = len(rows)
+    start = max(offset, 0)
+    end = start + max(limit, 1)
+    page = rows[start:end]
+    return {
+        "total_count": total_count,
+        "offset": start,
+        "limit": max(limit, 1),
+        "rows": page,
+    }
+
+
+def get_transfer_chain(transfer_chain_id: str) -> dict[str, Any] | None:
+    chain_id = str(transfer_chain_id or "").strip()
+    if not chain_id:
+        return None
+    rows = [row for row in _build_transfer_ledger_rows() if str(row.get("transfer_chain_id", "")) == chain_id]
+    if not rows:
+        return None
+    rows.sort(key=lambda item: str(item.get("timestamp_utc", "")))
+    assets = sorted({str(row.get("asset", "")) for row in rows if str(row.get("asset", ""))})
+    wallets: list[str] = []
+    for row in rows:
+        for key in ("from_depot_id", "to_depot_id"):
+            value = str(row.get(key, "")).strip()
+            if value and value not in wallets:
+                wallets.append(value)
+    return {
+        "transfer_chain_id": chain_id,
+        "row_count": len(rows),
+        "asset_count": len(assets),
+        "assets": assets,
+        "wallet_path": wallets,
+        "first_timestamp_utc": rows[0].get("timestamp_utc", ""),
+        "last_timestamp_utc": rows[-1].get("timestamp_utc", ""),
+        "holding_period_continues": all(str(row.get("holding_period_continues", "")).lower() == "true" for row in rows),
+        "rows": rows,
+    }
+
+
+def _build_transfer_ledger_rows() -> list[dict[str, Any]]:
     raw_events = STORE.list_raw_events()
     transfer_events = extract_transfer_events(raw_events)
     matches = STORE.list_transfer_matches()
@@ -187,16 +229,7 @@ def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
         )
 
     rows.sort(key=lambda item: str(item.get("timestamp_utc", "")), reverse=True)
-    total_count = len(rows)
-    start = max(offset, 0)
-    end = start + max(limit, 1)
-    page = rows[start:end]
-    return {
-        "total_count": total_count,
-        "offset": start,
-        "limit": max(limit, 1),
-        "rows": page,
-    }
+    return rows
 
 
 def _load_event_details(event_ids: list[str]) -> dict[str, dict[str, Any]]:
