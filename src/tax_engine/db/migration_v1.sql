@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS processing_queue (
     ruleset_id TEXT NOT NULL,
     ruleset_version TEXT NOT NULL DEFAULT '',
     config_hash TEXT NOT NULL,
+    config_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL,
     progress INTEGER NOT NULL,
     current_step TEXT NOT NULL DEFAULT '',
@@ -54,6 +55,8 @@ CREATE TABLE IF NOT EXISTS tax_lines (
     hold_days INTEGER NOT NULL,
     tax_status TEXT NOT NULL,
     source_event_id TEXT NOT NULL,
+    lot_source_event_id TEXT NOT NULL DEFAULT '',
+    transfer_chain_id TEXT NOT NULL DEFAULT '',
     FOREIGN KEY(job_id) REFERENCES processing_queue(job_id)
 );
 

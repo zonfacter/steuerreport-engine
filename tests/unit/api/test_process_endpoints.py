@@ -1,16 +1,25 @@
 from __future__ import annotations
 
+import asyncio
+
 from tax_engine.api.app import (
+    ProcessCompareRulesetsRequest,
+    ProcessPreflightRequest,
     TaxEventOverrideUpsertRequest,
     audit_tax_line,
     import_confirm,
     portfolio_lot_aging,
+    process_compare_rulesets_post,
     process_derivative_lines,
+    process_options,
+    process_preflight,
     process_run,
     process_status,
     process_tax_domain_summary,
     process_tax_lines,
     process_worker_run_next,
+    report_export,
+    report_files,
     tax_event_override_upsert,
 )
 from tax_engine.ingestion.models import ConfirmImportRequest
@@ -20,6 +29,13 @@ from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
 
 def _reset_store() -> None:
     STORE.reset_for_tests()
+
+
+async def _read_streaming_body(response: object) -> bytes:
+    chunks: list[bytes] = []
+    async for chunk in response.body_iterator:  # type: ignore[attr-defined]
+        chunks.append(chunk if isinstance(chunk, bytes) else str(chunk).encode("utf-8"))
+    return b"".join(chunks)
 
 
 def test_process_run_creates_queued_job() -> None:
@@ -56,6 +72,117 @@ def test_process_run_normalizes_de_alias_and_version_from_ui() -> None:
     assert response.data["ruleset_id"] == "DE-2026-v1.0"
     assert response.data["ruleset_version"] == "1.0"
     assert any(item["code"] == "ruleset_resolved" for item in response.warnings)
+
+
+def test_process_options_returns_wizard_choices() -> None:
+    _reset_store()
+
+    response = process_options()
+
+    assert response.status == "success"
+    assert 2026 in response.data["tax_years"]
+    assert any(item["id"] == "fifo" for item in response.data["tax_methods"])
+    assert any(item["id"] == "global" for item in response.data["depot_modes"])
+    assert any(item["ruleset_id"] == "DE-2026-v1.0" for item in response.data["rulesets"])
+
+
+def test_process_preflight_blocks_without_import_data() -> None:
+    _reset_store()
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["allow_run"] is False
+    blocker = next(item for item in response.data["blockers"] if item["code"] == "no_import_data")
+    assert blocker["action"]["target_step"] == "1"
+    assert blocker["action"]["target_element_id"] == "integrationHub"
+
+
+def test_process_preflight_allows_clean_year_with_priced_trade() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="preflight.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "BTC",
+                    "side": "buy",
+                    "amount": "1",
+                    "price_eur": "100",
+                    "event_type": "buy",
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["allow_run"] is True
+    assert response.data["counts"]["tax_year_events"] == 1
+    assert response.data["blockers"] == []
+
+
+def test_process_preflight_ignores_reference_integrations_by_default() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="blockpit_reference.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "source": "blockpit",
+                    "asset": "BTC",
+                    "side": "buy",
+                    "amount": "1",
+                    "price_eur": "100",
+                    "event_type": "buy",
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["counts"]["raw_events_total"] == 1
+    assert response.data["counts"]["effective_events_total"] == 0
+    assert response.data["counts"]["tax_year_events"] == 0
+    assert any(item["code"] == "tax_year_no_events" for item in response.data["blockers"])
+
+
+def test_process_preflight_returns_guided_action_for_missing_valuation() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="preflight_unpriced.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "HNT",
+                    "side": "in",
+                    "amount": "1",
+                    "event_type": "mining_reward",
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    warning = next(item for item in response.data["warnings"] if item["code"] == "valuation_coverage_incomplete")
+    assert warning["action"]["target_review_tab"] == "transfers"
+    assert warning["action"]["issue_search"] == "valuation"
 
 
 def test_process_status_returns_created_job() -> None:
@@ -131,6 +258,7 @@ def test_worker_run_next_completes_queued_job() -> None:
     status = process_status(job_id)
     tax_lines_response = process_tax_lines(job_id)
     derivative_lines_response = process_derivative_lines(job_id)
+    report_files_response = report_files(job_id)
 
     assert result.status == "success"
     assert result.data["job_id"] == job_id
@@ -155,6 +283,19 @@ def test_worker_run_next_completes_queued_job() -> None:
     assert derivative_lines_response.status == "success"
     assert tax_lines_response.data["count"] == 1
     assert derivative_lines_response.data["count"] == 1
+    assert report_files_response.status == "success"
+    assert report_files_response.data["tax_line_count"] == 1
+    assert report_files_response.data["derivative_line_count"] == 1
+    file_scopes = {(item["scope"], item["format"]) for item in report_files_response.data["files"]}
+    assert ("all", "json") in file_scopes
+    assert ("all", "csv") in file_scopes
+    assert ("all", "pdf") in file_scopes
+    assert ("tax", "json") in file_scopes
+    assert ("derivatives", "csv") in file_scopes
+    pdf_response = report_export(job_id=job_id, scope="all", fmt="pdf")
+    assert getattr(pdf_response, "media_type", "") == "application/pdf"
+    pdf_body = asyncio.run(_read_streaming_body(pdf_response))
+    assert pdf_body.startswith(b"%PDF")
     audit_response = audit_tax_line(job_id=job_id, line_no=1)
     assert audit_response.status == "success"
     assert audit_response.data["tax_line"]["line_no"] == 1
@@ -212,6 +353,48 @@ def test_tax_domain_summary_endpoint_returns_split_blocks() -> None:
     assert summary["anlage_so"]["leistungen_income_eur"] == "5.0"
     assert summary["anlage_so"]["private_veraeusserung_net_taxable_eur"] == "20"
     assert summary["euer"]["betriebsausgaben_data_credits_eur"] == "3"
+
+
+def test_process_compare_rulesets_post_matches_api_contract() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="compare.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "asset": "BTC",
+                    "side": "buy",
+                    "amount": "1",
+                    "price_eur": "100",
+                },
+                {
+                    "timestamp": "2026-01-02T12:00:00Z",
+                    "asset": "BTC",
+                    "side": "sell",
+                    "amount": "1",
+                    "price_eur": "120",
+                },
+            ],
+        )
+    )
+    created = process_run(
+        ProcessRunRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={}, dry_run=False)
+    )
+    job_id = created.data["job_id"]
+    process_worker_run_next(WorkerRunNextRequest(simulate_fail=False))
+
+    response = process_compare_rulesets_post(
+        ProcessCompareRulesetsRequest(
+            job_id=job_id,
+            compare_ruleset_id="DE-2026-v1.0",
+            compare_ruleset_version="1.0",
+        )
+    )
+
+    assert response.status == "success"
+    assert response.data["job_id"] == job_id
+    assert response.data["comparison"]["ruleset_id"] == "DE-2026-v1.0"
 
 
 def test_tax_event_override_changes_domain_assignment() -> None:
@@ -323,3 +506,10 @@ def test_portfolio_lot_aging_shows_split_lots() -> None:
     assert len(rows) == 3
     qtys = sorted([row["qty"] for row in rows])
     assert qtys == ["3", "4", "8"]
+    first = rows[0]
+    assert "days_to_exempt" in first
+    assert "holding_progress_ratio" in first
+    assets = resp.data.get("assets", [])
+    assert assets[0]["lot_count"] == 3
+    assert assets[0]["qty_exempt"] == "7"
+    assert assets[0]["qty_taxable"] == "8"

@@ -58,9 +58,18 @@ class RulesetRegistry:
         )
 
     def select_for_date(self, jurisdiction: str, value: date) -> TaxRuleset:
-        matches = [
+        annual_id = f"{jurisdiction}-{value.year}-v1.0"
+        annual_matches = [
             ruleset
             for ruleset in self.list_rulesets(include_pending=True)
+            if ruleset.ruleset_id == annual_id and ruleset.covers(value)
+        ]
+        if len(annual_matches) == 1:
+            return annual_matches[0]
+
+        matches = [
+            ruleset
+            for ruleset in self.list_rulesets(include_pending=False)
             if ruleset.jurisdiction == jurisdiction and ruleset.covers(value)
         ]
         if len(matches) == 1:
@@ -68,7 +77,7 @@ class RulesetRegistry:
 
         id_matches = [
             ruleset
-            for ruleset in self.list_rulesets(include_pending=True)
+            for ruleset in self.list_rulesets(include_pending=False)
             if ruleset.ruleset_id == jurisdiction and ruleset.covers(value)
         ]
         if len(id_matches) == 1:

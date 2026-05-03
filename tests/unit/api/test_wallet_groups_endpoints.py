@@ -6,7 +6,9 @@ from tax_engine.api.app import (
     connectors_solana_balance_snapshot,
     connectors_solana_group_balance_snapshot,
     connectors_solana_group_import_confirm,
+    dashboard_portfolio_set_history,
     dashboard_wallet_snapshots,
+    import_confirm,
     wallet_groups_delete,
     wallet_groups_list,
     wallet_groups_upsert,
@@ -18,6 +20,7 @@ from tax_engine.connectors.models import (
     WalletGroupDeleteRequest,
     WalletGroupUpsertRequest,
 )
+from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
 
 
@@ -31,6 +34,7 @@ def test_wallet_group_upsert_list_delete_roundtrip() -> None:
         WalletGroupUpsertRequest(
             name="Core Solana",
             wallet_addresses=["wallet-1", "wallet-2"],
+            source_filters=["solana_rpc", "binance_api"],
             description="Testgruppe",
         )
     )
@@ -41,6 +45,7 @@ def test_wallet_group_upsert_list_delete_roundtrip() -> None:
     assert listed.status == "success"
     assert listed.data["count"] == 1
     assert listed.data["groups"][0]["group_id"] == group_id
+    assert listed.data["groups"][0]["source_filters"] == ["solana_rpc", "binance_api"]
 
     deleted = wallet_groups_delete(WalletGroupDeleteRequest(group_id=group_id))
     assert deleted.status == "success"
@@ -50,7 +55,7 @@ def test_wallet_group_upsert_list_delete_roundtrip() -> None:
 
 def test_group_balance_snapshot_aggregates_wallets(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_balances(**kwargs):
         wallet = kwargs["wallet_address"]
@@ -87,7 +92,7 @@ def test_group_balance_snapshot_aggregates_wallets(monkeypatch) -> None:
 
 def test_group_import_confirm_merges_rows(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_preview(**kwargs):
         wallet = kwargs["wallet_address"]
@@ -130,7 +135,7 @@ def test_group_import_confirm_merges_rows(monkeypatch) -> None:
 
 def test_wallet_snapshot_history_tracks_balance_requests(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_balances(**kwargs):
         return {
@@ -155,3 +160,92 @@ def test_wallet_snapshot_history_tracks_balance_requests(monkeypatch) -> None:
     assert snapshots.status == "success"
     assert snapshots.data["count"] >= 1
     assert snapshots.data["points"][-1]["entity_id"] == "11111111111111111111111111111111"
+
+
+def test_portfolio_set_history_filters_by_group_sources() -> None:
+    _reset_store()
+    solana = [
+        {
+            "timestamp_utc": "2026-01-15T00:00:00+00:00",
+            "asset": "SOL",
+            "quantity": "1",
+            "side": "in",
+            "event_type": "buy",
+            "source": "solana_rpc",
+            "value_usd": "100",
+            "tx_id": "set-sol-1",
+        }
+    ]
+    binance = [
+        {
+            "timestamp_utc": "2026-01-16T00:00:00+00:00",
+            "asset": "BTC",
+            "quantity": "1",
+            "side": "in",
+            "event_type": "buy",
+            "source": "binance_api",
+            "value_usd": "100000",
+            "tx_id": "set-btc-1",
+        }
+    ]
+    import_confirm(ConfirmImportRequest(source_name="solana.csv", rows=solana))
+    import_confirm(ConfirmImportRequest(source_name="binance.csv", rows=binance))
+    upsert = wallet_groups_upsert(
+        WalletGroupUpsertRequest(
+            name="Solana Set",
+            wallet_addresses=["wallet-1"],
+            source_filters=["solana_rpc"],
+        )
+    )
+
+    response = dashboard_portfolio_set_history(group_id=upsert.data["group_id"], window_days=3650)
+
+    assert response.status == "success"
+    assert response.data["event_count"] == 1
+    assert response.data["source_filters"] == ["solana_rpc"]
+    assert response.data["group"]["source_event_count"] == 1
+
+
+def test_portfolio_set_history_empty_sources_means_all_sources() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="all_sources.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-15T00:00:00+00:00",
+                    "asset": "SOL",
+                    "quantity": "1",
+                    "side": "in",
+                    "event_type": "buy",
+                    "source": "solana_rpc",
+                    "value_usd": "100",
+                    "tx_id": "all-sol-1",
+                },
+                {
+                    "timestamp_utc": "2026-01-16T00:00:00+00:00",
+                    "asset": "BTC",
+                    "quantity": "1",
+                    "side": "in",
+                    "event_type": "buy",
+                    "source": "binance_api",
+                    "value_usd": "100000",
+                    "tx_id": "all-btc-1",
+                },
+            ],
+        )
+    )
+    upsert = wallet_groups_upsert(
+        WalletGroupUpsertRequest(
+            name="All Set",
+            wallet_addresses=["wallet-1"],
+            source_filters=[],
+        )
+    )
+
+    response = dashboard_portfolio_set_history(group_id=upsert.data["group_id"], window_days=3650)
+
+    assert response.status == "success"
+    assert response.data["event_count"] == 2
+    assert response.data["source_filters"] == []
+    assert response.data["group"]["source_event_count"] == 2

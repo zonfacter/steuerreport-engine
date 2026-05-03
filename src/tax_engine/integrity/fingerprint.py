@@ -3,12 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
-
-from tax_engine.rulesets.models import TaxRuleset
 
 
 def _normalize(value: Any) -> Any:
@@ -41,8 +39,16 @@ def event_fingerprint(payload: Mapping[str, Any]) -> str:
     return _sha256(canonical_json(payload))
 
 
-def ruleset_fingerprint(ruleset: TaxRuleset) -> str:
-    return _sha256(canonical_json(asdict(ruleset)))
+def ruleset_fingerprint(ruleset: Any) -> str:
+    if is_dataclass(ruleset):
+        payload = asdict(ruleset)
+    elif isinstance(ruleset, Mapping):
+        payload = dict(ruleset)
+    elif hasattr(ruleset, "to_dict"):
+        payload = ruleset.to_dict()
+    else:
+        raise TypeError("ruleset_fingerprint expects dataclass, mapping, or to_dict object")
+    return _sha256(canonical_json(payload))
 
 
 def config_fingerprint(config: Mapping[str, Any]) -> str:

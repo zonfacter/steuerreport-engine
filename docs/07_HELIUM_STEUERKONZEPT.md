@@ -59,8 +59,16 @@ Wichtige Leitplanke:
 - Merge/Split/Ignore für problematische Reward- und Dust-Einträge.
 - Sichtbare Begründung je Entscheidung (Regelcode, Preisquelle, Zeitkorrektur).
 - Zeitkorrektur-Dialog für UTC/CET/CEST inkl. Vorher/Nachher.
+- Legacy-L1-Transferübersicht:
+  - Gegenwallets gruppieren,
+  - gesendete/erhaltene HNT und Netzwerkgebühren getrennt anzeigen,
+  - Beispiel-Transaktionen und Kommentare sichtbar machen,
+  - als Review-Hilfe für Staking-, Rücktransfer- und Migrationsketten nutzen.
 
 ## 8. API-Erweiterungen für Helium
+- `GET /api/v1/portfolio/helium-legacy-transfers`
+  - Übersicht über importierte Helium-L1-Transfers aus CoinTracking-/Fairspot-kompatiblen Legacy-Exports.
+  - Liefert Ursprung-Wallet, Gegenparteien, gesendete/erhaltene HNT, Fees, Nettofluss und Beispiel-Transaktionen.
 - `POST /api/v1/helium/rewards/revalue`
   - Revaluierung von Rewards mit ausgewähltem Preisprofil.
 - `GET /api/v1/helium/classification/status`

@@ -121,6 +121,7 @@ class WalletGroupUpsertRequest(BaseModel):
     group_id: str | None = Field(default=None)
     name: str = Field(min_length=2, max_length=120)
     wallet_addresses: list[str] = Field(min_length=1, max_length=200)
+    source_filters: list[str] = Field(default_factory=list, max_length=200)
     description: str | None = Field(default=None, max_length=400)
 
 

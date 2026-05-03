@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
@@ -8,6 +9,7 @@ from tax_engine.ingestion.store import STORE
 from tax_engine.security import decrypt_secret_value, encrypt_secret_value, has_master_key_material
 
 _SECRET_KEY_PREFIXES = ("secret.", "credential.")
+LOGGER = logging.getLogger(__name__)
 
 
 def put_admin_setting(setting_key: str, value: Any, is_secret: bool) -> None:
@@ -137,7 +139,9 @@ def _load_value(setting_key: str) -> Any:
         return None
     raw = str(row["value_json"])
     if bool(row["is_secret"]):
-        decrypted = decrypt_secret_value(raw)
+        decrypted = _decrypt_setting_value(setting_key, raw)
+        if decrypted is None:
+            return None
         return json.loads(decrypted)
     return json.loads(raw)
 
@@ -146,8 +150,18 @@ def _load_secret_json_value(setting_key: str) -> Any:
     row = STORE.get_setting(setting_key)
     if row is None or not bool(row["is_secret"]):
         return None
-    decrypted = decrypt_secret_value(str(row["value_json"]))
+    decrypted = _decrypt_setting_value(setting_key, str(row["value_json"]))
+    if decrypted is None:
+        return None
     return json.loads(decrypted)
+
+
+def _decrypt_setting_value(setting_key: str, encrypted_value: str) -> str | None:
+    try:
+        return decrypt_secret_value(encrypted_value)
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Admin secret setting %s could not be decrypted: %s", setting_key, type(exc).__name__)
+        return None
 
 
 def _mask_secret(value: str) -> str:

@@ -5,11 +5,16 @@ const state = {
   unmatchedOutbound: [],
   unmatchedInbound: [],
   transferLedger: [],
+  transferChainDetail: null,
+  legacyHntTransfers: null,
   issues: [],
   lotRows: [],
   taxLines: [],
   derivativeLines: [],
+  reportFiles: [],
   processingJobs: [],
+  processOptions: null,
+  preflight: null,
   processingJobsLimit: 25,
   processingJobsOffset: 0,
   processingJobsMode: "default",
@@ -19,14 +24,20 @@ const state = {
   processingJobsAutoRefreshSec: "",
   processingJobsCount: 0,
   taxEventOverrides: [],
+  reviewActions: [],
   integrationRows: [],
+  integrationConflicts: [],
   importSources: [],
+  importJobs: [],
+  transactionSearchRows: [],
+  selectedImportJob: null,
   dashboard: null,
   admin: {
     settings: [],
     runtime: null,
     aliases: [],
     ignoredTokens: [],
+    rulesets: [],
     backfillService: null,
   },
   walletGroups: [],
@@ -76,6 +87,15 @@ const REVIEW_LABELS = {
   tax: "Steuer",
 };
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 const numberFmt = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 8 });
 const numberFmt2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -115,9 +135,27 @@ function formatInt(value) {
   return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(toNumber(value));
 }
 
+function shortAddress(value) {
+  const raw = String(value || "").trim();
+  if (raw.length <= 18) return raw;
+  return `${raw.slice(0, 8)}...${raw.slice(-6)}`;
+}
+
+function shortText(value, maxLength = 60) {
+  const raw = String(value || "").trim();
+  if (raw.length <= maxLength) return raw;
+  return `${raw.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
 function rulesetForYear(year) {
   const y = Number(year || 2026);
   const safeYear = Number.isFinite(y) ? Math.min(Math.max(Math.floor(y), 2020), 2026) : 2026;
+  const ruleset = (state.processOptions?.rulesets || []).find((item) => {
+    const fromYear = Number(String(item.valid_from || "").slice(0, 4));
+    const toYear = Number(String(item.valid_to || "").slice(0, 4));
+    return fromYear <= safeYear && safeYear <= toYear && String(item.jurisdiction || "") === "DE";
+  });
+  if (ruleset?.ruleset_id) return String(ruleset.ruleset_id);
   return `DE-${safeYear}-v1.0`;
 }
 
@@ -128,13 +166,143 @@ function syncTaxRunSelection() {
   const host = el("taxRunPreview");
   if (!host) return;
   const exemption = Number(year) >= 2024 ? "1.000 EUR Freigrenze" : "600 EUR Freigrenze";
+  const activeSources = (state.integrationRows || []).filter((row) => String(row.mode || "active").toLowerCase() === "active");
   host.innerHTML = `
     <span><strong>Jurisdiktion:</strong> Deutschland</span>
     <span><strong>FIFO:</strong> aktiv</span>
     <span><strong>Haltefrist:</strong> 12 Monate</span>
     <span><strong>SO:</strong> ${exemption}</span>
     <span><strong>Ruleset:</strong> ${ruleset}</span>
+    <span><strong>Quellen:</strong> ${activeSources.length || 0} aktiv</span>
   `;
+}
+
+function processRequestPayload() {
+  syncTaxRunSelection();
+  const activeSourceFilters = (state.integrationRows || [])
+    .filter((row) => String(row.mode || "active").toLowerCase() === "active")
+    .map((row) => String(row.integration_id || "").trim())
+    .filter(Boolean);
+  return {
+    tax_year: Number(el("taxYear")?.value || "2026"),
+    ruleset_id: el("rulesetId")?.value.trim() || rulesetForYear(el("taxYear")?.value || "2026"),
+    config: {
+      tax_method: el("taxMethod")?.value || "fifo",
+      calculation_mode: "global",
+      source_filters: activeSourceFilters,
+      include_reference_sources: false,
+      include_disabled_sources: false,
+      validation_flags: {
+        short_sell_guard: true,
+        transfer_check: true,
+        holding_period_check: true,
+      },
+    },
+  };
+}
+
+function renderPreflight(data) {
+  state.preflight = data || null;
+  const panel = el("preflightPanel");
+  if (!panel) return;
+  const blockers = data?.blockers || [];
+  const warnings = data?.warnings || [];
+  const counts = data?.counts || {};
+  panel.className = `notice ${blockers.length ? "notice-error" : warnings.length ? "notice-warn" : "notice-ok"}`;
+  const status = data?.allow_run ? "Preflight bestanden" : "Preflight blockiert";
+  const details = [
+    `${formatInt(counts.tax_year_events || 0)} Events im Steuerjahr`,
+    `${formatInt(counts.unmatched_transfers || 0)} offene Transfers`,
+    `${formatInt(counts.high_severity_open || 0)} High-Issues`,
+    `${formatInt(counts.unresolved_valuation_events || 0)} Bewertungswarnungen`,
+  ];
+  const renderAction = (item, idx, kind) => {
+    if (!item?.action) return "";
+    return `
+      <button
+        class="guided-action"
+        data-preflight-kind="${escapeHtml(kind)}"
+        data-preflight-index="${idx}"
+        type="button"
+      >${escapeHtml(item.action.label || "Öffnen")}</button>
+    `;
+  };
+  const blockerHtml = blockers.length
+    ? `<div><strong>Blocker:</strong> ${blockers.map((item) => escapeHtml(item.message || item.code)).join(" · ")}</div>
+       <div class="guided-actions">${blockers.map((item, idx) => renderAction(item, idx, "blockers")).join("")}</div>`
+    : "";
+  const warningHtml = warnings.length
+    ? `<div><strong>Warnungen:</strong> ${warnings.map((item) => escapeHtml(item.message || item.code)).join(" · ")}</div>
+       <div class="guided-actions">${warnings.map((item, idx) => renderAction(item, idx, "warnings")).join("")}</div>`
+    : "";
+  panel.innerHTML = `
+    <div><strong>${escapeHtml(status)}</strong> · ${details.map(escapeHtml).join(" · ")}</div>
+    ${blockerHtml}
+    ${warningHtml}
+  `;
+}
+
+function applyPreflightAction(action) {
+  if (!action) return;
+  const step = String(action.target_step || "");
+  const review = String(action.target_review_tab || "");
+  if (step) {
+    guardedSwitchStep(step);
+  }
+  if (step === "4" && review) {
+    switchReviewTab(review);
+  }
+  if (Object.prototype.hasOwnProperty.call(action, "issue_search") && el("reviewIssueSearch")) {
+    el("reviewIssueSearch").value = action.issue_search || "";
+    savePref("field.reviewIssueSearch", el("reviewIssueSearch").value);
+    state.paging.issuePage = 1;
+    renderIssues(state.issues);
+    el("btnIssuesLoad")?.click();
+  }
+  if (Object.prototype.hasOwnProperty.call(action, "issue_status") && el("reviewIssueStatus")) {
+    el("reviewIssueStatus").value = action.issue_status || "";
+    savePref("field.reviewIssueStatus", el("reviewIssueStatus").value);
+    state.paging.issuePage = 1;
+    renderIssues(state.issues);
+  }
+  if (Object.prototype.hasOwnProperty.call(action, "transfer_status") && el("reviewTransferStatus")) {
+    el("reviewTransferStatus").value = action.transfer_status || "";
+    savePref("field.reviewTransferStatus", el("reviewTransferStatus").value);
+    state.paging.transferPage = 1;
+    renderTransferLedger(state.transferLedger);
+    el("btnReviewTransferLoad")?.click();
+  }
+  const target = action.target_element_id ? el(action.target_element_id) : null;
+  if (target) {
+    window.setTimeout(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.add("guided-focus");
+      window.setTimeout(() => target.classList.remove("guided-focus"), 1800);
+    }, 120);
+  }
+}
+
+async function runPreflight(trigger = null, silent = false) {
+  const payload = processRequestPayload();
+  const data = await callApi("/api/v1/process/preflight", "POST", payload, trigger, silent);
+  if (data?.status !== "success") return null;
+  renderPreflight(data.data);
+  return data.data;
+}
+
+async function loadProcessOptions() {
+  const data = await callApi("/api/v1/process/options", "GET", null, null, true);
+  if (data?.status !== "success") return;
+  state.processOptions = data.data;
+  const yearSelect = el("taxYear");
+  if (yearSelect && Array.isArray(data.data?.tax_years)) {
+    const current = yearSelect.value || String(data.data.default_tax_year || "2026");
+    yearSelect.innerHTML = data.data.tax_years
+      .map((year) => `<option value="${year}">${year}</option>`)
+      .join("");
+    yearSelect.value = data.data.tax_years.includes(Number(current)) ? current : String(data.data.default_tax_year || "2026");
+  }
+  syncTaxRunSelection();
 }
 
 function setCsvButtonsDisabled(disabled, reason = "") {
@@ -174,6 +342,16 @@ function convertUsdForDisplay(valueUsd) {
 
 function currencyLabel() {
   return displayCurrency().toUpperCase();
+}
+
+function dashboardYearFilter() {
+  return String(el("globalYearFilter")?.value || "").trim();
+}
+
+function filterRowsByDashboardYear(rows, field = "year") {
+  const selectedYear = dashboardYearFilter();
+  if (!selectedYear) return Array.isArray(rows) ? rows : [];
+  return (Array.isArray(rows) ? rows : []).filter((row) => String(row?.[field] || "") === selectedYear);
 }
 
 function prefKey(name) {
@@ -556,6 +734,7 @@ function savePresets(scope, value) {
 function collectCurrentViewState() {
   const fields = [
     "uiDisplayCurrency",
+    "globalYearFilter",
     "dashTokenSearch",
     "dashTokenStatusFilter",
     "dashTokenSort",
@@ -659,6 +838,34 @@ function setResponse(json) {
   el("responseOut").textContent = JSON.stringify(json, null, 2);
 }
 
+function clearApiErrorPanel() {
+  const panel = el("apiErrorPanel");
+  if (!panel) return;
+  panel.classList.add("hidden");
+}
+
+function showApiErrorPanel({ title = "API-Fehler", message = "", path = "", status = "", traceId = "" } = {}) {
+  const panel = el("apiErrorPanel");
+  if (!panel) return;
+  el("apiErrorTitle").textContent = title;
+  el("apiErrorMessage").textContent = message || "Die Anfrage konnte nicht verarbeitet werden.";
+  const meta = [
+    path ? `Pfad: ${path}` : "",
+    status ? `Status: ${status}` : "",
+    traceId ? `Trace: ${traceId}` : "",
+  ].filter(Boolean);
+  el("apiErrorMeta").textContent = meta.join(" · ");
+  panel.classList.remove("hidden");
+}
+
+function apiErrorMessage(json, res = null) {
+  const first = Array.isArray(json?.errors) ? json.errors[0] : null;
+  const msg = first?.message || first?.code || res?.statusText || "";
+  if (msg) return String(msg);
+  if (res?.status) return `HTTP ${res.status}`;
+  return "Unbekannter API-Fehler";
+}
+
 function applyRuntimeDefaults(runtimeData) {
   const solana = runtimeData?.runtime?.solana;
   const fx = runtimeData?.runtime?.fx;
@@ -694,13 +901,18 @@ function updateMetrics(data) {
 function renderDashboard(data) {
   if (!data) return;
   state.dashboard = data;
+  populateGlobalYearFilter(data.activity_years ?? []);
   const summary = data.summary || {};
   const role = data.role_detection || {};
   const signals = role.signals || {};
-  el("dTotalEvents").textContent = String(summary.total_events ?? "-");
+  const selectedYear = dashboardYearFilter();
+  const yearly = selectedYear ? (data.activity_years ?? []).find((item) => String(item.year || "") === selectedYear) : null;
+  el("dTotalEvents").textContent = String(yearly?.count ?? summary.total_events ?? "-");
   el("dAssets").textContent = String(summary.unique_assets ?? "-");
   el("dRole").textContent = String(role.effective_mode ?? "-");
-  el("dSignals").textContent = `reward:${signals.reward_events ?? 0} / events:${signals.event_count ?? 0}`;
+  el("dSignals").textContent = selectedYear
+    ? `Jahr ${selectedYear} / events:${yearly?.count ?? 0}`
+    : `reward:${signals.reward_events ?? 0} / events:${signals.event_count ?? 0}`;
   el("dSuggestedTaxYear").textContent = String(summary.suggested_tax_year ?? "-");
   el("dashRoleMode").value = String(role.override_mode ?? "auto");
   renderActivityDailyChart(data.activity_history ?? []);
@@ -716,6 +928,56 @@ function renderDashboard(data) {
   renderMiningPanel();
   renderTradingPanel();
   updateWorkflowGuide();
+}
+
+function populateGlobalYearFilter(activityYears) {
+  const select = el("globalYearFilter");
+  const mirror = el("dashboardYearMirror");
+  if (!select && !mirror) return;
+  const current = select?.value || mirror?.value || loadPref("field.globalYearFilter", "");
+  const years = (Array.isArray(activityYears) ? activityYears : [])
+    .map((item) => String(item.year || ""))
+    .filter(Boolean)
+    .sort();
+  const signature = years.join("|");
+  [select, mirror].filter(Boolean).forEach((node) => {
+    if (node.dataset.signature === signature) return;
+    node.dataset.signature = signature;
+    node.innerHTML = '<option value="">Alle Jahre</option>';
+    years.forEach((year) => {
+      const option = document.createElement("option");
+      option.value = year;
+      option.textContent = year;
+      node.appendChild(option);
+    });
+  });
+  if (current && years.includes(current)) {
+    if (select) select.value = current;
+    if (mirror) mirror.value = current;
+  } else if (!current) {
+    if (select) select.value = "";
+    if (mirror) mirror.value = "";
+  }
+  syncDashboardYearControls(false);
+}
+
+function syncDashboardYearControls(updateTaxYear = true) {
+  const selectedYear = dashboardYearFilter() || String(el("dashboardYearMirror")?.value || "").trim();
+  if (el("globalYearFilter")) {
+    el("globalYearFilter").value = selectedYear;
+  }
+  if (el("dashboardYearMirror")) {
+    el("dashboardYearMirror").value = selectedYear;
+  }
+  if (el("yearlyYearFilter")) {
+    el("yearlyYearFilter").value = selectedYear;
+  }
+  if (updateTaxYear && selectedYear && el("taxYear")) {
+    el("taxYear").value = selectedYear;
+    syncTaxRunSelection();
+    savePref("field.taxYear", selectedYear);
+  }
+  savePref("field.globalYearFilter", selectedYear);
 }
 
 async function refreshUsdEurRateBestEffort() {
@@ -782,6 +1044,8 @@ function renderTaxTable() {
       <td class="num c-gain ${gainClass}">${formatMoney(gain)}</td>
       <td class="num c-hold">${Number.isFinite(holdDays) ? holdDays : ""}</td>
       <td class="c-status">${line.tax_status}</td>
+      <td class="c-lot" title="${line.lot_source_event_id || ""}">${shortHash(line.lot_source_event_id || "")}</td>
+      <td class="c-chain" title="${line.transfer_chain_id || ""}">${shortHash(line.transfer_chain_id || "")}</td>
       <td class="c-audit">
         <button class="btn-audit" data-line-no="${line.line_no}">Trace</button>
         <button class="btn-classify" data-event-id="${line.source_event_id || ""}">Klassifizieren</button>
@@ -809,19 +1073,54 @@ function renderTaxEventOverrideTable(rows) {
     tr.innerHTML = `
       <td>${item.source_event_id || ""}</td>
       <td>${item.tax_category || ""}</td>
+      <td>${item.reason_label || item.reason_code || ""}</td>
       <td>${item.note || ""}</td>
       <td>${item.updated_at_utc || ""}</td>
     `;
     tr.addEventListener("click", () => {
       el("taxOverrideEventId").value = item.source_event_id || "";
       el("taxOverrideCategory").value = item.tax_category || "PRIVATE_SO";
+      if (el("taxOverrideReason")) el("taxOverrideReason").value = item.reason_code || "";
       el("taxOverrideNote").value = item.note || "";
     });
     tbody.appendChild(tr);
   });
   if (!(rows || []).length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="4">Keine Tax-Overrides vorhanden.</td>';
+    tr.innerHTML = '<td colspan="5">Keine Tax-Overrides vorhanden.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderReviewActionTable(rows) {
+  const tbody = el("reviewActionTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (rows || []).forEach((item) => {
+    const eventIds = item.source_event_ids || (item.source_event_id ? [item.source_event_id] : []);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.action_type || "")}</td>
+      <td>${escapeHtml(eventIds.join(", "))}</td>
+      <td>${escapeHtml(item.reason_label || item.reason_code || "")}</td>
+      <td>${escapeHtml(item.note || "")}</td>
+      <td>${escapeHtml(item.updated_at_utc || "")}</td>
+    `;
+    tr.addEventListener("click", () => {
+      const firstEvent = eventIds[0] || "";
+      if (el("reviewActionEventId")) el("reviewActionEventId").value = firstEvent;
+      if (el("taxOverrideEventId")) el("taxOverrideEventId").value = firstEvent;
+      if (el("reviewActionReason")) el("reviewActionReason").value = item.reason_code || "timezone_wrong";
+      if (el("reviewActionNote")) el("reviewActionNote").value = item.note || "";
+      if (item.corrected_timestamp_utc && el("reviewTimezoneValue")) {
+        el("reviewTimezoneValue").value = item.corrected_timestamp_utc;
+      }
+    });
+    tbody.appendChild(tr);
+  });
+  if (!(rows || []).length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="5">Keine Review-Aktionen vorhanden.</td>';
     tbody.appendChild(tr);
   }
 }
@@ -938,16 +1237,32 @@ async function callApi(path, method = "GET", body = null, btn = null, silent = f
     setResponse(json);
     if (!silent) {
       if (!res.ok || json.status === "error") {
-        showToast(`Fehler: ${json.errors?.[0]?.message ?? res.statusText}`, "err");
+        const message = apiErrorMessage(json, res);
+        showApiErrorPanel({
+          title: "API-Anfrage fehlgeschlagen",
+          message,
+          path,
+          status: res.status ? String(res.status) : "",
+          traceId: json.trace_id || "",
+        });
+        showToast(`Fehler: ${message}`, "err");
       } else if (json.warnings?.length) {
+        clearApiErrorPanel();
         showToast(`Hinweis: ${json.warnings[0].message}`, "warn");
       } else {
+        clearApiErrorPanel();
         showToast("Aktion erfolgreich.", "ok");
       }
     }
     return json;
   } catch (error) {
-    showToast(`Netzwerkfehler: ${error}`, "err");
+    const message = error?.message || String(error);
+    showApiErrorPanel({
+      title: "Netzwerkfehler",
+      message,
+      path,
+    });
+    showToast(`Netzwerkfehler: ${message}`, "err");
     return null;
   } finally {
     if (btn) btn.disabled = false;
@@ -1016,6 +1331,10 @@ function renderTransferLedgerTable(tableId, rows) {
       <td title="${item.from_counterparty || ""}">${item.from_wallet || ""}<br><small class="muted">${item.from_depot_id || ""}</small></td>
       <td>${item.to_platform || ""}</td>
       <td title="${item.to_counterparty || ""}">${item.to_wallet || ""}<br><small class="muted">${item.to_depot_id || ""}</small></td>
+      <td title="${escapeHtml(item.transfer_chain_id || "")}">
+        ${renderTransferChainButton(item.transfer_chain_id)}
+        <br><small class="muted">${escapeHtml(formatTransferPath(item))}</small>
+      </td>
       <td>${item.method || ""}${confidence}</td>
     `;
     tbody.appendChild(tr);
@@ -1023,9 +1342,22 @@ function renderTransferLedgerTable(tableId, rows) {
 
   if (!rows?.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="10">Keine Transfer-Daten vorhanden.</td>';
+    tr.innerHTML = '<td colspan="11">Keine Transfer-Daten vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function renderTransferChainButton(chainId) {
+  const value = String(chainId || "").trim();
+  if (!value) return '<span class="muted">-</span>';
+  return `<button type="button" class="btn-link btn-chain-detail" data-chain-id="${escapeHtml(value)}">${escapeHtml(shortHash(value))}</button>`;
+}
+
+function formatTransferPath(item) {
+  const from = item.from_depot_id || item.from_platform || item.from_wallet || "?";
+  const to = item.to_depot_id || item.to_platform || item.to_wallet || "?";
+  if (!from && !to) return "";
+  return `${shortHash(from)} -> ${shortHash(to)}`;
 }
 
 function renderTransferLedger(rows) {
@@ -1043,6 +1375,7 @@ function renderTransferLedger(rows) {
       item.to_wallet,
       item.method,
       item.match_id,
+      item.transfer_chain_id,
       item.status,
     ]
       .map((v) => String(v || "").toLowerCase())
@@ -1066,7 +1399,124 @@ function renderTransferLedger(rows) {
   updateWorkflowGuide();
 }
 
-function renderLotAging(rows) {
+function renderTransferChainDetail(data) {
+  state.transferChainDetail = data || null;
+  ["transferChainDetail", "reviewTransferChainDetail"].forEach((id) => {
+    const box = el(id);
+    if (!box) return;
+    if (!data) {
+      box.innerHTML = `
+        <h4>Transfer-Chain Detail</h4>
+        <p class="muted">Klicke auf eine Transfer Chain, um die vollständige interne Transferkette mit Haltefrist-Fortführung zu prüfen.</p>
+      `;
+      return;
+    }
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const holding = data.holding_period_continues ? "fortlaufend" : "prüfen";
+    const walletPath = Array.isArray(data.wallet_path) && data.wallet_path.length
+      ? data.wallet_path.map((item) => `<code title="${escapeHtml(item)}">${escapeHtml(shortHash(item))}</code>`).join(" -> ")
+      : "-";
+    box.innerHTML = `
+      <h4>Transfer-Chain Detail</h4>
+      <div class="metrics">
+        <div class="metric"><span>Chain</span><strong title="${escapeHtml(data.transfer_chain_id || "")}">${escapeHtml(shortHash(data.transfer_chain_id || ""))}</strong></div>
+        <div class="metric"><span>Schritte</span><strong>${escapeHtml(data.row_count || rows.length || 0)}</strong></div>
+        <div class="metric"><span>Assets</span><strong>${escapeHtml((data.assets || []).join(", ") || "-")}</strong></div>
+        <div class="metric"><span>Haltefrist</span><strong>${escapeHtml(holding)}</strong></div>
+      </div>
+      <div class="detail-grid">
+        <div><span>Zeitraum</span><strong>${escapeHtml(data.first_timestamp_utc || "-")} bis ${escapeHtml(data.last_timestamp_utc || "-")}</strong></div>
+        <div><span>Wallet-Pfad</span><strong>${walletPath}</strong></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Status</th>
+              <th>Asset</th>
+              <th class="num">Menge</th>
+              <th>Von</th>
+              <th>An</th>
+              <th>Nachweis</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${escapeHtml(row.timestamp_utc || "")}</td>
+                <td>${escapeHtml(row.status || "")}</td>
+                <td>${escapeHtml(row.asset || "")}</td>
+                <td class="num">${escapeHtml(formatQty(row.quantity || 0))}</td>
+                <td>${escapeHtml(row.from_platform || "")}<br><small class="muted" title="${escapeHtml(row.from_wallet || "")}">${escapeHtml(shortHash(row.from_wallet || row.from_depot_id || ""))}</small></td>
+                <td>${escapeHtml(row.to_platform || "")}<br><small class="muted" title="${escapeHtml(row.to_wallet || "")}">${escapeHtml(shortHash(row.to_wallet || row.to_depot_id || ""))}</small></td>
+                <td>${escapeHtml(row.method || "")}<br><small class="muted" title="${escapeHtml(row.match_id || "")}">${escapeHtml(shortHash(row.match_id || ""))}</small></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  });
+}
+
+function renderLegacyHntTransfers(data) {
+  const summary = data?.summary || {};
+  const rows = Array.isArray(data?.counterparties) ? data.counterparties : [];
+  const range = summary.first_timestamp_utc || summary.last_timestamp_utc
+    ? `${String(summary.first_timestamp_utc || "?").slice(0, 10)} bis ${String(summary.last_timestamp_utc || "?").slice(0, 10)}`
+    : "-";
+
+  [
+    ["legacyHntSent", summary.sent_hnt],
+    ["reviewLegacyHntSent", summary.sent_hnt],
+    ["legacyHntReceived", summary.received_hnt],
+    ["reviewLegacyHntReceived", summary.received_hnt],
+  ].forEach(([id, value]) => {
+    if (el(id)) el(id).textContent = `${formatQty(value || 0)} HNT`;
+  });
+  [
+    ["legacyHntCounterparties", summary.counterparty_count],
+    ["reviewLegacyHntCounterparties", summary.counterparty_count],
+  ].forEach(([id, value]) => {
+    if (el(id)) el(id).textContent = formatQty(value || 0);
+  });
+  ["legacyHntRange", "reviewLegacyHntRange"].forEach((id) => {
+    if (el(id)) el(id).textContent = range;
+  });
+
+  ["legacyHntTransferTable", "reviewLegacyHntTransferTable"].forEach((tableId) => {
+    const tbody = el(tableId)?.querySelector("tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    rows.slice(0, 50).forEach((item) => {
+      const sample = Array.isArray(item.sample_comments) && item.sample_comments.length
+        ? item.sample_comments[0]
+        : (Array.isArray(item.sample_tx_ids) ? item.sample_tx_ids[0] : "");
+      const net = toNumber(item.net_hnt || 0);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td title="${item.counterparty_wallet || ""}">${shortAddress(item.counterparty_wallet || "")}</td>
+        <td class="num num-neg">${formatQty(item.sent_hnt || 0)}</td>
+        <td class="num num-pos">${formatQty(item.received_hnt || 0)}</td>
+        <td class="num">${formatQty(item.fees_hnt || 0)}</td>
+        <td class="num ${net < 0 ? "num-neg" : net > 0 ? "num-pos" : ""}">${formatQty(item.net_hnt || 0)}</td>
+        <td>${String(item.first_timestamp_utc || "").slice(0, 10)}</td>
+        <td>${String(item.last_timestamp_utc || "").slice(0, 10)}</td>
+        <td title="${sample || ""}">${shortText(sample || "", 42)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="8">Keine Legacy-HNT-Transfers importiert.</td>';
+      tbody.appendChild(tr);
+    }
+  });
+}
+
+function renderLotAging(rows, assets = []) {
+  renderLotAgingSummary(rows, assets);
   const tbody = el("dashLotTable")?.querySelector("tbody");
   if (!tbody) return;
   tbody.innerHTML = "";
@@ -1075,21 +1525,69 @@ function renderLotAging(rows) {
     const statusClass = status === "exempt" ? "status-badge status-alias" : "status-badge status-default";
     const qty = toNumber(item.qty || 0);
     const holdDays = toNumber(item.hold_days || 0);
+    const daysToExempt = toNumber(item.days_to_exempt || 0);
+    const progress = Math.max(0, Math.min(1, toNumber(item.holding_progress_ratio || 0)));
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${item.asset || ""}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
       <td class="num ${qty < 0 ? "num-neg" : qty > 0 ? "num-pos" : ""}">${formatQty(qty)}</td>
-      <td>${item.buy_timestamp_utc || ""}</td>
+      <td>${escapeHtml(item.buy_timestamp_utc || "")}</td>
       <td class="num">${Number.isFinite(holdDays) ? Math.floor(holdDays) : ""}</td>
+      <td class="num">${status === "exempt" ? "0" : Math.floor(daysToExempt)}</td>
+      <td>${renderHoldingProgress(progress)}</td>
       <td><span class="${statusClass}">${status}</span></td>
     `;
     tbody.appendChild(tr);
   });
   if (!rows?.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="5">Keine Lots vorhanden.</td>';
+    tr.innerHTML = '<td colspan="7">Keine Lots vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function renderLotAgingSummary(rows, assets) {
+  const totalLots = (rows || []).length;
+  const exemptLots = (rows || []).filter((row) => row.tax_status === "exempt").length;
+  const taxableLots = Math.max(totalLots - exemptLots, 0);
+  const totalQty = (assets || []).reduce((sum, item) => sum + toNumber(item.total_qty || 0), 0);
+  renderMetricCards("dashLotSummaryCards", [
+    { label: "Offene Lots", value: String(totalLots), sub: "FIFO-Bestand" },
+    { label: "Steuerfrei", value: String(exemptLots), sub: "Haltedauer erfüllt" },
+    { label: "Noch steuerpflichtig", value: String(taxableLots), sub: "unter 12 Monaten" },
+    { label: "Gesamtmenge", value: formatQty(totalQty), sub: "gefilterte Assets" },
+  ]);
+
+  const tbody = el("dashLotAssetSummaryTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (assets || []).forEach((item) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.total_qty || 0)}</td>
+      <td class="num num-pos">${formatQty(item.qty_exempt || 0)}</td>
+      <td class="num">${formatQty(item.qty_taxable || 0)}</td>
+      <td class="num">${escapeHtml(item.lot_count || 0)}</td>
+      <td class="num">${escapeHtml(item.oldest_hold_days || 0)} Tage</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!assets?.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6">Keine Asset-Zusammenfassung vorhanden.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderHoldingProgress(progress) {
+  const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
+  return `
+    <div class="hold-progress" title="${pct}% der Haltefrist erreicht">
+      <span style="width:${pct}%"></span>
+      <em>${pct}%</em>
+    </div>
+  `;
 }
 
 function renderIssues(rows) {
@@ -1191,6 +1689,7 @@ function renderIssueSummary(rows) {
     div.innerHTML = `<span>${item.label}</span><strong>${item.value}</strong><small class="sub">${item.sub}</small>`;
     host.appendChild(div);
   });
+  renderCockpitIssuePile();
 }
 
 function renderReviewGates(gates) {
@@ -1465,6 +1964,7 @@ async function loadAdminData() {
   await loadBackfillService();
   await loadTokenAliases();
   await loadIgnoredTokens();
+  await loadRulesets(true);
   const lastTokens = state.dashboard?.last_live_tokens ?? [];
   if (Array.isArray(lastTokens) && lastTokens.length > 0) {
     renderLiveTokenTable(lastTokens);
@@ -1502,7 +2002,20 @@ function renderBackfillService(data) {
   if (el("backfillRateLimits")) {
     el("backfillRateLimits").textContent = rate ? formatInt(rate.backpressure_count ?? 0) : "-";
   }
+  const coverage = data.import_coverage || {};
+  if (el("backfillCoverageEvents")) {
+    el("backfillCoverageEvents").textContent = `${formatInt(coverage.raw_event_count || 0)} Events / ${formatInt(coverage.distinct_tx_id_count || 0)} TX`;
+  }
+  if (el("backfillCoverageRange")) {
+    const first = String(coverage.first_timestamp_utc || "").slice(0, 10) || "?";
+    const last = String(coverage.last_timestamp_utc || "").slice(0, 10) || "?";
+    el("backfillCoverageRange").textContent = first === "?" && last === "?" ? "-" : `${first} bis ${last}`;
+  }
+  if (el("backfillReachedStart")) {
+    el("backfillReachedStart").textContent = data.scan_reached_start ? "ja" : "unbekannt";
+  }
   if (el("backfillLogOut")) el("backfillLogOut").textContent = (data.log_tail || []).join("\n");
+  renderCockpitOperations();
 }
 
 function firstRateControl(rateControl) {
@@ -1527,16 +2040,51 @@ async function controlBackfillService(action, button) {
 }
 
 async function loadDashboard() {
-  const res = await callApi("/api/v1/dashboard/overview", "GET", null, null, true);
-  if (res?.status === "success") {
-    renderDashboard(res.data);
-    const suggestedYear = res.data?.summary?.suggested_tax_year;
+  const shell = await callApi("/api/v1/dashboard/shell", "GET", null, null, true);
+  if (shell?.status === "success") {
+    renderDashboard({ ...(state.dashboard || {}), ...shell.data });
+    loadLegacyHntTransfers(true);
+    const suggestedYear = shell.data?.summary?.suggested_tax_year;
     const currentTaxYear = el("taxYear").value.trim();
+    const currentDashboardYear = dashboardYearFilter();
+    if (suggestedYear && !currentDashboardYear) {
+      el("globalYearFilter").value = String(suggestedYear);
+      syncDashboardYearControls(false);
+      renderDashboard(state.dashboard);
+    }
     if (suggestedYear && (!currentTaxYear || currentTaxYear === "2026")) {
       el("taxYear").value = String(suggestedYear);
       syncTaxRunSelection();
     }
   }
+  await Promise.all([
+    loadDashboardYearlyActivity(),
+    loadDashboardPortfolioHistory(),
+  ]);
+}
+
+async function loadDashboardYearlyActivity() {
+  const year = dashboardYearFilter();
+  const query = year ? `?year=${encodeURIComponent(year)}` : "";
+  const res = await callApi(`/api/v1/dashboard/yearly-activity${query}`, "GET", null, null, true);
+  if (res?.status !== "success") return;
+  state.dashboard = {
+    ...(state.dashboard || {}),
+    yearly_asset_activity: res.data?.yearly_asset_activity || {},
+  };
+  renderYearlyAssetActivity(state.dashboard.yearly_asset_activity);
+  renderCockpit();
+}
+
+async function loadDashboardPortfolioHistory() {
+  const res = await callApi("/api/v1/dashboard/portfolio-history?window_days=3650", "GET", null, null, true);
+  if (res?.status !== "success") return;
+  state.dashboard = {
+    ...(state.dashboard || {}),
+    portfolio_value_history: res.data?.portfolio_value_history || [],
+  };
+  renderPortfolioValueHistory(state.dashboard.portfolio_value_history, dashboardYearFilter());
+  renderCockpit();
 }
 
 function renderIntegrationTable(rows) {
@@ -1544,9 +2092,18 @@ function renderIntegrationTable(rows) {
   if (!tbody) return;
   tbody.innerHTML = "";
   (rows || []).forEach((item) => {
+    const mode = String(item.mode || "active").toLowerCase();
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${item.integration_id || ""}</td>
+      <td>
+        <select class="integration-mode-select" data-integration-id="${item.integration_id || ""}" title="${item.mode_note || ""}">
+          <option value="active"${mode === "active" ? " selected" : ""}>Aktiv</option>
+          <option value="reference"${mode === "reference" ? " selected" : ""}>Referenz</option>
+          <option value="disabled"${mode === "disabled" ? " selected" : ""}>Deaktiviert</option>
+        </select>
+        <small class="muted">${item.mode_overridden ? "manuell" : `Standard: ${item.default_mode || "active"}`}</small>
+      </td>
       <td class="num">${formatQty(item.event_count || 0)}</td>
       <td class="num">${formatQty(item.asset_count || 0)}</td>
       <td class="num">${formatQty(item.source_file_count || 0)}</td>
@@ -1557,9 +2114,101 @@ function renderIntegrationTable(rows) {
   });
   if (!(rows || []).length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="6">Noch keine Integrationen mit Daten.</td>';
+    tr.innerHTML = '<td colspan="7">Noch keine Integrationen mit Daten.</td>';
     tbody.appendChild(tr);
   }
+}
+
+async function saveIntegrationMode(integrationId, mode, trigger = null) {
+  const id = String(integrationId || "").trim();
+  const selectedMode = String(mode || "").trim();
+  if (!id || !selectedMode) return;
+  const data = await callApi(
+    "/api/v1/portfolio/integrations/mode",
+    "POST",
+    {
+      integration_id: id,
+      mode: selectedMode,
+      note: `UI: Modus auf ${selectedMode} gesetzt`,
+    },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  await loadIntegrationOverview();
+  syncTaxRunSelection();
+  showToast(`Integration ${id} ist jetzt ${selectedMode}.`, "ok");
+}
+
+function renderIntegrationConflicts(rows) {
+  const tbody = el("integrationConflictTable")?.querySelector("tbody");
+  const info = el("integrationConflictInfo");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (rows || []).forEach((item) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><input type="checkbox" class="integration-conflict-select" value="${escapeHtml(item.conflict_id || "")}" /></td>
+      <td>${escapeHtml(item.day || "")}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.quantity || 0)}</td>
+      <td>${escapeHtml(item.direction || "")}</td>
+      <td>${escapeHtml((item.primary_sources || []).join(", "))}<br><small class="muted">${formatQty(item.primary_event_count || 0)} Events</small></td>
+      <td>${escapeHtml((item.reference_sources || []).join(", "))}<br><small class="muted">${formatQty(item.reference_event_count || 0)} Events</small></td>
+      <td><button type="button" class="btn-small btn-conflict-open" data-reference-id="${escapeHtml((item.reference_event_ids || [])[0] || "")}">Referenz prüfen</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!(rows || []).length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="8">Keine starken Referenz-/Primär-Konflikte gefunden.</td>';
+    tbody.appendChild(tr);
+  }
+  if (info) {
+    info.textContent = rows?.length
+      ? `${formatQty(rows.length)} Konfliktgruppen gefunden.`
+      : "Keine starken Konflikte gefunden.";
+  }
+}
+
+async function loadIntegrationConflicts(trigger = null) {
+  const data = await callApi("/api/v1/review/integration-conflicts?limit=200", "GET", null, trigger, true);
+  if (data?.status !== "success") return;
+  state.integrationConflicts = data.data?.conflicts ?? [];
+  renderIntegrationConflicts(state.integrationConflicts);
+  renderIssues(state.issues);
+}
+
+async function resolveSelectedIntegrationConflicts(trigger = null) {
+  const selected = Array.from(document.querySelectorAll(".integration-conflict-select:checked"))
+    .map((node) => String(node.value || "").trim())
+    .filter(Boolean);
+  if (!selected.length) {
+    showToast("Keine Integrationskonflikte markiert.", "warn");
+    return;
+  }
+  const note = String(el("integrationConflictNote")?.value || "").trim();
+  if (note.length < 3) {
+    showToast("Pflichtnotiz fehlt.", "warn");
+    return;
+  }
+  const data = await callApi(
+    "/api/v1/review/integration-conflicts/resolve",
+    "POST",
+    {
+      conflict_ids: selected,
+      action: el("integrationConflictAction")?.value || "exclude_reference_events",
+      reason_code: el("integrationConflictReason")?.value || "duplicate_import",
+      note,
+    },
+    trigger
+  );
+  if (!data || data.status === "error") return;
+  showToast(`${data.data?.resolved_count || 0} Konfliktgruppen verarbeitet.`, data.status === "partial" ? "warn" : "ok");
+  await loadIntegrationOverview();
+  await loadIntegrationConflicts(null);
+  await loadTaxEventOverrides(true);
+  await loadIssues();
+  syncTaxRunSelection();
 }
 
 function renderImportSourcesTable(rows) {
@@ -1582,6 +2231,74 @@ function renderImportSourcesTable(rows) {
     tr.innerHTML = '<td colspan="5">Noch keine Importe vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function importJobStatusClass(status) {
+  const value = String(status || "").toLowerCase();
+  if (value === "completed") return "status-ok";
+  if (value === "partial") return "status-warn";
+  if (value === "duplicate") return "status-ignored";
+  if (value === "empty") return "status-default";
+  return "status-running";
+}
+
+function renderImportJobsTable(rows) {
+  const tbody = el("importJobsTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (rows || []).forEach((item) => {
+    const tr = document.createElement("tr");
+    const selected = state.selectedImportJob?.job_id && state.selectedImportJob.job_id === item.job_id;
+    tr.classList.toggle("row-selected", !!selected);
+    tr.innerHTML = `
+      <td>${escapeHtml(String(item.started_at_utc || "-").replace("T", " ").slice(0, 16))}</td>
+      <td>${escapeHtml(item.connector || "unknown")}</td>
+      <td><span class="${importJobStatusClass(item.status)}">${escapeHtml(item.status || "")}</span></td>
+      <td class="num">${formatQty(item.rows || 0)}</td>
+      <td class="num">${formatQty(item.inserted_events || 0)}</td>
+      <td class="num">${formatQty(item.duplicates || 0)}</td>
+      <td title="${escapeHtml(item.source_name || "")}">${escapeHtml(String(item.source_name || "").slice(0, 64))}</td>
+    `;
+    tr.addEventListener("click", () => {
+      state.selectedImportJob = item;
+      renderImportJobsTable(state.importJobs);
+      renderImportJobDetail(item);
+    });
+    tbody.appendChild(tr);
+  });
+  if (!(rows || []).length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="7">Noch keine Import-Aktivität für die aktuelle Filterung vorhanden.</td>';
+    tbody.appendChild(tr);
+  }
+  renderCockpitOperations();
+}
+
+function renderImportJobDetail(item) {
+  const host = el("importJobDetail");
+  if (!host) return;
+  if (!item) {
+    host.className = "notice notice-neutral";
+    host.textContent = "Kein Import ausgewählt.";
+    return;
+  }
+  const sourceName = String(item.source_name || "");
+  const action = String(item.retry_action || (sourceName.startsWith("bulk:") ? "retry-bulk" : "open-connector"));
+  const canRetry = !!item.can_retry;
+  host.className = `notice ${item.status === "completed" ? "notice-ok" : item.status === "duplicate" ? "notice-warn" : item.status === "partial" || item.status === "empty" ? "notice-warn" : "notice-neutral"}`;
+  host.innerHTML = `
+    <div><strong>${escapeHtml(item.connector || "unknown")}</strong> · ${escapeHtml(item.status || "")}</div>
+    <div>${escapeHtml(item.status_reason || "Kein Statusgrund vorhanden.")}</div>
+    <div class="muted">Source-ID: ${escapeHtml(item.source_file_id || item.job_id || "-")}</div>
+    <div class="muted">Quelle: ${escapeHtml(sourceName || "-")}</div>
+    ${(item.warnings || []).length ? `<div class="muted">Warnungen: ${(item.warnings || []).map((w) => escapeHtml(w.message || w.code || "")).join(" · ")}</div>` : ""}
+    <div class="guided-actions">
+      <button class="guided-action" type="button" data-import-detail-action="copy-id">Source-ID kopieren</button>
+      <button class="guided-action" type="button" data-import-detail-action="${escapeHtml(action)}">
+        ${canRetry ? "Wiederholen / Integration öffnen" : "Passende Integration öffnen"}
+      </button>
+    </div>
+  `;
 }
 
 function renderIntegrationMetrics() {
@@ -1662,6 +2379,14 @@ async function loadIntegrationOverview() {
   state.integrationRows = data.data?.rows ?? [];
   renderIntegrationTable(state.integrationRows);
   renderIntegrationMetrics();
+  renderWalletGroupSourceFilters(selectedWalletGroup());
+}
+
+async function loadLegacyHntTransfers(silent = true) {
+  const data = await callApi("/api/v1/portfolio/helium-legacy-transfers", "GET", null, null, silent);
+  if (data?.status !== "success") return;
+  state.legacyHntTransfers = data.data;
+  renderLegacyHntTransfers(state.legacyHntTransfers);
 }
 
 async function loadImportSourcesSummary() {
@@ -1670,6 +2395,58 @@ async function loadImportSourcesSummary() {
   state.importSources = data.data?.rows ?? [];
   renderImportSourcesTable(state.importSources);
   renderIntegrationMetrics();
+  await loadImportJobs(true);
+}
+
+async function loadImportJobs(silent = true) {
+  const params = new URLSearchParams({ limit: "200", offset: "0" });
+  const integration = String(el("importJobIntegration")?.value || "").trim();
+  const status = String(el("importJobStatus")?.value || "").trim();
+  if (integration) params.set("integration", integration);
+  if (status) params.set("status", status);
+  const data = await callApi(`/api/v1/import/jobs?${params.toString()}`, "GET", null, null, silent);
+  if (data?.status !== "success") return;
+  state.importJobs = data.data?.rows ?? [];
+  if (state.selectedImportJob) {
+    state.selectedImportJob = state.importJobs.find((item) => item.job_id === state.selectedImportJob.job_id) || null;
+  }
+  renderImportJobsTable(state.importJobs);
+  renderImportJobDetail(state.selectedImportJob);
+}
+
+function handleImportJobDetailAction(action) {
+  const item = state.selectedImportJob;
+  if (!item) {
+    showToast("Kein Import ausgewählt.", "warn");
+    return;
+  }
+  if (action === "copy-id") {
+    const value = String(item.source_file_id || item.job_id || "");
+    if (navigator.clipboard && value) {
+      navigator.clipboard.writeText(value);
+      showToast("Source-ID kopiert.", "ok");
+    } else if (value) {
+      showToast(value, "ok");
+    }
+    return;
+  }
+  if (action === "retry-bulk") {
+    openSettingsPanel("bulkSettings", "bulkFolderPath");
+    showToast("Bulk-Import geöffnet. Prüfe Ordner und starte bei Bedarf erneut.", "ok");
+    return;
+  }
+  if (action === "open-connector") {
+    const connector = String(item.connector || "").toLowerCase();
+    if (connector.includes("solana")) {
+      openSettingsPanel("solanaSettings", "solWallet");
+    } else if (["binance", "bitget", "coinbase", "pionex"].some((name) => connector.includes(name))) {
+      openSettingsPanel("cexSettings", "cexConnector");
+      if (el("cexConnector") && connector) el("cexConnector").value = connector;
+    } else {
+      openSettingsPanel("bulkSettings", "bulkFolderPath");
+    }
+    showToast("Passende Import-Konfiguration geöffnet.", "ok");
+  }
 }
 
 function destroyChart(id) {
@@ -1689,8 +2466,10 @@ function buildChart(id, config) {
 }
 
 function renderActivityDailyChart(rows) {
-  const labels = rows.map((item) => String(item.day || "").slice(5));
-  const data = rows.map((item) => Number(item.count || 0));
+  const selectedYear = dashboardYearFilter();
+  const visible = selectedYear ? rows.filter((item) => String(item.day || "").startsWith(`${selectedYear}-`)) : rows;
+  const labels = visible.map((item) => String(item.day || "").slice(selectedYear ? 5 : 0));
+  const data = visible.map((item) => Number(item.count || 0));
   buildChart("chartActivityDaily", {
     type: "line",
     data: {
@@ -1714,11 +2493,17 @@ function renderActivityDailyChart(rows) {
 function renderActivityYearlyChart(rows) {
   const labels = rows.map((item) => String(item.year || ""));
   const data = rows.map((item) => Number(item.count || 0));
+  const selectedYear = dashboardYearFilter();
   buildChart("chartActivityYearly", {
     type: "bar",
     data: {
       labels,
-      datasets: [{ data, backgroundColor: ["#89b5e7", "#5f9ee0", "#367fcf", "#225d9f"], borderColor: "#2f6ead", borderWidth: 1 }],
+      datasets: [{
+        data,
+        backgroundColor: labels.map((year) => selectedYear && year !== selectedYear ? "rgba(137,181,231,0.35)" : "#367fcf"),
+        borderColor: "#2f6ead",
+        borderWidth: 1,
+      }],
     },
     options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
   });
@@ -1732,10 +2517,13 @@ function renderYearlyAssetActivity(activity) {
   const filter = (el("yearlyAssetFilter")?.value || "").trim().toLowerCase();
   populateYearlyYearFilter(activity?.years ?? [], rows);
   populateYearlySourceFilter(sourceBreakdown, rows);
-  const selectedYear = (el("yearlyYearFilter")?.value || "").trim();
+  const selectedYear = dashboardYearFilter() || (el("yearlyYearFilter")?.value || "").trim();
+  if (el("yearlyYearFilter") && el("yearlyYearFilter").value !== selectedYear) {
+    el("yearlyYearFilter").value = selectedYear;
+  }
   const selectedSources = selectedYearlySources(sourceBreakdown, rows);
   const sourceFilterActive = selectedSources.active;
-  const mode = (el("yearlyScaleMode")?.value || "eur").trim();
+  const mode = normalizeYearlyScaleMode(el("yearlyScaleMode")?.value || "events");
   const yearRows = selectedYear ? rows.filter((row) => String(row.year || "") === selectedYear) : rows;
   const sourceRows = sourceFilterActive ? yearRows.filter((row) => selectedSources.values.has(String(row.source || "unknown"))) : yearRows;
   const visibleRows = filter
@@ -1749,7 +2537,11 @@ function renderYearlyAssetActivity(activity) {
   const visibleSourceBreakdown = sourceFilterActive
     ? yearSourceBreakdown.filter((row) => selectedSources.values.has(String(row.source || "unknown")))
     : yearSourceBreakdown;
-  renderYearlyValueTrend(mode, visibleRows, visibleTotals, !!filter || !!selectedYear || sourceFilterActive);
+  renderYearlyValueTrend(mode, visibleRows, visibleTotals, visibleSourceBreakdown, {
+    assetFilterActive: !!filter,
+    yearFilterActive: !!selectedYear,
+    sourceFilterActive,
+  });
   renderPortfolioValueHistory(state.dashboard?.portfolio_value_history ?? [], selectedYear);
   renderYearlyEventBreakdownTable(visibleBreakdown);
   renderYearlySourceBreakdownTable(visibleSourceBreakdown);
@@ -1781,7 +2573,7 @@ function populateYearlyYearFilter(years, rows) {
 function populateYearlySourceFilter(sourceBreakdown, rows) {
   const container = el("yearlySourceFilter");
   if (!container) return;
-  const current = new Map();
+  const current = loadYearlySourcePrefs();
   $$("input[data-yearly-source]").forEach((input) => current.set(input.value, input.checked));
   const sources = new Set();
   (Array.isArray(sourceBreakdown) ? sourceBreakdown : []).forEach((row) => {
@@ -1797,15 +2589,21 @@ function populateYearlySourceFilter(sourceBreakdown, rows) {
   container.innerHTML = "";
   sorted.forEach((source) => {
     const id = `yearly-source-${source.replace(/[^a-z0-9_-]/gi, "-")}`;
+    const checked = current.has(source) ? current.get(source) !== false : !isReferenceImportSource(source);
     const label = document.createElement("label");
     label.className = "source-chip";
+    if (isReferenceImportSource(source)) label.classList.add("source-chip-reference");
     label.setAttribute("for", id);
+    label.title = isReferenceImportSource(source)
+      ? "Referenzimport: getrennt prüfen, nicht ungefiltert mit Primärdaten addieren."
+      : "Primärquelle";
     label.innerHTML = `
-      <input id="${id}" data-yearly-source type="checkbox" value="${source}" ${current.get(source) === false ? "" : "checked"} />
-      <span>${source}</span>
+      <input id="${id}" data-yearly-source type="checkbox" value="${source}" ${checked ? "checked" : ""} />
+      <span>${source}${isReferenceImportSource(source) ? " · Referenz" : ""}</span>
     `;
     container.appendChild(label);
   });
+  renderYearlySourceSummary();
 }
 
 function selectedYearlySources(sourceBreakdown, rows) {
@@ -1817,14 +2615,76 @@ function selectedYearlySources(sourceBreakdown, rows) {
     if (input.checked) selected.add(input.value);
   });
   if (!allSources.size || selected.size === allSources.size) {
+    renderYearlySourceSummary(selected.size || allSources.size, allSources.size, false);
     return { values: allSources, active: false };
   }
+  renderYearlySourceSummary(selected.size, allSources.size, true);
   return { values: selected, active: true };
 }
 
-function renderYearlyValueTrend(mode, rows, totals, hasFilter) {
+function loadYearlySourcePrefs() {
+  const raw = loadPref("yearly.sources", "");
+  const prefs = new Map();
+  if (!raw) return prefs;
+  try {
+    Object.entries(JSON.parse(raw) || {}).forEach(([source, enabled]) => prefs.set(source, !!enabled));
+  } catch (_) {
+    return new Map();
+  }
+  return prefs;
+}
+
+function saveYearlySourcePrefs() {
+  const prefs = {};
+  $$("input[data-yearly-source]").forEach((input) => {
+    prefs[input.value] = !!input.checked;
+  });
+  savePref("yearly.sources", JSON.stringify(prefs));
+}
+
+function isReferenceImportSource(source) {
+  const value = String(source || "").toLowerCase();
+  return value.includes("blockpit")
+    || value.includes("reference")
+    || value.includes("referenz")
+    || value.includes("tax_report")
+    || value.includes("steuerreport");
+}
+
+function setYearlySourceSelection(mode) {
+  $$("input[data-yearly-source]").forEach((input) => {
+    if (mode === "none") {
+      input.checked = false;
+    } else if (mode === "primary") {
+      input.checked = !isReferenceImportSource(input.value);
+    } else {
+      input.checked = true;
+    }
+  });
+  saveYearlySourcePrefs();
+  renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
+}
+
+function renderYearlySourceSummary(selected = null, total = null, active = null) {
+  const host = el("yearlySourceSummary");
+  if (!host) return;
+  const inputs = $$("input[data-yearly-source]");
+  const sourceTotal = total ?? inputs.length;
+  const sourceSelected = selected ?? inputs.filter((input) => input.checked).length;
+  const isActive = active ?? (sourceTotal > 0 && sourceSelected !== sourceTotal);
+  if (!sourceTotal) {
+    host.textContent = "Noch keine Quellen geladen.";
+    return;
+  }
+  host.textContent = `${sourceSelected}/${sourceTotal} Quellen aktiv${isActive ? " (gefiltert)" : ""}.`;
+}
+
+function renderYearlyValueTrend(mode, rows, totals, sourceBreakdown, filters = {}) {
   const byYear = new Map();
-  if (hasFilter) {
+  const hasAssetFilter = !!filters.assetFilterActive;
+  const hasSourceFilter = !!filters.sourceFilterActive;
+  const hasYearFilter = !!filters.yearFilterActive;
+  if (hasAssetFilter) {
     rows.forEach((row) => {
       const year = String(row.year || "");
       const current = byYear.get(year) || { year, events: 0, value_usd: 0, value_eur: 0, quantity_abs: 0 };
@@ -1836,8 +2696,20 @@ function renderYearlyValueTrend(mode, rows, totals, hasFilter) {
       current.quantity_abs += Math.abs(toNumber(row.quantity_abs || 0));
       byYear.set(year, current);
     });
+  } else if (hasSourceFilter) {
+    sourceBreakdown.forEach((row) => {
+      const year = String(row.year || "");
+      const current = byYear.get(year) || { year, events: 0, value_usd: 0, value_eur: 0, quantity_abs: 0 };
+      current.events += Number(row.events || 0);
+      current.value_usd += toNumber(row.value_usd || 0);
+      current.value_eur += toNumber(row.value_eur || 0);
+      current.trading_value_usd = (current.trading_value_usd || 0) + toNumber(row.trading_value_usd || 0);
+      current.trading_value_eur = (current.trading_value_eur || 0) + toNumber(row.trading_value_eur || 0);
+      byYear.set(year, current);
+    });
   } else {
     totals.forEach((row) => {
+      if (hasYearFilter && rows.length && !rows.some((visible) => String(visible.year || "") === String(row.year || ""))) return;
       byYear.set(String(row.year || ""), {
         year: String(row.year || ""),
         events: Number(row.events || 0),
@@ -1930,34 +2802,40 @@ function renderPortfolioValueHistory(points, selectedYear = "") {
 }
 
 function yearlyMetricValue(item, mode) {
-  if (mode === "usd") return item.value_usd || 0;
   if (mode === "trading_usd") return item.trading_value_usd || 0;
   if (mode === "trading_eur") return item.trading_value_eur || 0;
   if (mode === "events") return item.events || 0;
   if (mode === "quantity_log") return item.quantity_abs > 0 ? Math.log10(item.quantity_abs) : 0;
-  return item.value_eur || 0;
+  return item.events || 0;
 }
 
 function yearlyMetricLabel(mode) {
-  if (mode === "usd") return "Wirtschaftlicher Wert USD";
-  if (mode === "trading_usd") return "Trading/Swap-Volumen USD";
-  if (mode === "trading_eur") return "Trading/Swap-Volumen EUR";
+  if (mode === "trading_usd") return "Dedupliziertes Swap-/Handelsvolumen USD";
+  if (mode === "trading_eur") return "Dedupliziertes Swap-/Handelsvolumen EUR";
   if (mode === "events") return "Transaktionen";
   if (mode === "quantity_log") return "Menge normalisiert (log10)";
-  return "Wirtschaftlicher Wert EUR";
+  return "Transaktionen";
 }
 
 function formatYearlyMetric(value, mode) {
-  if (mode === "eur" || mode === "trading_eur") return formatCurrency(value, "EUR");
-  if (mode === "usd" || mode === "trading_usd") return formatCurrency(value, "USD");
+  if (mode === "trading_eur") return formatCurrency(value, "EUR");
+  if (mode === "trading_usd") return formatCurrency(value, "USD");
   if (mode === "quantity_log") return `${Number(value).toFixed(2)} log10`;
   return formatInt(value);
 }
 
 function formatYearlyAxis(value, mode) {
-  if (mode === "eur" || mode === "usd" || mode === "trading_eur" || mode === "trading_usd") return compactNumber(value);
+  if (mode === "trading_eur" || mode === "trading_usd") return compactNumber(value);
   if (mode === "quantity_log") return `${Number(value).toFixed(1)}`;
   return compactNumber(value);
+}
+
+function normalizeYearlyScaleMode(raw) {
+  const mode = String(raw || "events").trim();
+  if (["events", "trading_eur", "trading_usd", "quantity_log"].includes(mode)) return mode;
+  const select = el("yearlyScaleMode");
+  if (select) select.value = "events";
+  return "events";
 }
 
 function compactNumber(value) {
@@ -1988,7 +2866,7 @@ function renderYearlyActivityTable(rows) {
       <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
       <td class="num">${toNumber(row.avg_usd_to_eur || 0).toFixed(4)}</td>
       <td class="num">${formatCurrency(row.trading_value_eur || 0, "EUR")}</td>
-      <td class="num">${formatInt(row.unpriced_events || 0)}</td>
+      <td class="num">${formatValuationCoverage(row)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -2016,7 +2894,7 @@ function renderYearlyEventBreakdownTable(rows) {
       <td class="num">${formatInt(row.events || 0)}</td>
       <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
       <td class="num">${formatCurrency(row.trading_value_eur || 0, "EUR")}</td>
-      <td class="num">${formatInt(row.unpriced_events || 0)}</td>
+      <td class="num">${formatValuationCoverage(row)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -2044,7 +2922,7 @@ function renderYearlySourceBreakdownTable(rows) {
       <td class="num">${formatInt(row.events || 0)}</td>
       <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
       <td class="num">${formatCurrency(row.trading_value_eur || 0, "EUR")}</td>
-      <td class="num">${formatInt(row.unpriced_events || 0)}</td>
+      <td class="num">${formatValuationCoverage(row)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -2053,6 +2931,111 @@ function renderYearlySourceBreakdownTable(rows) {
     tr.innerHTML = '<td colspan="6">Keine Quellen-Aufschlüsselung für die aktuelle Auswahl vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function formatValuationCoverage(row) {
+  const missing = Number(row?.unpriced_events || 0);
+  const required = Number(row?.valuation_required_events || 0);
+  if (!required) return "0";
+  return missing ? `${formatInt(missing)} / ${formatInt(required)}` : `0 / ${formatInt(required)}`;
+}
+
+async function runTransactionSearch(trigger = null) {
+  const params = new URLSearchParams();
+  [
+    ["q", "txSearchQ"],
+    ["year", "txSearchYear"],
+    ["source", "txSearchSource"],
+    ["asset", "txSearchAsset"],
+    ["wallet", "txSearchWallet"],
+    ["event_type", "txSearchType"],
+  ].forEach(([param, id]) => {
+    const value = (el(id)?.value || "").trim();
+    if (value) params.set(param, value);
+  });
+  params.set("limit", "200");
+  const data = await callApi(`/api/v1/dashboard/transaction-search?${params.toString()}`, "GET", null, trigger, true);
+  state.transactionSearchRows = data?.data?.rows ?? [];
+  renderTransactionSearchRows(state.transactionSearchRows);
+}
+
+function renderTransactionSearchRows(rows) {
+  const tbody = el("transactionSearchTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  rows.forEach((row, index) => {
+    const tr = document.createElement("tr");
+    tr.className = "clickable-row";
+    tr.innerHTML = `
+      <td>${row.timestamp_utc || ""}</td>
+      <td>${row.source || ""}</td>
+      <td>${row.event_type || ""}</td>
+      <td>${row.symbol || row.asset || ""}<br><small class="muted">${row.asset || ""}</small></td>
+      <td class="num">${formatQty(row.quantity || 0)}</td>
+      <td>${formatWalletCell(row)}</td>
+      <td><span title="${row.tx_id || ""}">${shortHash(row.tx_id || "")}</span></td>
+      <td class="num">${formatCurrency(row.value_eur || 0, "EUR")}</td>
+      <td><span title="${row.unique_event_id || ""}">${shortHash(row.unique_event_id || "")}</span></td>
+      <td>
+        <button type="button" class="btn-small btn-tx-override" data-index="${index}">Korrektur</button>
+        <button type="button" class="btn-small btn-tx-exclude" data-index="${index}">Ausschluss</button>
+      </td>
+    `;
+    tr.addEventListener("click", () => renderTransactionSearchDetail(index));
+    tbody.appendChild(tr);
+  });
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="10">Keine Transaktionen gefunden.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderTransactionSearchDetail(index) {
+  const host = el("transactionSearchDetail");
+  if (!host) return;
+  const row = state.transactionSearchRows[index];
+  host.textContent = row ? JSON.stringify(row, null, 2) : "Keine Transaktion ausgewählt.";
+}
+
+function prepareTaxOverrideFromTransaction(index, mode = "classify") {
+  const row = state.transactionSearchRows[index];
+  const eventId = row?.unique_event_id || "";
+  if (!eventId) {
+    showToast("Keine Source Event ID im Suchtreffer vorhanden.", "warn");
+    return;
+  }
+  if (el("taxOverrideEventId")) el("taxOverrideEventId").value = eventId;
+  if (el("reviewActionEventId")) el("reviewActionEventId").value = eventId;
+  if (el("reviewSplitEventId")) el("reviewSplitEventId").value = eventId;
+  if (el("taxOverrideCategory")) el("taxOverrideCategory").value = mode === "exclude" ? "EXCLUDED" : "PRIVATE_SO";
+  if (el("taxOverrideReason")) el("taxOverrideReason").value = mode === "exclude" ? "wrong_assignment" : "";
+  if (el("taxOverrideNote")) {
+    el("taxOverrideNote").value = mode === "exclude"
+      ? `Manuell aus Transaktionssuche vorbereitet: ${row.source || ""} ${row.event_type || ""} ${row.symbol || row.asset || ""}`
+      : "";
+  }
+  switchReviewTab("tax");
+  showToast(
+    mode === "exclude"
+      ? "Ausschluss vorbereitet. Bitte Grund prüfen und Notiz fachlich ergänzen, dann speichern."
+      : "Event für Korrektur übernommen.",
+    "ok"
+  );
+}
+
+function formatWalletCell(row) {
+  const primary = row.wallet_address || row.address || row.from_wallet || "";
+  const counter = row.counterparty_wallet || row.to_wallet || "";
+  const first = primary ? `<span title="${primary}">${shortHash(primary)}</span>` : "-";
+  const second = counter ? `<br><small class="muted" title="${counter}">Gegen: ${shortHash(counter)}</small>` : "";
+  return `${first}${second}`;
+}
+
+function shortHash(value) {
+  const raw = String(value || "");
+  if (raw.length <= 16) return raw;
+  return `${raw.slice(0, 8)}...${raw.slice(-6)}`;
 }
 
 function formatEventCategory(category) {
@@ -2105,15 +3088,93 @@ function renderWalletGroupsTable(groups) {
   tbody.innerHTML = "";
   groups.forEach((group) => {
     const wallets = Array.isArray(group.wallet_addresses) ? group.wallet_addresses.length : 0;
+    const sources = Array.isArray(group.source_filters) ? group.source_filters.length : 0;
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${group.name || ""}</td><td>${group.group_id || ""}</td><td class="num">${wallets}</td>`;
+    tr.innerHTML = `
+      <td>${escapeHtml(group.name || "")}</td>
+      <td>${escapeHtml(group.group_id || "")}</td>
+      <td class="num">${wallets}</td>
+      <td class="num">${sources}</td>
+      <td class="num">${formatQty(group.source_event_count || 0)}</td>
+    `;
+    tr.addEventListener("click", () => {
+      state.selectedWalletGroupId = group.group_id || "";
+      if (el("wgSelect")) el("wgSelect").value = state.selectedWalletGroupId;
+      fillWalletGroupForm(selectedWalletGroup());
+      refreshPortfolioSetHistory(group.group_id || "");
+      switchReviewTab("holdings");
+    });
     tbody.appendChild(tr);
   });
   if (!groups.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="3">Keine Wallet-Gruppen vorhanden.</td>';
+    tr.innerHTML = '<td colspan="5">Keine Wallet-Gruppen vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function selectedWalletGroupSourceFilters() {
+  return Array.from(document.querySelectorAll("#wgSourceFilters input[type='checkbox']:checked"))
+    .map((input) => String(input.value || "").trim())
+    .filter((value) => value.length > 0);
+}
+
+function renderWalletGroupSourceFilters(group) {
+  const host = el("wgSourceFilters");
+  if (!host) return;
+  const selected = new Set(Array.isArray(group?.source_filters) ? group.source_filters : []);
+  const rows = Array.isArray(state.integrationRows) ? state.integrationRows : [];
+  if (!rows.length) {
+    host.innerHTML = '<span class="muted">Noch keine Importquellen erkannt.</span>';
+    return;
+  }
+  host.innerHTML = rows
+    .map((row) => {
+      const source = String(row.integration_id || "");
+      return `
+        <label class="source-chip">
+          <input type="checkbox" value="${escapeHtml(source)}" ${selected.has(source) ? "checked" : ""} />
+          <span>${escapeHtml(source)}</span>
+          <small>${formatQty(row.event_count || 0)} Events</small>
+        </label>
+      `;
+    })
+    .join("");
+}
+
+async function refreshPortfolioSetHistory(groupId) {
+  const safeGroupId = String(groupId || "").trim();
+  if (!safeGroupId) return;
+  const windowDays = Number(el("dashSnapshotWindow")?.value || "365");
+  const query = new URLSearchParams({
+    group_id: safeGroupId,
+    window_days: String(windowDays),
+  });
+  const res = await callApi(`/api/v1/dashboard/portfolio-set-history?${query.toString()}`, "GET", null, null, true);
+  if (res?.status !== "success") return;
+  const data = res.data || {};
+  const points = data.points || [];
+  const labels = points.map((point) => String(point.month || ""));
+  const values = points.map((point) => convertUsdForDisplay(point.value_usd || 0));
+  renderPnlCards(data.summary || {});
+  buildChart("chartWalletSnapshots", {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: `Portfolio-Set Value (${currencyLabel()})`,
+          data: values,
+          borderColor: "#f8d15c",
+          backgroundColor: "rgba(248,209,92,0.16)",
+          fill: true,
+          tension: 0.25,
+          pointRadius: 1.5,
+        },
+      ],
+    },
+    options: { maintainAspectRatio: false, scales: { y: { beginAtZero: false } } },
+  });
 }
 
 function renderLiveTokenTable(tokens) {
@@ -2377,12 +3438,16 @@ function renderCockpit() {
   const euer = tax.euer || {};
   const term = tax.termingeschaefte || {};
   const cls = tax.classification_counts || {};
+  const selectedYear = dashboardYearFilter();
+  const yearCount = selectedYear
+    ? (dashboard.activity_years || []).find((item) => String(item.year || "") === selectedYear)?.count
+    : null;
 
   const host = el("cockpitMainKpis");
   if (!host) return;
   host.innerHTML = "";
   const cards = [
-    { label: "Events Gesamt", value: formatQty(s.total_events || 0), sub: "importiert" },
+    { label: selectedYear ? `Events ${selectedYear}` : "Events Gesamt", value: formatQty(yearCount ?? s.total_events ?? 0), sub: selectedYear ? "Zeitraumfilter" : "importiert" },
     { label: "Assets", value: formatQty(s.unique_assets || 0), sub: "erkannt" },
     { label: "SO Netto", value: formatMoney(toNumber(anlage.private_veraeusserung_net_taxable_eur || 0)), sub: "Anlage SO" },
     { label: "EÜR Ergebnis", value: formatMoney(toNumber(euer.betriebsergebnis_eur || 0)), sub: "betrieblich" },
@@ -2396,6 +3461,8 @@ function renderCockpit() {
     host.appendChild(div);
   });
   renderCockpitSources();
+  renderCockpitIssuePile();
+  renderCockpitOperations();
 
   buildChart("chartCockpitPortfolioTax", {
     type: "bar",
@@ -2414,6 +3481,125 @@ function renderCockpit() {
     },
     options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
   });
+}
+
+function renderCockpitIssuePile() {
+  const host = el("cockpitIssuePile");
+  if (!host) return;
+  const severityRank = { high: 0, medium: 1, low: 2 };
+  const openIssues = (state.issues || [])
+    .filter((item) => String(item.status || "open") === "open")
+    .sort((a, b) => {
+      const sevA = severityRank[String(a.severity || "low")] ?? 9;
+      const sevB = severityRank[String(b.severity || "low")] ?? 9;
+      if (sevA !== sevB) return sevA - sevB;
+      return String(a.created_hint_utc || "").localeCompare(String(b.created_hint_utc || ""));
+    });
+  const topRows = openIssues.slice(0, 8);
+  if (!topRows.length) {
+    host.innerHTML = '<div class="empty-state">Keine offenen Prüfungen im aktuellen Datenstand.</div>';
+    return;
+  }
+  host.innerHTML = topRows.map((item) => `
+    <button type="button" class="issue-chip issue-chip-${escapeHtml(item.severity || "low")}" data-issue-id="${escapeHtml(item.issue_id || "")}">
+      <span>${escapeHtml(item.severity || "low")} · ${escapeHtml(item.type || "issue")}</span>
+      <strong>${escapeHtml(item.title || item.issue_id || "")}</strong>
+      <small>${escapeHtml(item.asset || "-")} · ${escapeHtml(String(item.detail || "").slice(0, 120))}</small>
+    </button>
+  `).join("");
+}
+
+function terminalImportStatus(status) {
+  return ["completed", "duplicate", "empty", "partial", "failed", "error"].includes(String(status || "").toLowerCase());
+}
+
+function terminalProcessStatus(status) {
+  return ["completed", "failed", "cancelled"].includes(String(status || "").toLowerCase());
+}
+
+function cockpitOpsStatusClass(kind, value) {
+  const status = String(value || "").toLowerCase();
+  if (kind === "backfill") {
+    if (status === "active") return "status-ok";
+    if (status === "failed" || status === "inactive") return "status-warn";
+    return "status-default";
+  }
+  if (status === "completed" || status === "active") return "status-ok";
+  if (status === "running" || status === "pending" || status === "queued") return "status-running";
+  if (status === "partial" || status === "duplicate" || status === "empty") return "status-warn";
+  if (status === "failed" || status === "error") return "status-fail";
+  return "status-default";
+}
+
+function latestByTimestamp(rows, fields) {
+  return [...(rows || [])].sort((a, b) => {
+    const av = fields.map((field) => String(a?.[field] || "")).find(Boolean) || "";
+    const bv = fields.map((field) => String(b?.[field] || "")).find(Boolean) || "";
+    return bv.localeCompare(av);
+  })[0] || null;
+}
+
+function renderCockpitOperations() {
+  const host = el("cockpitOpsGrid");
+  if (!host) return;
+  const backfill = state.admin.backfillService || {};
+  const backfillStats = backfill.stats || {};
+  const rate = firstRateControl(backfillStats.rpc_rate_control);
+  const coverage = backfill.import_coverage || {};
+  const importRows = state.importJobs || [];
+  const processRows = state.processingJobs || [];
+  const runningImports = importRows.filter((row) => !terminalImportStatus(row.status)).length;
+  const partialImports = importRows.filter((row) => String(row.status || "").toLowerCase() === "partial").length;
+  const latestImport = latestByTimestamp(importRows, ["started_at_utc", "created_at_utc"]);
+  const runningProcess = processRows.filter((row) => !terminalProcessStatus(row.status)).length;
+  const latestProcess = latestByTimestamp(processRows, ["updated_at_utc", "created_at_utc"]);
+  const backfillStatus = backfill.active_state || "unknown";
+  const importStatus = runningImports ? "running" : partialImports ? "partial" : latestImport?.status || "unknown";
+  const processStatus = runningProcess ? "running" : latestProcess?.status || "unknown";
+  const reachedStart = backfill.scan_reached_start ? "Chain-Start erreicht" : "Historie ggf. unvollständig";
+  const first = String(coverage.first_timestamp_utc || "").slice(0, 10) || "?";
+  const last = String(coverage.last_timestamp_utc || "").slice(0, 10) || "?";
+  const cards = [
+    {
+      key: "backfill",
+      title: "Solana Backfill",
+      status: backfillStatus,
+      statusClass: cockpitOpsStatusClass("backfill", backfillStatus),
+      metric: `${formatInt(coverage.raw_event_count || 0)} Events`,
+      detail: `${reachedStart} · ${first} bis ${last}`,
+      sub: `RPC Delay: ${rate ? `${rate.delay_seconds}s` : "-"} · Rate-Limits: ${rate ? formatInt(rate.backpressure_count || 0) : "-"}`,
+      action: "admin-services",
+    },
+    {
+      key: "imports",
+      title: "Import-Aktivität",
+      status: importStatus,
+      statusClass: cockpitOpsStatusClass("import", importStatus),
+      metric: `${formatInt(runningImports)} laufend / ${formatInt(importRows.length)} geladen`,
+      detail: latestImport ? `${latestImport.connector || "unknown"} · ${latestImport.source_name || "-"}` : "Noch keine Importjobs geladen",
+      sub: latestImport ? `Letzter Import: ${String(latestImport.started_at_utc || "-").replace("T", " ").slice(0, 16)}` : "Import-Hub öffnen",
+      action: "imports",
+    },
+    {
+      key: "process",
+      title: "Steuerjobs",
+      status: processStatus,
+      statusClass: cockpitOpsStatusClass("process", processStatus),
+      metric: `${formatInt(runningProcess)} offen / ${formatInt(processRows.length)} geladen`,
+      detail: latestProcess ? `${latestProcess.job_id || "-"} · ${formatMoney(latestProcess.progress || 0)}%` : "Noch keine Steuerjobs geladen",
+      sub: latestProcess ? `Update: ${String(latestProcess.updated_at_utc || "-").replace("T", " ").slice(0, 16)}` : "Steuerlauf öffnen",
+      action: "process",
+    },
+  ];
+  host.innerHTML = cards.map((card) => `
+    <button type="button" class="ops-card" data-ops-action="${escapeHtml(card.action)}">
+      <span class="status-badge ${escapeHtml(card.statusClass)}">${escapeHtml(card.status)}</span>
+      <strong>${escapeHtml(card.title)}</strong>
+      <em>${escapeHtml(card.metric)}</em>
+      <small>${escapeHtml(card.detail)}</small>
+      <small>${escapeHtml(card.sub)}</small>
+    </button>
+  `).join("");
 }
 
 function renderCockpitSources() {
@@ -2785,11 +3971,13 @@ function fillWalletGroupForm(group) {
     el("wgName").value = "";
     el("wgDescription").value = "";
     el("wgWallets").value = "";
+    renderWalletGroupSourceFilters(null);
     return;
   }
   el("wgName").value = group.name || "";
   el("wgDescription").value = group.description || "";
   el("wgWallets").value = (group.wallet_addresses || []).join("\n");
+  renderWalletGroupSourceFilters(group);
 }
 
 function renderWalletGroups(groups) {
@@ -2813,6 +4001,10 @@ function renderWalletGroups(groups) {
     select.value = state.selectedWalletGroupId;
   }
   fillWalletGroupForm(selectedWalletGroup());
+  renderWalletGroupsTable(state.walletGroups);
+  if (state.selectedWalletGroupId) {
+    void refreshPortfolioSetHistory(state.selectedWalletGroupId);
+  }
   renderConnectorWizard();
 }
 
@@ -2889,6 +4081,89 @@ async function loadIgnoredTokens() {
   renderIgnoreTable(state.admin.ignoredTokens);
 }
 
+function renderRulesetTable(rows) {
+  const tbody = el("rulesetTable")?.querySelector("tbody");
+  const info = el("rulesetInfo");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (rows || []).forEach((item) => {
+    const tr = document.createElement("tr");
+    const status = item.status || "builtin";
+    const statusClass = status === "approved" || status === "active" || status === "builtin"
+      ? "status-badge status-alias"
+      : status === "deprecated"
+        ? "status-badge status-fail"
+        : "status-badge status-default";
+    tr.innerHTML = `
+      <td>${escapeHtml(item.ruleset_id || "")}</td>
+      <td>${escapeHtml(item.ruleset_version || "")}</td>
+      <td><span class="${statusClass}">${escapeHtml(status)}</span></td>
+      <td>${escapeHtml(item.valid_from || "")} bis ${escapeHtml(item.valid_to || "")}</td>
+      <td>${escapeHtml(item.approved_by || item.source_hash || "-")}</td>
+      <td><button type="button" class="btn-small btn-ruleset-changelog" data-ruleset-id="${escapeHtml(item.ruleset_id || "")}" data-ruleset-version="${escapeHtml(item.ruleset_version || "")}">Change Log</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!(rows || []).length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6">Keine Regelwerke gefunden.</td>';
+    tbody.appendChild(tr);
+  }
+  if (info) info.textContent = rows?.length ? `${rows.length} Regelwerke geladen.` : "Keine Regelwerke geladen.";
+}
+
+async function loadRulesets(silent = true) {
+  const res = await callApi("/api/v1/rulesets?include_pending=true", "GET", null, null, silent);
+  if (res?.status !== "success") return;
+  state.admin.rulesets = res.data?.rulesets ?? [];
+  renderRulesetTable(state.admin.rulesets);
+}
+
+async function loadRulesetChangeLog(rulesetId, rulesetVersion, trigger = null) {
+  const id = String(rulesetId || "").trim();
+  const version = String(rulesetVersion || "").trim();
+  if (!id || !version) return;
+  const res = await callApi(
+    `/api/v1/rulesets/${encodeURIComponent(id)}/${encodeURIComponent(version)}/change-log`,
+    "GET",
+    null,
+    trigger
+  );
+  if (res?.status !== "success") return;
+  renderRulesetChangeLog(res.data || {});
+}
+
+function renderRulesetChangeLog(data) {
+  const host = el("rulesetChangeLog");
+  if (!host) return;
+  const rows = data.changes || [];
+  host.innerHTML = `
+    <h4>Ruleset Change Log</h4>
+    <div class="metrics">
+      <div class="metric"><span>Ruleset</span><strong>${escapeHtml(data.ruleset_id || "-")}</strong></div>
+      <div class="metric"><span>Version</span><strong>${escapeHtml(data.ruleset_version || "-")}</strong></div>
+      <div class="metric"><span>Status</span><strong>${escapeHtml(data.status || "-")}</strong></div>
+      <div class="metric"><span>Quelle</span><strong>${escapeHtml(data.source || "-")}</strong></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Typ</th><th>Zeit</th><th>Status</th><th>Zusammenfassung</th><th>Details</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.change_type || "")}</td>
+              <td>${escapeHtml(row.changed_at_utc || "-")}</td>
+              <td>${escapeHtml(row.status || "")}</td>
+              <td>${escapeHtml(row.summary || "")}</td>
+              <td><code>${escapeHtml(JSON.stringify(row.details || {}))}</code></td>
+            </tr>
+          `).join("") || '<tr><td colspan="5">Keine Änderungen dokumentiert.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 async function loadTaxAudit(lineNo) {
   const jobId = currentJobId();
   if (!jobId) {
@@ -2940,6 +4215,232 @@ async function refreshTaxReviewData(jobId = currentJobId(), silent = true) {
     renderDerivativeTable();
   }
   await loadTaxDomainSummary(jobId, silent);
+  await loadReportFiles(jobId, true);
+}
+
+function renderReportFiles() {
+  const host = el("reportFilesGrid");
+  if (!host) return;
+  const rows = state.reportFiles || [];
+  host.innerHTML = "";
+  rows.forEach((item) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "source-card action-card";
+    const partLabel = item.part_count && item.part_count > 1 ? `Teil ${item.part}/${item.part_count}` : "komplett";
+    card.innerHTML = `
+      <span>${item.label || item.file_id || "Export"}</span>
+      <strong>${String(item.format || "").toUpperCase()} · ${item.scope || "-"}</strong>
+      <small>${formatInt(item.row_count || 0)} Zeilen · ${partLabel}</small>
+    `;
+    card.addEventListener("click", () => {
+      if (!item.download_url) return;
+      window.open(item.download_url, "_blank", "noopener");
+    });
+    host.appendChild(card);
+  });
+  if (!rows.length) {
+    host.innerHTML = `<div class="muted">Keine Export-Artefakte vorhanden. Starte zuerst einen erfolgreichen Steuerlauf.</div>`;
+  }
+  const info = el("reportFilesInfo");
+  if (info) {
+    info.textContent = rows.length ? `${rows.length} Export-Dateien verfügbar.` : "Keine Export-Dateien verfügbar.";
+  }
+}
+
+async function loadReportFiles(jobId = currentJobId(), silent = true) {
+  if (!jobId) {
+    if (!silent) showToast("Bitte zuerst eine job_id eintragen.", "warn");
+    return;
+  }
+  const data = await callApi(`/api/v1/report/files/${jobId}`, "GET", null, null, silent);
+  if (!data?.data) return;
+  state.reportFiles = data.data.files || [];
+  renderReportFiles();
+}
+
+function renderIntegrityActionResult(items) {
+  const host = el("integrityActionResult");
+  if (!host) return;
+  host.innerHTML = (items || [])
+    .map((item) => `<span><strong>${item.label}:</strong> ${item.value}</span>`)
+    .join("");
+}
+
+async function compareCurrentRuleset(trigger = null) {
+  const jobId = currentJobId();
+  if (!jobId) {
+    showToast("Bitte zuerst eine job_id eintragen.", "warn");
+    return;
+  }
+  const compareRulesetId = (el("compareRulesetId")?.value || "").trim() || rulesetForYear(el("taxYear")?.value || "2026");
+  const compareRulesetVersion = (el("compareRulesetVersion")?.value || "").trim() || null;
+  const data = await callApi(
+    "/api/v1/process/compare-rulesets",
+    "POST",
+    {
+      job_id: jobId,
+      compare_ruleset_id: compareRulesetId,
+      compare_ruleset_version: compareRulesetVersion,
+    },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  const baseSo = data.data?.base?.tax_domain_summary?.anlage_so || {};
+  const compareSo = data.data?.comparison?.tax_domain_summary?.anlage_so || {};
+  renderIntegrityActionResult([
+    { label: "Job", value: jobId },
+    { label: "Basis", value: `${data.data?.base?.ruleset_id || "-"} ${data.data?.base?.ruleset_version || ""}` },
+    { label: "Vergleich", value: `${compareRulesetId} ${compareRulesetVersion || ""}` },
+    { label: "SO Basis Netto", value: formatCurrency(baseSo.private_veraeusserung_net_taxable_eur || 0, "EUR") },
+    { label: "SO Vergleich Netto", value: formatCurrency(compareSo.private_veraeusserung_net_taxable_eur || 0, "EUR") },
+  ]);
+  showToast("Ruleset-Vergleich berechnet.", "ok");
+}
+
+async function createCurrentSnapshot(trigger = null) {
+  const jobId = currentJobId();
+  if (!jobId) {
+    showToast("Bitte zuerst eine job_id eintragen.", "warn");
+    return;
+  }
+  const notes = (el("snapshotNote")?.value || "").trim() || null;
+  const data = await callApi(
+    `/api/v1/snapshots/create/${jobId}`,
+    "POST",
+    { notes },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  renderIntegrityActionResult([
+    { label: "Snapshot", value: data.data?.snapshot_id || "-" },
+    { label: "Job", value: data.data?.job_id || jobId },
+    { label: "Erstellt", value: data.data?.created_at_utc || "-" },
+    { label: "Notiz", value: data.data?.notes || "-" },
+  ]);
+  if (data.data?.snapshot_id && el("snapshotPreviewId")) {
+    el("snapshotPreviewId").value = data.data.snapshot_id;
+  }
+  showToast("Snapshot erstellt.", "ok");
+}
+
+async function previewSnapshot(trigger = null) {
+  const snapshotId = (el("snapshotPreviewId")?.value || "").trim();
+  if (!snapshotId) {
+    showToast("Bitte Snapshot-ID eintragen.", "warn");
+    return;
+  }
+  const data = await callApi(`/api/v1/snapshots/preview/${encodeURIComponent(snapshotId)}`, "GET", null, trigger);
+  if (data?.status !== "success") return;
+  renderSnapshotPreview(data.data || {});
+  showToast("Snapshot-Vorschau geladen.", "ok");
+}
+
+async function loadSnapshotRestorePlan(trigger = null) {
+  const snapshotId = (el("snapshotPreviewId")?.value || "").trim();
+  if (!snapshotId) {
+    showToast("Bitte Snapshot-ID eintragen.", "warn");
+    return;
+  }
+  const data = await callApi(
+    `/api/v1/snapshots/restore-plan/${encodeURIComponent(snapshotId)}`,
+    "POST",
+    { current_run_id: currentJobId() || null, include_preview_rows: true },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  renderSnapshotRestorePlan(data.data || {});
+  showToast("Restore-Plan geladen.", "ok");
+}
+
+function renderSnapshotPreview(data) {
+  const host = el("snapshotPreviewResult");
+  if (!host) return;
+  const rows = data.preview_rows || [];
+  const summary = data.summary || {};
+  const so = summary.anlage_so || {};
+  host.innerHTML = `
+    <div class="metrics">
+      <div class="metric"><span>Snapshot</span><strong>${escapeHtml(shortHash(data.snapshot_id || ""))}</strong></div>
+      <div class="metric"><span>Steuerjahr</span><strong>${escapeHtml(data.tax_year || "-")}</strong></div>
+      <div class="metric"><span>Tax Lines</span><strong>${formatQty(data.tax_line_count || 0)}</strong></div>
+      <div class="metric"><span>Derivate</span><strong>${formatQty(data.derivative_line_count || 0)}</strong></div>
+      <div class="metric"><span>Short-Sell Issues</span><strong>${formatQty(data.short_sell_violations || 0)}</strong></div>
+      <div class="metric"><span>SO steuerpflichtig</span><strong>${formatCurrency(so.private_veraeusserung_net_taxable_eur || 0, "EUR")}</strong></div>
+    </div>
+    <div class="kv-list">
+      <div><span>Job</span><strong>${escapeHtml(data.job_id || "-")}</strong></div>
+      <div><span>Ruleset</span><strong>${escapeHtml(`${data.ruleset_id || ""} ${data.ruleset_version || ""}`.trim() || "-")}</strong></div>
+      <div><span>Report Integrity</span><strong title="${escapeHtml(data.report_integrity_id || "")}">${escapeHtml(shortHash(data.report_integrity_id || ""))}</strong></div>
+      <div><span>Erstellt</span><strong>${escapeHtml(data.created_at_utc || "-")}</strong></div>
+      <div><span>Notiz</span><strong>${escapeHtml(data.notes || "-")}</strong></div>
+      <div><span>Restore</span><strong>${escapeHtml(data.restore_note || "-")}</strong></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Typ</th><th>#</th><th>Asset</th><th>Menge</th><th>Gewinn/Verlust</th><th>Status</th><th>Event</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.line_type || "")}</td>
+              <td>${escapeHtml(row.line_no || "")}</td>
+              <td>${escapeHtml(row.asset || "")}</td>
+              <td class="num">${formatQty(row.qty || 0)}</td>
+              <td class="num">${formatCurrency(row.gain_loss_eur || 0, "EUR")}</td>
+              <td>${escapeHtml(row.tax_status || "")}</td>
+              <td title="${escapeHtml(row.source_event_id || "")}">${escapeHtml(shortHash(row.source_event_id || ""))}</td>
+            </tr>
+          `).join("") || '<tr><td colspan="7">Keine Beispielzeilen im Snapshot-Kontext.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSnapshotRestorePlan(data) {
+  const host = el("snapshotPreviewResult");
+  if (!host) return;
+  const snapshot = data.snapshot || {};
+  const comparison = data.comparison || {};
+  const steps = data.plan_steps || [];
+  const rows = data.preview_rows || [];
+  host.innerHTML = `
+    <div class="metrics">
+      <div class="metric"><span>Restore-Modus</span><strong>${escapeHtml(data.restore_mode || "-")}</strong></div>
+      <div class="metric"><span>Snapshot Run</span><strong title="${escapeHtml(data.snapshot_job_id || "")}">${escapeHtml(shortHash(data.snapshot_job_id || ""))}</strong></div>
+      <div class="metric"><span>Current Run gefunden</span><strong>${comparison.current_job_found ? "ja" : "nein"}</strong></div>
+      <div class="metric"><span>Integrity Match</span><strong>${comparison.report_integrity_matches ? "ja" : "nein"}</strong></div>
+      <div class="metric"><span>Data Hash Match</span><strong>${comparison.data_hash_matches ? "ja" : "nein"}</strong></div>
+      <div class="metric"><span>Tax Lines</span><strong>${formatQty(snapshot.tax_line_count || 0)}</strong></div>
+    </div>
+    <div class="kv-list">
+      <div><span>Hinweis</span><strong>${escapeHtml(data.restore_note || "-")}</strong></div>
+      <div><span>Report Integrity</span><strong title="${escapeHtml(snapshot.report_integrity_id || "")}">${escapeHtml(shortHash(snapshot.report_integrity_id || ""))}</strong></div>
+      <div><span>Data Hash</span><strong title="${escapeHtml(snapshot.data_hash || "")}">${escapeHtml(shortHash(snapshot.data_hash || ""))}</strong></div>
+      <div><span>Config Hash</span><strong title="${escapeHtml(snapshot.config_hash || "")}">${escapeHtml(shortHash(snapshot.config_hash || ""))}</strong></div>
+    </div>
+    <ol class="restore-plan-list">
+      ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+    </ol>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Typ</th><th>#</th><th>Asset</th><th>Menge</th><th>Gewinn/Verlust</th><th>Status</th><th>Event</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.line_type || "")}</td>
+              <td>${escapeHtml(row.line_no || "")}</td>
+              <td>${escapeHtml(row.asset || "")}</td>
+              <td class="num">${formatQty(row.qty || 0)}</td>
+              <td class="num">${formatCurrency(row.gain_loss_eur || 0, "EUR")}</td>
+              <td>${escapeHtml(row.tax_status || "")}</td>
+              <td title="${escapeHtml(row.source_event_id || "")}">${escapeHtml(shortHash(row.source_event_id || ""))}</td>
+            </tr>
+          `).join("") || '<tr><td colspan="7">Keine Beispielzeilen im Restore-Plan.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 async function loadTaxEventOverrides(silent = true) {
@@ -2947,6 +4448,90 @@ async function loadTaxEventOverrides(silent = true) {
   if (!data?.data) return;
   state.taxEventOverrides = data.data.rows || [];
   renderTaxEventOverrideTable(state.taxEventOverrides);
+}
+
+async function loadReviewActions(silent = true) {
+  const data = await callApi("/api/v1/review/actions", "GET", null, null, silent);
+  if (!data?.data) return;
+  state.reviewActions = data.data.rows || [];
+  renderReviewActionTable(state.reviewActions);
+}
+
+async function saveReviewTimezoneCorrection(trigger = null) {
+  const sourceEventId = (el("reviewActionEventId")?.value || el("taxOverrideEventId")?.value || "").trim();
+  const correctedTimestamp = (el("reviewTimezoneValue")?.value || "").trim();
+  const reasonCode = (el("reviewActionReason")?.value || "timezone_wrong").trim();
+  const note = (el("reviewActionNote")?.value || "").trim();
+  if (!sourceEventId || !correctedTimestamp || !note) {
+    showToast("Event ID, korrigierter UTC-Zeitpunkt und Notiz sind Pflicht.", "warn");
+    return;
+  }
+  const data = await callApi(
+    "/api/v1/review/timezone-correct",
+    "POST",
+    {
+      source_event_id: sourceEventId,
+      corrected_timestamp_utc: correctedTimestamp,
+      reason_code: reasonCode,
+      note,
+    },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  await loadReviewActions(true);
+  const issuesData = await callApi("/api/v1/issues/inbox", "GET", null, null, true);
+  if (issuesData?.data) {
+    state.issues = issuesData.data.issues ?? [];
+    state.paging.issuePage = 1;
+    renderIssues(state.issues);
+  }
+  showToast("Zeitzonen-Korrektur gespeichert. Bitte Steuerlauf neu starten.", "ok");
+}
+
+async function saveReviewMerge(trigger = null) {
+  const raw = (el("reviewMergeEventIds")?.value || "").trim();
+  const sourceEventIds = raw.split(/[\n,;]/g).map((item) => item.trim()).filter((item) => item.length > 0);
+  const note = (el("reviewActionNote")?.value || "").trim();
+  const reasonCode = (el("reviewActionReason")?.value || "same_economic_event").trim();
+  if (sourceEventIds.length < 2 || !note) {
+    showToast("Merge benötigt mindestens zwei Event IDs und eine Notiz.", "warn");
+    return;
+  }
+  const data = await callApi(
+    "/api/v1/review/merge",
+    "POST",
+    { source_event_ids: sourceEventIds, reason_code: reasonCode, note },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  await loadReviewActions(true);
+  showToast("Merge-Entscheidung dokumentiert.", "ok");
+}
+
+async function saveReviewSplit(trigger = null) {
+  const sourceEventId = (el("reviewSplitEventId")?.value || el("reviewActionEventId")?.value || "").trim();
+  const note = (el("reviewActionNote")?.value || "").trim();
+  const reasonCode = (el("reviewActionReason")?.value || "bundled_event_split").trim();
+  let splitRows = [];
+  try {
+    splitRows = JSON.parse(el("reviewSplitRows")?.value || "[]");
+  } catch (error) {
+    showToast(`Split JSON ist ungültig: ${error.message}`, "error");
+    return;
+  }
+  if (!sourceEventId || !Array.isArray(splitRows) || !splitRows.length || !note) {
+    showToast("Split benötigt Event ID, JSON-Teilzeilen und eine Notiz.", "warn");
+    return;
+  }
+  const data = await callApi(
+    "/api/v1/review/split",
+    "POST",
+    { source_event_id: sourceEventId, split_rows: splitRows, reason_code: reasonCode, note },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  await loadReviewActions(true);
+  showToast("Split-Entscheidung dokumentiert.", "ok");
 }
 
 async function loadLatestProcessJob(silent = true) {
@@ -2960,6 +4545,15 @@ async function loadLatestProcessJob(silent = true) {
 
 function init() {
   el("eventsJson").value = JSON.stringify(defaultEvents, null, 2);
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest(".guided-action");
+    if (!button) return;
+    const kind = button.dataset.preflightKind;
+    const idx = Number(button.dataset.preflightIndex || "-1");
+    const source = state.preflight?.[kind];
+    const action = Array.isArray(source) && idx >= 0 ? source[idx]?.action : null;
+    applyPreflightAction(action);
+  });
   if (el("cexEndDate") && !el("cexEndDate").value) {
     el("cexEndDate").value = new Date().toISOString().slice(0, 10);
   }
@@ -2972,6 +4566,7 @@ function init() {
   setExpertMode(expertMode);
   [
     ["uiDisplayCurrency", "eur"],
+    ["globalYearFilter", ""],
     ["dashTokenSearch", ""],
     ["dashTokenStatusFilter", ""],
     ["dashTokenSort", "usd_desc"],
@@ -2992,6 +4587,8 @@ function init() {
     ["reviewIssueSearch", ""],
     ["reviewIssueStatus", ""],
     ["reviewIssuePageSize", "50"],
+    ["importJobIntegration", ""],
+    ["importJobStatus", ""],
     ["processRunMode", "default"],
     ["processJobStatus", ""],
     ["processJobsAutoRefresh", ""],
@@ -3042,11 +4639,13 @@ function init() {
     }
   });
   loadDashboard();
+  loadProcessOptions();
   loadWalletGroups();
   loadReviewGates(true);
   loadIntegrationOverview();
   loadImportSourcesSummary();
   loadTaxEventOverrides(true);
+  loadReviewActions(true);
   loadLatestProcessJob(true);
 
   $$(".step").forEach((btn) => {
@@ -3107,6 +4706,7 @@ function init() {
     fillWalletGroupForm(selectedWalletGroup());
     if (state.selectedWalletGroupId) {
       refreshWalletSnapshotChart("group", state.selectedWalletGroupId);
+      refreshPortfolioSetHistory(state.selectedWalletGroupId);
     }
   });
 
@@ -3398,6 +4998,7 @@ function init() {
       name,
       description: description || null,
       wallet_addresses: walletAddresses,
+      source_filters: selectedWalletGroupSourceFilters(),
     };
     const res = await callApi("/api/v1/wallet-groups/upsert", "POST", payload, e.currentTarget);
     if (res?.status === "success") {
@@ -3536,10 +5137,58 @@ function init() {
     await loadIntegrationOverview();
     showToast("Integrationsübersicht aktualisiert.", "ok");
   });
+  el("integrationTable")?.addEventListener("change", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    if (!target.classList.contains("integration-mode-select")) return;
+    await saveIntegrationMode(target.dataset.integrationId || "", target.value, target);
+  });
+  el("btnIntegrationConflictsLoad")?.addEventListener("click", async (event) => {
+    await loadIntegrationConflicts(event.currentTarget);
+    showToast("Integrationskonflikte geprüft.", "ok");
+  });
+  el("btnIntegrationConflictsSelectAll")?.addEventListener("click", () => {
+    document.querySelectorAll(".integration-conflict-select").forEach((node) => {
+      node.checked = true;
+    });
+  });
+  el("btnIntegrationConflictsSelectNone")?.addEventListener("click", () => {
+    document.querySelectorAll(".integration-conflict-select").forEach((node) => {
+      node.checked = false;
+    });
+  });
+  el("btnIntegrationConflictsResolve")?.addEventListener("click", async (event) => {
+    await resolveSelectedIntegrationConflicts(event.currentTarget);
+  });
+  el("integrationConflictTable")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".btn-conflict-open");
+    if (!(btn instanceof HTMLElement)) return;
+    const eventId = btn.dataset.referenceId || "";
+    if (!eventId) return;
+    if (el("txSearchQ")) el("txSearchQ").value = eventId;
+    runTransactionSearch(btn);
+  });
 
   el("btnImportSourcesRefresh")?.addEventListener("click", async () => {
     await loadImportSourcesSummary();
     showToast("Importhistorie aktualisiert.", "ok");
+  });
+  el("btnImportJobsRefresh")?.addEventListener("click", async () => {
+    await loadImportJobs(false);
+    showToast("Import-Aktivitätsprotokoll aktualisiert.", "ok");
+  });
+  ["importJobIntegration", "importJobStatus"].forEach((id) => {
+    el(id)?.addEventListener("change", async () => {
+      savePref(`field.${id}`, el(id).value);
+      await loadImportJobs(true);
+    });
+  });
+  el("importJobDetail")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-import-detail-action]");
+    if (!button) return;
+    handleImportJobDetailAction(button.dataset.importDetailAction || "");
   });
 
   el("btnAutoMatch").addEventListener("click", async (e) => {
@@ -3576,9 +5225,29 @@ async function loadUnmatched() {
     state.transferLedger = data.data.rows ?? [];
     state.paging.transferPage = 1;
     renderTransferLedger(state.transferLedger);
+    await loadLegacyHntTransfers(true);
+  }
+  async function loadTransferChainDetail(chainId, btn = null) {
+    const value = String(chainId || "").trim();
+    if (!value) return;
+    const data = await callApi(`/api/v1/audit/transfer-chain/${encodeURIComponent(value)}`, "GET", null, btn, true);
+    if (!data?.data || data.status === "error") return;
+    renderTransferChainDetail(data.data);
+    showToast("Transfer-Chain geladen.", "ok");
   }
   el("btnTransferLedger").addEventListener("click", loadTransferLedger);
   el("btnReviewTransferLoad")?.addEventListener("click", loadTransferLedger);
+  ["transferLedgerTable", "reviewTransferTable"].forEach((id) => {
+    el(id)?.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const btn = target.closest(".btn-chain-detail");
+      if (!(btn instanceof HTMLElement)) return;
+      loadTransferChainDetail(btn.dataset.chainId || "", btn);
+    });
+  });
+  el("btnLegacyHntTransfers")?.addEventListener("click", () => loadLegacyHntTransfers(false));
+  el("btnReviewLegacyHntTransfers")?.addEventListener("click", () => loadLegacyHntTransfers(false));
   ["reviewTransferSearch", "reviewTransferStatus"].forEach((id) => {
     const node = el(id);
     if (!node) return;
@@ -3617,6 +5286,7 @@ async function loadUnmatched() {
         item.to_wallet,
         item.method,
         item.match_id,
+        item.transfer_chain_id,
         item.status,
       ].map((v) => String(v || "").toLowerCase()).join(" ");
       return hay.includes(search);
@@ -3638,6 +5308,7 @@ async function loadUnmatched() {
       "method",
       "confidence_score",
       "match_id",
+      "transfer_chain_id",
     ]);
     downloadCsv("transfer_ledger_filtered.csv", csv);
   });
@@ -3651,7 +5322,7 @@ async function loadUnmatched() {
     const data = await callApi(`/api/v1/portfolio/lot-aging?${params.toString()}`, "GET", null, null, true);
     if (!data?.data) return;
     state.lotRows = data.data.lot_rows ?? [];
-    renderLotAging(state.lotRows);
+    renderLotAging(state.lotRows, data.data.assets ?? []);
   }
   el("btnLoadLotAging").addEventListener("click", loadLotAging);
 
@@ -3672,6 +5343,22 @@ async function loadUnmatched() {
     } else {
       showToast("Review-Gates blockieren den Export. Details im Panel.", "warn");
     }
+  });
+  el("btnReportFiles")?.addEventListener("click", async () => {
+    await loadReportFiles(currentJobId(), false);
+    showToast("Export-Dateien geladen.", "ok");
+  });
+  el("btnCompareRuleset")?.addEventListener("click", async (e) => {
+    await compareCurrentRuleset(e.currentTarget);
+  });
+  el("btnCreateSnapshot")?.addEventListener("click", async (e) => {
+    await createCurrentSnapshot(e.currentTarget);
+  });
+  el("btnPreviewSnapshot")?.addEventListener("click", async (e) => {
+    await previewSnapshot(e.currentTarget);
+  });
+  el("btnSnapshotRestorePlan")?.addEventListener("click", async (e) => {
+    await loadSnapshotRestorePlan(e.currentTarget);
   });
   ["reviewIssueSearch", "reviewIssueStatus"].forEach((id) => {
     const node = el(id);
@@ -3766,15 +5453,30 @@ async function loadUnmatched() {
     }
   });
 
+  el("btnPreflight")?.addEventListener("click", async (e) => {
+    const result = await runPreflight(e.currentTarget, false);
+    if (result?.allow_run) {
+      showToast("Preflight bestanden. Steuerlauf kann gestartet werden.", "ok");
+    } else if (result) {
+      showToast("Preflight blockiert. Bitte Review-Blocker prüfen.", "warn");
+    }
+  });
+
   el("btnRun").addEventListener("click", async (e) => {
-    syncTaxRunSelection();
+    const preflight = await runPreflight(e.currentTarget, true);
+    if (!preflight?.allow_run) {
+      showToast("Steuerlauf nicht gestartet: Preflight blockiert.", "warn");
+      switchStep(2);
+      return;
+    }
+    const payload = processRequestPayload();
     const data = await callApi(
       "/api/v1/process/run",
       "POST",
       {
-        tax_year: Number(el("taxYear").value || "2026"),
-        ruleset_id: el("rulesetId").value.trim() || "DE-2026-v1.0",
-        config: { tax_method: el("taxMethod")?.value || "fifo" },
+        tax_year: payload.tax_year,
+        ruleset_id: payload.ruleset_id,
+        config: payload.config,
         dry_run: false,
       },
       e.currentTarget
@@ -3948,6 +5650,7 @@ async function loadUnmatched() {
       if (!eventId) return;
       el("taxOverrideEventId").value = eventId;
       if (el("taxOverrideCategory")) el("taxOverrideCategory").value = "PRIVATE_SO";
+      if (el("taxOverrideReason")) el("taxOverrideReason").value = "";
       el("taxOverrideNote").value = "";
       showToast(`Event ${eventId} für Umklassifizierung übernommen.`, "ok");
       return;
@@ -4000,6 +5703,8 @@ async function loadUnmatched() {
       "hold_days",
       "tax_status",
       "source_event_id",
+      "lot_source_event_id",
+      "transfer_chain_id",
     ]);
     downloadCsv(`tax_lines_${currentJobId() || "job"}.csv`, csv);
   });
@@ -4008,10 +5713,24 @@ async function loadUnmatched() {
     await loadTaxEventOverrides(false);
     showToast("Tax-Overrides geladen.", "ok");
   });
+  el("btnReviewActionsLoad")?.addEventListener("click", async () => {
+    await loadReviewActions(false);
+    showToast("Review-Aktionen geladen.", "ok");
+  });
+  el("btnReviewTimezoneSave")?.addEventListener("click", async (e) => {
+    await saveReviewTimezoneCorrection(e.currentTarget);
+  });
+  el("btnReviewMergeSave")?.addEventListener("click", async (e) => {
+    await saveReviewMerge(e.currentTarget);
+  });
+  el("btnReviewSplitSave")?.addEventListener("click", async (e) => {
+    await saveReviewSplit(e.currentTarget);
+  });
 
   el("btnTaxOverrideSave")?.addEventListener("click", async (e) => {
     const sourceEventId = (el("taxOverrideEventId")?.value || "").trim();
     const taxCategory = (el("taxOverrideCategory")?.value || "").trim();
+    const reasonCode = (el("taxOverrideReason")?.value || "").trim();
     const note = (el("taxOverrideNote")?.value || "").trim();
     if (!sourceEventId) {
       showToast("Source Event ID fehlt.", "warn");
@@ -4020,7 +5739,7 @@ async function loadUnmatched() {
     const data = await callApi(
       "/api/v1/tax/event-override/upsert",
       "POST",
-      { source_event_id: sourceEventId, tax_category: taxCategory, note: note || null },
+      { source_event_id: sourceEventId, tax_category: taxCategory, reason_code: reasonCode || null, note: note || null },
       e.currentTarget
     );
     if (data?.status === "success") {
@@ -4086,17 +5805,74 @@ async function loadUnmatched() {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
   });
   el("yearlyYearFilter")?.addEventListener("change", () => {
+    if (el("globalYearFilter")) {
+      el("globalYearFilter").value = el("yearlyYearFilter")?.value || "";
+      syncDashboardYearControls();
+    }
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
+    renderDashboard(state.dashboard);
+  });
+  el("globalYearFilter")?.addEventListener("change", () => {
+    syncDashboardYearControls();
+    renderDashboard(state.dashboard);
+    if (currentJobId()) void loadTaxDomainSummary(currentJobId(), true);
+  });
+  el("dashboardYearMirror")?.addEventListener("change", () => {
+    syncDashboardYearControls();
+    renderDashboard(state.dashboard);
+    if (currentJobId()) void loadTaxDomainSummary(currentJobId(), true);
+  });
+  el("btnGlobalYearApply")?.addEventListener("click", async () => {
+    syncDashboardYearControls();
+    renderDashboard(state.dashboard);
+    if (currentJobId()) await loadTaxDomainSummary(currentJobId(), true);
+    showToast(dashboardYearFilter() ? `Dashboard-Zeitraum ${dashboardYearFilter()} aktiv.` : "Dashboard zeigt alle Jahre.", "ok");
+  });
+  el("btnDashboardYearApply")?.addEventListener("click", async () => {
+    syncDashboardYearControls();
+    renderDashboard(state.dashboard);
+    if (currentJobId()) await loadTaxDomainSummary(currentJobId(), true);
+    showToast(dashboardYearFilter() ? `Dashboard-Zeitraum ${dashboardYearFilter()} aktiv.` : "Dashboard zeigt alle Jahre.", "ok");
   });
   el("yearlyAssetFilter")?.addEventListener("input", () => {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
   });
   el("yearlySourceFilter")?.addEventListener("change", () => {
+    saveYearlySourcePrefs();
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
   });
+  el("btnTxSearch")?.addEventListener("click", (e) => {
+    runTransactionSearch(e.currentTarget);
+  });
+  el("transactionSearchTable")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const overrideButton = target.closest(".btn-tx-override");
+    if (overrideButton instanceof HTMLElement) {
+      event.stopPropagation();
+      prepareTaxOverrideFromTransaction(Number(overrideButton.dataset.index || "-1"), "classify");
+      return;
+    }
+    const excludeButton = target.closest(".btn-tx-exclude");
+    if (excludeButton instanceof HTMLElement) {
+      event.stopPropagation();
+      prepareTaxOverrideFromTransaction(Number(excludeButton.dataset.index || "-1"), "exclude");
+    }
+  });
+  ["txSearchQ", "txSearchYear", "txSearchSource", "txSearchAsset", "txSearchWallet", "txSearchType"].forEach((id) => {
+    el(id)?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") runTransactionSearch(e.currentTarget);
+    });
+  });
+  el("btnYearlySourcesAll")?.addEventListener("click", () => setYearlySourceSelection("all"));
+  el("btnYearlySourcesNone")?.addEventListener("click", () => setYearlySourceSelection("none"));
+  el("btnYearlySourcesPrimary")?.addEventListener("click", () => setYearlySourceSelection("primary"));
   el("btnCockpitRefresh")?.addEventListener("click", async () => {
     await refreshUsdEurRateBestEffort();
     await loadDashboard();
+    await loadBackfillService();
+    await loadImportJobs(true);
+    await loadProcessJobs(true);
     if (currentJobId()) {
       await loadTaxDomainSummary(currentJobId(), true);
     }
@@ -4105,6 +5881,52 @@ async function loadUnmatched() {
   el("btnCockpitOpenImports")?.addEventListener("click", () => switchStep("1"));
   el("btnCockpitOpenTax")?.addEventListener("click", () => switchReviewTab("tax"));
   el("btnCockpitOpenHoldings")?.addEventListener("click", () => switchReviewTab("holdings"));
+  el("btnCockpitOpenAdminServices")?.addEventListener("click", () => {
+    switchStep("5");
+    switchAdminTab("services");
+    void loadBackfillService();
+  });
+  el("btnCockpitOpsRefresh")?.addEventListener("click", async () => {
+    await loadBackfillService();
+    await loadImportJobs(true);
+    await loadProcessJobs(true);
+    renderCockpitOperations();
+    showToast("Operations-Status aktualisiert.", "ok");
+  });
+  el("cockpitOpsGrid")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".ops-card");
+    if (!(btn instanceof HTMLElement)) return;
+    const action = btn.dataset.opsAction || "";
+    if (action === "admin-services") {
+      switchStep("5");
+      switchAdminTab("services");
+      void loadBackfillService();
+    } else if (action === "imports") {
+      switchStep("1");
+      const targetEl = el("importActivity");
+      if (targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      void loadImportJobs(false);
+    } else if (action === "process") {
+      switchStep("3");
+      void loadProcessJobs(false);
+    }
+  });
+  el("btnCockpitOpenIssues")?.addEventListener("click", () => switchReviewTab("transfers"));
+  el("cockpitIssuePile")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".issue-chip");
+    if (!(btn instanceof HTMLElement)) return;
+    switchReviewTab("transfers");
+    if (el("reviewIssueSearch")) {
+      el("reviewIssueSearch").value = btn.dataset.issueId || "";
+      savePref("field.reviewIssueSearch", el("reviewIssueSearch").value);
+    }
+    state.paging.issuePage = 1;
+    renderIssues(state.issues);
+  });
   el("globalSearch")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       applyGlobalSearch();
@@ -4118,6 +5940,11 @@ async function loadUnmatched() {
   el("taxYear")?.addEventListener("change", () => {
     syncTaxRunSelection();
     savePref("field.taxYear", el("taxYear")?.value || "2026");
+    if (el("globalYearFilter")) {
+      el("globalYearFilter").value = el("taxYear")?.value || "";
+      syncDashboardYearControls(false);
+      renderDashboard(state.dashboard);
+    }
   });
   el("cwSolanaFocus")?.addEventListener("click", () => {
     openSettingsPanel("solanaSettings", "solWallet");
@@ -4193,8 +6020,14 @@ async function loadUnmatched() {
   el("btnSnapshotRefresh").addEventListener("click", async () => {
     const selectedGroupId = state.selectedWalletGroupId || "";
     if (selectedGroupId) {
-      await refreshWalletSnapshotChart("group", selectedGroupId);
-      showToast("Gruppen-Verlauf aktualisiert.", "ok");
+      const group = selectedWalletGroup();
+      if (Array.isArray(group?.source_filters) && group.source_filters.length > 0) {
+        await refreshPortfolioSetHistory(selectedGroupId);
+        showToast("Portfolio-Set-Verlauf aktualisiert.", "ok");
+      } else {
+        await refreshWalletSnapshotChart("group", selectedGroupId);
+        showToast("Gruppen-Verlauf aktualisiert.", "ok");
+      }
       return;
     }
     const wallet = el("dashWallet").value.trim() || el("solWallet").value.trim();
@@ -4207,6 +6040,10 @@ async function loadUnmatched() {
   });
   el("dashSnapshotWindow")?.addEventListener("change", () => {
     savePref("field.dashSnapshotWindow", el("dashSnapshotWindow").value);
+    const selectedGroupId = state.selectedWalletGroupId || "";
+    if (selectedGroupId) {
+      void refreshPortfolioSetHistory(selectedGroupId);
+    }
   });
   el("dashShowIgnored").addEventListener("change", () => {
     savePref("field.dashShowIgnored", el("dashShowIgnored").checked ? "1" : "0");
@@ -4354,6 +6191,7 @@ async function loadUnmatched() {
     } catch (_) {}
     showToast("Ansicht zurückgesetzt. Bitte Seite neu laden.", "ok");
   });
+  el("btnApiErrorClose")?.addEventListener("click", clearApiErrorPanel);
   el("btnPresetSave")?.addEventListener("click", () => {
     const scope = currentScopeKey();
     const name = (el("uiPresetName")?.value || "").trim();
@@ -4414,6 +6252,17 @@ async function loadUnmatched() {
 
   el("btnAdminRefresh").addEventListener("click", async () => {
     await loadAdminData();
+  });
+  el("btnRulesetsLoad")?.addEventListener("click", async () => {
+    await loadRulesets(false);
+    showToast("Regelwerke geladen.", "ok");
+  });
+  el("rulesetTable")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".btn-ruleset-changelog");
+    if (!(btn instanceof HTMLElement)) return;
+    await loadRulesetChangeLog(btn.dataset.rulesetId || "", btn.dataset.rulesetVersion || "", btn);
   });
 
   el("btnBackfillRefresh").addEventListener("click", async () => {
@@ -4793,6 +6642,7 @@ function renderProcessJobs() {
     info.textContent = `${rows.length} von ${state.processingJobs.length} aktuell geladenen Jobs (${state.processingJobsCount || state.processingJobs.length} Datensätze).`;
   }
   renderProcessJobsMetrics();
+  renderCockpitOperations();
 }
 
 function syncProcessJobsAutoRefresh() {

@@ -62,6 +62,7 @@ Jeder Import erzeugt einen Job mit:
 - Live-Status während Laufzeit.
 - Direktaktion: "Details", "Wiederholen", "Abbrechen" (wenn möglich).
 - Filter nach Integration und Status.
+- Umsetzung im Import-Hub: Connector-/Statusfilter, Detailauswahl, Source-ID-Kopie und Wiederholsprung zur passenden Import-Konfiguration.
 
 ### Vollständigkeit und Qualität
 - Quellenspezifische Limit-Hinweise (API-Limits, bekannte Lücken).
@@ -75,11 +76,13 @@ Ein Portfolio-Set bündelt mehrere Integrationen/Wallets logisch zu einem Gesamt
 ### Funktionen
 - Set erstellen/bearbeiten/löschen.
 - Integrationen zuordnen.
+- Quellenfilter pro Set speichern, damit Solana RPC, Binance API, Blockpit-Referenzimporte und Helium Legacy getrennt oder gemeinsam betrachtet werden können.
 - Überblick je Set:
   - Gesamtwert EUR/USD
   - Asset-Allokation
   - Verlauf
   - Quellenbeitrag pro Integration
+- Set-spezifischer Wertverlauf basiert auf den zugeordneten Quellen und wird getrennt von globaler Portfolio-Wertentwicklung dargestellt.
 
 ### Steuerlicher Zweck
 - Trennung nach Depot-Logik weiterhin möglich.
@@ -98,6 +101,9 @@ Ein Portfolio-Set bündelt mehrere Integrationen/Wallets logisch zu einem Gesamt
 - Keine freien Textfelder für `ruleset_id`, `tax_year`, kritische Flags.
 - Nur validierte Optionen aus `/api/v1/process/options`.
 - Vor Start zwingender Preflight.
+- Die UI darf `POST /api/v1/process/run` erst auslösen, wenn `POST /api/v1/process/preflight` keine Blocker liefert.
+- Preflight-Ergebnis wird sichtbar im Steuerlauf angezeigt, inklusive Anzahl Events im Steuerjahr, offene Transfers, High-Issues und Bewertungswarnungen.
+- Jede Preflight-Meldung kann eine Guided Action enthalten, damit Nutzer nicht raten müssen, ob sie Import, Transfer-Review oder Issue-Inbox öffnen müssen.
 
 ## Preflight-Check (vor jedem Run)
 ### Blocker
@@ -113,7 +119,7 @@ Ein Portfolio-Set bündelt mehrere Integrationen/Wallets logisch zu einem Gesamt
 
 ## Review-Workflow
 - Automatische "Review needed"-Inbox aus Blockern/Warnungen.
-- Guided Actions je Issue-Typ (statt Rohdatenzwang).
+- Guided Actions je Issue-Typ (statt Rohdatenzwang) mit vorbelegten UI-Filtern.
 - Gate-Status für Exportfreigabe (`allow_export`).
 
 ## Import/Export für Steuerlauf-Konfiguration
@@ -186,10 +192,13 @@ Abnahme:
 
 ### Etappe E: Helium Legacy Vertiefung
 - Legacy-Importpfad und Migrations-/Staking-spezifische Klassifizierung.
+- CoinTracking-/Fairspot-kompatiblen Legacy-HNT-Export erkennen und ohne Duplikate importieren.
+- Transfergegenparteien tabellarisch sichtbar machen, damit ausgehende Staking-Transfers und spätere Rückflüsse überprüfbar sind.
 - Review-Fälle für unklare Legacy-Zuordnung.
 
 Abnahme:
 - Legacy-Daten sind im Portfolio-Set und Steuerlauf nutzbar.
+- Gegenwallets, gesendete/erhaltene HNT, Gebühren und Beispiel-Transaktionen sind im Transfer-Review sichtbar.
 
 ## Qualitäts- und Rechtsleitplanken
 - `Decimal`-Pflicht im Rechenkern.

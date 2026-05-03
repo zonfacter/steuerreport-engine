@@ -3,6 +3,7 @@ from __future__ import annotations
 from tax_engine.api.app import (
     import_confirm,
     import_detect_format,
+    import_jobs,
     import_normalize_preview,
     import_sources_summary,
 )
@@ -99,3 +100,37 @@ def test_sources_summary_returns_imported_source_rows() -> None:
     row = response.data["rows"][0]
     assert row["source_name"] == "coinbase.csv"
     assert int(row["declared_row_count"]) == 2
+
+
+def test_import_jobs_returns_persisted_import_headers_with_filters() -> None:
+    _reset_store()
+    payload = ConfirmImportRequest(
+        source_name="binance_api_full_2026.csv",
+        rows=[
+            {
+                "timestamp_utc": "2026-01-01T12:00:00+00:00",
+                "asset": "BTC",
+                "quantity": "0.1",
+                "event_type": "trade",
+                "tx_id": "import-job-1",
+                "source": "binance_api",
+            }
+        ],
+    )
+    import_confirm(payload)
+
+    response = import_jobs(status="completed", integration="binance", limit=10)
+
+    assert response.status == "success"
+    assert response.data["count"] == 1
+    row = response.data["rows"][0]
+    assert row["connector"] == "binance"
+    assert row["status"] == "completed"
+    assert row["rows"] == 1
+    assert row["inserted_events"] == 1
+    assert row["duplicates"] == 0
+    assert row["status_reason"] == "Alle Zeilen wurden verarbeitet."
+    assert row["severity"] == "ok"
+    assert row["can_retry"] is False
+    assert row["retry_action"] == "open_connector"
+    assert row["warnings"] == []

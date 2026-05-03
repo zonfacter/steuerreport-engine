@@ -11,12 +11,14 @@ from tax_engine.core.processor import process_events_for_year
 from tax_engine.core.tax_domains import build_tax_domain_summary
 from tax_engine.fx import FallbackFxResolver
 from tax_engine.ingestion.store import STORE
+from tax_engine.integrations import filter_events_for_processing
 from tax_engine.integrity import (
     config_fingerprint,
     data_fingerprint,
     report_integrity_id,
     ruleset_fingerprint,
 )
+from tax_engine.reconciliation.chains import build_transfer_chain_index
 from tax_engine.rulesets import build_default_registry
 
 from .models import ProcessRunRequest
@@ -38,17 +40,119 @@ def _load_tax_event_overrides() -> dict[str, dict[str, str]]:
         if not event_id or not isinstance(payload, dict):
             continue
         category = str(payload.get("tax_category", "")).strip().upper()
-        if category not in {"PRIVATE_SO", "BUSINESS"}:
+        if category not in {"PRIVATE_SO", "BUSINESS", "EXCLUDED"}:
             continue
         result[event_id] = {
             "tax_category": category,
+            "reason_code": str(payload.get("reason_code", "")).strip(),
+            "reason_label": str(payload.get("reason_label", "")).strip(),
             "note": str(payload.get("note", "")).strip(),
             "updated_at_utc": str(payload.get("updated_at_utc", "")).strip(),
         }
     return result
 
 
-def _apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+def _load_review_actions() -> dict[str, dict[str, Any]]:
+    row = STORE.get_setting("runtime.review_actions")
+    empty: dict[str, dict[str, Any]] = {"timezone_corrections": {}, "merges": {}, "splits": {}}
+    if row is None:
+        return empty
+    try:
+        raw = json.loads(str(row.get("value_json", "{}")))
+    except Exception:
+        return empty
+    if not isinstance(raw, dict):
+        return empty
+    result: dict[str, dict[str, Any]] = {"timezone_corrections": {}, "merges": {}, "splits": {}}
+    for section in result:
+        value = raw.get(section, {})
+        if isinstance(value, dict):
+            result[section] = value
+    return result
+
+
+def apply_review_actions(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    actions = _load_review_actions()
+    timezone_corrections = actions.get("timezone_corrections", {})
+    merges = actions.get("merges", {})
+    splits = actions.get("splits", {})
+    if not timezone_corrections and not merges and not splits:
+        return raw_events, {"timezone_correction_count": 0, "merge_annotation_count": 0, "split_replacement_count": 0}
+
+    merge_index: dict[str, dict[str, Any]] = {}
+    for action_id, merge in merges.items():
+        if not isinstance(merge, dict):
+            continue
+        for event_id in merge.get("source_event_ids", []):
+            event_id_str = str(event_id or "").strip()
+            if event_id_str:
+                merge_index[event_id_str] = {"action_id": str(action_id), **merge}
+
+    transformed: list[dict[str, Any]] = []
+    applied_timezone = 0
+    applied_merges = 0
+    applied_splits = 0
+    for event in raw_events:
+        event_id = str(event.get("unique_event_id", "")).strip()
+        split_action = splits.get(event_id)
+        if isinstance(split_action, dict):
+            payload = event.get("payload", {})
+            split_rows = split_action.get("split_rows", [])
+            if isinstance(payload, dict) and isinstance(split_rows, list) and split_rows:
+                for index, split_row in enumerate(split_rows, start=1):
+                    if not isinstance(split_row, dict):
+                        continue
+                    payload_copy = dict(payload)
+                    for key, value in split_row.items():
+                        normalized_key = "amount" if str(key) == "quantity" else str(key)
+                        payload_copy[normalized_key] = value
+                    payload_copy["review_action"] = "split"
+                    payload_copy["review_action_id"] = str(split_action.get("action_id", f"split:{event_id}"))
+                    payload_copy["review_action_parent_event_id"] = event_id
+                    payload_copy["review_action_note"] = str(split_action.get("note", "")).strip()
+                    payload_copy["review_action_updated_at_utc"] = str(split_action.get("updated_at_utc", "")).strip()
+                    event_copy = dict(event)
+                    event_copy["unique_event_id"] = f"{event_id}:split:{index}"
+                    event_copy["payload"] = payload_copy
+                    transformed.append(event_copy)
+                    applied_splits += 1
+                continue
+
+        correction = timezone_corrections.get(event_id)
+        event_copy = dict(event)
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event_copy)
+            continue
+        payload_copy = dict(payload)
+        if not isinstance(correction, dict):
+            correction = None
+        if correction is not None:
+            corrected_timestamp = str(correction.get("corrected_timestamp_utc", "")).strip()
+            if corrected_timestamp:
+                payload_copy["original_timestamp_utc"] = payload_copy.get("timestamp_utc", "")
+                payload_copy["timestamp_utc"] = corrected_timestamp
+                payload_copy["review_action"] = "timezone_correct"
+                payload_copy["review_action_note"] = str(correction.get("note", "")).strip()
+                payload_copy["review_action_updated_at_utc"] = str(correction.get("updated_at_utc", "")).strip()
+                applied_timezone += 1
+        merge_action = merge_index.get(event_id)
+        if merge_action is not None:
+            payload_copy["review_merge_action_id"] = str(merge_action.get("action_id", ""))
+            payload_copy["economic_event_id"] = str(merge_action.get("action_id", ""))
+            payload_copy["review_merge_note"] = str(merge_action.get("note", "")).strip()
+            applied_merges += 1
+        event_copy["payload"] = payload_copy
+        transformed.append(event_copy)
+
+    return transformed, {
+        "timezone_correction_count": applied_timezone,
+        "merge_annotation_count": applied_merges,
+        "split_replacement_count": applied_splits,
+    }
+
+
+def apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     overrides = _load_tax_event_overrides()
     if not overrides:
         return raw_events, 0
@@ -66,6 +170,9 @@ def _apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[d
             continue
         payload_copy = dict(payload)
         category = override["tax_category"]
+        if category == "EXCLUDED":
+            applied += 1
+            continue
         payload_copy["tax_category"] = "BUSINESS" if category == "BUSINESS" else "INCOME_SO"
         payload_copy["tax_override_note"] = override.get("note", "")
         payload_copy["tax_override_updated_at_utc"] = override.get("updated_at_utc") or datetime.now(UTC).isoformat()
@@ -99,6 +206,7 @@ def create_processing_job(payload: ProcessRunRequest) -> dict[str, Any]:
         ruleset_id=ruleset.ruleset_id,
         ruleset_version=ruleset.ruleset_version,
         config_hash=cfg_hash,
+        config_json=json.dumps(payload.config, sort_keys=True, separators=(",", ":")),
         status="queued",
         progress=0,
     )
@@ -125,8 +233,10 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             progress=35,
             current_step="load_events",
         )
-        raw_events = STORE.list_raw_events()
-        effective_events, override_count = _apply_tax_event_overrides(raw_events)
+        job_config = claimed.get("config", {}) if isinstance(claimed.get("config"), dict) else {}
+        raw_events, integration_filter_summary = filter_events_for_processing(STORE.list_raw_events(), job_config)
+        adjusted_events, review_action_summary = apply_review_actions(raw_events)
+        effective_events, override_count = apply_tax_event_overrides(adjusted_events)
         fx_config = resolve_effective_runtime_config()
         runtime_fx = fx_config.get("runtime", {}).get("fx", {})
         fallback_rate = runtime_fx.get("usd_to_eur", 1.0)
@@ -155,7 +265,9 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             ruleset_id=ruleset_id,
             ruleset_version=ruleset_version,
         )
+        processing_result["integration_filter_summary"] = integration_filter_summary
         tax_lines = processing_result.pop("tax_lines")
+        tax_lines = _attach_transfer_trace(tax_lines)
         derivative_result = process_derivatives_for_year(raw_events=effective_events, tax_year=claimed["tax_year"])
         derivative_lines = derivative_result.pop("lines")
         tax_domain_summary = build_tax_domain_summary(
@@ -197,6 +309,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         processing_result["derivatives"] = derivative_result
         processing_result["tax_domain_summary"] = tax_domain_summary
         processing_result["tax_event_override_count"] = override_count
+        processing_result["review_actions"] = review_action_summary
         processing_result["fx_enrichment"] = fx_summary
         processing_result["ruleset_id"] = ruleset_id
         processing_result["ruleset_version"] = ruleset.ruleset_version
@@ -221,3 +334,20 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         )
 
     return STORE.get_processing_job(job_id)
+
+
+def _attach_transfer_trace(tax_lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    transfer_chain_by_event_id = build_transfer_chain_index(STORE.list_transfer_matches())
+
+    enriched: list[dict[str, Any]] = []
+    for line in tax_lines:
+        row = dict(line)
+        lot_source_event_id = str(row.get("lot_source_event_id", "")).strip()
+        sell_source_event_id = str(row.get("source_event_id", "")).strip()
+        row["transfer_chain_id"] = (
+            transfer_chain_by_event_id.get(lot_source_event_id)
+            or transfer_chain_by_event_id.get(sell_source_event_id)
+            or str(row.get("transfer_chain_id", "")).strip()
+        )
+        enriched.append(row)
+    return enriched

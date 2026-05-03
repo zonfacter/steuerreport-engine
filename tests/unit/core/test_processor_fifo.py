@@ -53,12 +53,16 @@ def test_fifo_generates_split_tax_lines_with_hold_period_and_fees() -> None:
     assert tax_lines[0]["proceeds_eur"] == "298"
     assert tax_lines[0]["gain_loss_eur"] == "197"
     assert tax_lines[0]["tax_status"] == "exempt"
+    assert tax_lines[0]["source_event_id"] == "sell-1"
+    assert tax_lines[0]["lot_source_event_id"] == "buy-1"
 
     assert tax_lines[1]["qty"] == "0.5"
     assert tax_lines[1]["cost_basis_eur"] == "100.5"
     assert tax_lines[1]["proceeds_eur"] == "149.0"
     assert tax_lines[1]["gain_loss_eur"] == "48.5"
     assert tax_lines[1]["tax_status"] == "taxable"
+    assert tax_lines[1]["source_event_id"] == "sell-1"
+    assert tax_lines[1]["lot_source_event_id"] == "buy-2"
 
 
 def test_fifo_flags_short_sell_and_creates_fallback_tax_line() -> None:
@@ -120,6 +124,41 @@ def test_solana_swap_transfers_are_classified_as_spot() -> None:
     assert result["processed_events"] == 2
     assert result["tax_line_count"] == 1
     assert result["tax_lines"][0]["asset"] == "SOL"
+
+
+def test_legacy_helium_transfers_and_network_fees_do_not_create_spot_disposals() -> None:
+    raw_events = [
+        {
+            "unique_event_id": "legacy-transfer",
+            "payload": {
+                "timestamp_utc": "2022-01-01T00:00:00+00:00",
+                "asset": "HNT",
+                "event_type": "legacy_transfer",
+                "side": "out",
+                "quantity": "10",
+                "value_usd": "100",
+                "source": "helium_legacy_cointracking",
+            },
+        },
+        {
+            "unique_event_id": "legacy-fee",
+            "payload": {
+                "timestamp_utc": "2022-01-01T00:01:00+00:00",
+                "asset": "HNT",
+                "event_type": "legacy_network_fee",
+                "side": "out",
+                "quantity": "0.0001",
+                "value_usd": "0.01",
+                "source": "helium_legacy_cointracking",
+            },
+        },
+    ]
+
+    result = process_events_for_year(raw_events=raw_events, tax_year=2022)
+
+    assert result["class_counts"]["transfer"] == 2
+    assert result["tax_line_count"] == 0
+    assert result["short_sell_violations"] == 0
 
 
 def test_stable_asset_events_convert_usd_to_eur_without_explicit_price_eur() -> None:

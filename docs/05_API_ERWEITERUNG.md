@@ -39,7 +39,8 @@ Die API muss neben Verarbeitung und Export explizit die manuelle Validierung, Ex
 - `POST /api/v1/review/merge`
 - `POST /api/v1/review/split`
 - `POST /api/v1/review/ignore`
-- `DELETE /api/v1/review/ignore/{rule_id}`
+- `POST /api/v1/tax/event-override/delete`
+- `GET /api/v1/review/exclusion-reasons`
 - `POST /api/v1/review/timezone-correct`
 - `POST /api/v1/review/comment`
 - `GET /api/v1/review/comments`

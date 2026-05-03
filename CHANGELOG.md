@@ -19,14 +19,141 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Jahres-Dropdown und Event-Kategorie-Breakdown ergänzt, damit hohe Aktivitätszahlen (z. B. Derivate, Gebühren, Transfers) nachvollziehbar sind.
   - Quellen-Breakdown pro Jahr ergänzt, damit Importquellen wie Blockpit, Solana RPC, Binance API und HeliumGeek getrennt prüfbar sind.
   - Quellenfilter ergänzt: Jahresanalyse kann Importquellen ein-/ausblenden, um Referenzimporte und Primärdaten getrennt zu prüfen.
+  - Quellenfilter-UX erweitert: Alle/Keine/Nur-Primärdaten-Schalter, persistierte Auswahl und sichtbare Aktiv-Quellen-Zählung ergänzt.
   - Währungsanzeige geschärft: USD-Werte werden als USD, EUR-Werte als EUR dargestellt; Asset-Zeilen zeigen den durchschnittlichen `USD/EUR`-Kurs.
   - Symbol-Aliasse für SOL/HNT/IOT/MOBILE/JUP/USDT/USDC ergänzt, damit bekannte Assets nicht mehr als unbekannte Token erscheinen.
   - Portfolio-Wertentwicklung als separate Monatskurve ergänzt; sie basiert auf rekonstruierten Beständen und lokalem Preis-Cache und wird bewusst nicht mit Trading-/Wirtschaftswert vermischt.
   - Unit-Test mit SOL/USDT und HNT/USDC ergänzt, damit die Regel asset-unabhängig abgesichert ist.
+- Portfolio-Sets erweitert:
+  - Wallet-Gruppen können optional Importquellen wie `solana_rpc`, `binance_api`, Blockpit oder Helium Legacy zugeordnet bekommen.
+  - Neues Dashboard-Endpoint `GET /api/v1/dashboard/portfolio-set-history` erzeugt eine Set-spezifische Wertkurve aus den zugeordneten Quellen.
+  - UI zeigt Quellenchips, Quellen-/Event-Anzahl je virtueller Wallet und nutzt die Set-Kurve im Wertverlaufs-Chart.
+- Cockpit-Review ergänzt:
+  - Das Hauptdashboard zeigt offene Prüfungen jetzt als priorisierte Issue-Pile mit Severity, Kategorie und Kurztext.
+  - Ein Klick auf eine Issue-Kachel öffnet direkt den Review-Bereich und filtert die Review-Issues auf die konkrete ID.
+  - Dadurch sind Blocker nicht mehr nur im technischen Review-Tab sichtbar, sondern direkt im Startbildschirm handlungsleitend.
+- Fehler-UX verbessert:
+  - API-/Netzwerkfehler werden im Frontend zusätzlich in einem einheitlichen Fehlerpanel mit Pfad, HTTP-Status und Trace-ID angezeigt.
+  - Nicht-JSON-Antworten führen nicht mehr zu kryptischen Browser-Parse-Meldungen, sondern zu einer verwertbaren Fehlermeldung.
+- Operations-Cockpit ergänzt:
+  - Das Steuer-Cockpit zeigt jetzt Solana-Backfill, Import-Aktivität und Steuerjobs als eigene Statuskarten.
+  - Statuskarten zeigen laufende/offene Jobs, lokale Solana-Coverage, RPC-Delay und Rate-Limit-Zähler.
+  - Klicks springen direkt zur passenden Bedienseite (`Services`, `Import-Aktivität`, `Steuerlauf`).
+- Import-Job-Erklärbarkeit erweitert:
+  - `GET /api/v1/import/jobs` liefert je Job jetzt `status_reason`, `severity`, `can_retry`, `retry_action` und konkrete Warnungen.
+  - Import-Detailansicht zeigt den Statusgrund und die Warnungen direkt an, damit `partial`, `duplicate` oder `empty` nicht mehr interpretiert werden müssen.
+- Dashboard-Performance verbessert:
+  - Dashboard-Bewertung nutzt innerhalb eines Requests FX-/Asset-Preis-Caches, statt dieselben Kursabfragen pro Event mehrfach gegen SQLite auszuführen.
+  - Zusätzlich kann der lokale `fx_cache` für Dashboard-Auswertungen vorab in einen Lookup geladen werden.
+  - Neuer leichter Endpoint `GET /api/v1/dashboard/shell` liefert Cockpit-Grunddaten ohne schwere Jahres-/Bewertungsaggregation.
+- Globale Dashboard-Zeitraumsteuerung ergänzt:
+  - Neuer globaler Jahresfilter im Dashboard-Kopfbereich.
+  - Jahresfilter zusätzlich prominent direkt im Dashboard-Toolbar platziert, damit er nicht in der allgemeinen Kopfzeile untergeht.
+  - Auswahl synchronisiert Performance-Ansichten, Jahresübersicht, Portfolio-Verlauf und Steuerjahr-Auswahl.
+  - Jahresdiagramm hebt das gewählte Jahr hervor; Tagesaktivität und Portfolio-Verlauf werden auf das Jahr gefiltert.
+- Integrationssteuerung ergänzt:
+  - `GET /api/v1/portfolio/integrations` liefert jetzt pro Quelle den steuerlichen Modus `active`, `reference` oder `disabled`.
+  - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.
+  - Blockpit/CoinTracking-nahe Quellen werden standardmäßig als Referenz behandelt; Steuerläufe und Preflight verwenden standardmäßig nur aktive Quellen.
+  - UI erlaubt die Modusänderung direkt in der Integrationsübersicht und übergibt aktive Quellen an den Steuerlauf.
+  - Neues Integrations-Konfliktcenter `GET /api/v1/review/integration-conflicts` gruppiert starke Überschneidungen zwischen aktiven Primärquellen und Referenzimporten nach Tag, Asset, Richtung und Menge.
+  - Review-Inbox erzeugt für solche Überschneidungen eigene `integration_conflict`-Issues, damit Blockpit-/Referenzdaten nicht unbemerkt doppelt in die Prüfung laufen.
+  - UI zeigt Konfliktgruppen direkt im Integrations-Hub und springt von dort in die Transaktionssuche zur Detailprüfung.
+  - Neuer Endpoint `POST /api/v1/review/integration-conflicts/resolve` verarbeitet markierte Konfliktgruppen als Massenentscheidung.
+  - Massenentscheidungen können Referenz-Events auditierbar als `EXCLUDED` markieren, Referenzquellen deaktivieren oder den Referenzmodus bestätigen; Pflichtgrund und Notiz sind erforderlich.
+  - UI ergänzt Markierung, Auswahl der Aktion, Grund und Pflichtnotiz im Integrations-Konfliktcenter.
+- Review- und Korrekturworkflow gehärtet:
+  - Tax-Event-Overrides unterstützen jetzt `EXCLUDED`, damit ein Event mit Pflichtgrund und Notiz aus der Steuerberechnung ausgeschlossen werden kann, ohne `raw_events` zu verändern.
+  - UI ergänzt vorausgewählte Ausschlussgründe für Duplikat, falsche Zuordnung, Spam/Dust, reinen Referenzimport und nicht steuerrelevante Vorgänge.
+  - Side-by-Side Ruleset-Vergleiche nutzen dieselben steuerwirksamen Overrides wie reguläre Steuerläufe.
+  - Roadmap-kompatible Review-Endpunkte `POST /api/v1/review/ignore`, `POST /api/v1/review/comment`, `GET /api/v1/review/comments` und `GET /api/v1/review/exclusion-reasons` ergänzt.
+  - Transaktionssuche kann Events direkt in den Korrektur-/Ausschlussdialog übernehmen; Raw Events bleiben unverändert.
+  - Review-Actions ergänzt: `GET /api/v1/review/actions`, `POST /api/v1/review/timezone-correct`, `POST /api/v1/review/merge` und `POST /api/v1/review/split`.
+  - Zeitzonen-Korrekturen werden versioniert gespeichert, schließen das entsprechende Review-Issue und werden beim nächsten Steuerlauf auf die Arbeitskopie angewendet.
+  - Merge/Split-Entscheidungen werden auditierbar dokumentiert; RAW-Daten bleiben unverändert.
+  - Merge/Split-Entscheidungen wirken jetzt auf die Steuer-Arbeitskopie:
+    - Merge annotiert zusammengehörige Events mit gemeinsamer `economic_event_id`.
+    - Split ersetzt ein Rohereignis in der Arbeitskopie durch dokumentierte Teil-Events mit Parent-Referenz.
+  - UI ergänzt Review-Actions für Zeitzone, Merge und Split im Steuer-/Review-Bereich.
+- Helium-Legacy-Import ergänzt:
+  - CoinTracking-/Fairspot-kompatible Helium-L1-Exports werden als `helium_legacy_cointracking` erkannt.
+  - `HNT2` wird in `HNT` normalisiert; Mining-Rewards, Legacy-Transfers und Netzwerkgebühren werden getrennt klassifiziert.
+  - Legacy-Transfers werden nicht als Spot-Veräußerung behandelt.
+  - Neuer Endpoint `GET /api/v1/portfolio/helium-legacy-transfers` gruppiert Gegenwallets mit gesendeten/erhaltenen HNT, Fees, Nettofluss und Beispiel-Transaktionen.
+  - UI zeigt die Legacy-HNT-Transferübersicht im Transfer-Review an.
+- Steuerlauf-Wizard vorbereitet:
+  - Neuer Endpoint `GET /api/v1/process/options` liefert validierte Steuerjahre, Rulesets, Steuerverfahren, Depotmodi, Validierungsflags und Standardprofile.
+  - Neuer Endpoint `POST /api/v1/process/preflight` prüft vor dem Steuerlauf Importdaten, Ruleset-Auflösung, offene High-Severity-Issues, unmatched Transfers und Bewertungsabdeckung.
+  - UI führt den Preflight vor dem Steuerlauf automatisch aus und blockiert `process/run`, wenn harte Blocker offen sind.
+  - Preflight-Blocker und Warnungen liefern Guided Actions, die direkt zur passenden Import-, Transfer- oder Issue-Ansicht springen und Filter vorbelegen.
+- Solana-Importkontrolle erweitert:
+  - Admin-Backfill-Status zeigt lokale Solana-Coverage mit Event-/TX-Zahl, Zeitraum und Chain-Start-Indikator.
+  - Background-Scanner speichert künftig, ob der RPC-Import den Anfang der Signaturhistorie erreicht hat.
+- Admin-/Secret-Stabilität gehärtet:
+  - Beschädigte oder mit altem Master-Key gespeicherte Secrets brechen Dashboard-/Runtime-Config-Endpunkte nicht mehr mit HTTP 500.
+  - Solche Secrets werden als nicht konfiguriert behandelt und müssen im Admin-Bereich neu gespeichert werden.
 - BMF-2025-Fachlogik ergänzt:
   - Neues Dossier `docs/19_BMF_2025_STEUERREGELN_UND_PFLICHTEN.md` als technische Umsetzung des BMF-Schreibens vom 06.03.2025.
   - Ruleset-Modell um `other_services_exemption_limit` erweitert, damit §22-Nr.-3-EStG-Freigrenze (`256.00` EUR) getrennt von §23-Freigrenze geführt wird.
   - Compliance-Klassifikation nutzt für Mining/Staking/Rewards jetzt die §22-Freigrenze statt der §23-Freigrenze.
+- Reporting-Roadmap weitergeführt:
+  - Neuer Endpoint `GET /api/v1/report/files/{run_id}` liefert verfügbare virtuelle Export-Artefakte für JSON/CSV/PDF nach Scope (`all`, `tax`, `derivatives`).
+  - `GET /api/v1/report/export` unterstützt jetzt PDF-Export mit maximal 100 Seiten je Teil-Datei.
+  - Exportzeilen enthalten `report_integrity_id`, `config_hash` und `data_hash`, damit CSV/JSON/PDF prüfungssicherer nachvollziehbar sind.
+  - Tax Lines speichern und exportieren jetzt `lot_source_event_id` und `transfer_chain_id`, damit verbrauchte Anschaffungs-Lots und Eigenübertragsketten nachvollziehbar bleiben.
+  - Steuer-UI und Tax-CSV enthalten die neuen Trace-Spalten für Lot und Transfer Chain.
+  - `transfer_chain_id` wird jetzt deterministisch über zusammenhängende Transfer-Matches gebildet, damit mehrstufige Eigenüberträge über mehrere Wallets dieselbe Chain erhalten.
+  - Transfer-Review-Tabellen zeigen die `transfer_chain_id` und den direkten Depot-Pfad als lesbare Spur.
+  - Neuer Audit-Endpunkt `GET /api/v1/audit/transfer-chain/{transfer_chain_id}` liefert die vollständige interne Transferkette mit Wallet-Pfad, Zeitraum, Assetliste, Einzelschritten und Haltefrist-Fortführung.
+  - Transfer-UI kann Chain-IDs anklicken und zeigt die Detailspur als prüfbare Timeline statt nur als Kurz-ID.
+  - Processing-End-to-End-Test prüft jetzt, dass Report-Artefakte nach einem erfolgreichen Lauf auffindbar sind.
+- Ruleset-Vergleich ergänzt:
+  - `POST /api/v1/process/compare-rulesets` ist zusätzlich zum bestehenden GET-Endpunkt verfügbar, damit der API-Vertrag aus der Roadmap ohne Freitext-/Query-Workaround nutzbar ist.
+- Import-Job-Historie nachgezogen:
+  - `GET /api/v1/import/jobs` nutzt jetzt persistierte Importquellen statt Prozessjobs.
+  - Filter nach `integration` und `status` sowie Header-Felder für Connector, Row Counts, Duplikate und Zeitstempel ergänzt.
+  - UI zeigt das Import-Aktivitätsprotokoll mit Connector-/Statusfilter, Detailpanel, Source-ID-Kopie und Sprung zur passenden Wiederhol- bzw. Connector-Konfiguration.
+- UI-Exportfluss verbessert:
+  - Steuer-Tab zeigt verfügbare Report-Artefakte als klickbare JSON/CSV/PDF-Karten.
+  - PDF-Teilung und Zeilenanzahl werden direkt in der Oberfläche sichtbar.
+- Revisions-UX ergänzt:
+  - Steuer-Tab kann einen aktuellen Lauf gegen ein zweites Ruleset vergleichen.
+  - Neuer Endpoint `GET /api/v1/rulesets/{ruleset_id}/{ruleset_version}/change-log` liefert Änderungshistorie und Freigabestatus je Ruleset.
+  - Admin-UI ergänzt eine Regelwerk-Ansicht mit Status (`draft/approved/deprecated`), Gültigkeitszeitraum und Change-Log-Drilldown.
+  - Snapshot-Erstellung aus der Oberfläche ergänzt, inklusive Notizfeld für Nachprüfungsstände.
+  - Nicht-destruktive Snapshot-Vorschau ergänzt: Snapshot-ID lädt Integritätsdaten, Steuerjahr, Ruleset, Zeilenzahlen, SO-Zusammenfassung und Beispielzeilen.
+  - Neuer Endpoint `POST /api/v1/snapshots/restore-plan/{snapshot_id}` erstellt einen nicht-destruktiven Wiederherstellungsplan mit Vergleich von Snapshot-Run, aktuellem Run, Report-Integrity, Data-Hash und Config-Hash.
+  - UI ergänzt einen Restore-Plan-Button in der Snapshot-Prüfung; der Plan überschreibt keine RAW-Daten, Overrides oder aktuellen Steuerläufe.
+- Lot-Aging-Ansicht erweitert:
+  - Offene FIFO-Lots liefern jetzt `days_to_exempt` und `holding_progress_ratio`.
+  - Asset-Zusammenfassung zeigt Gesamtmenge, steuerfreie Menge, noch steuerpflichtige Menge, Lot-Anzahl und älteste Haltedauer.
+  - UI zeigt Haltefrist-Fortschritt je Lot als Balken statt nur als Zahlentabelle.
+- CI-Security-Fix:
+  - FastAPI/Starlette/Cryptography Constraints angehoben, damit `pip-audit` bekannte CVEs in GitHub Actions nicht mehr blockiert.
+  - `types-reportlab` als Dev-Dependency ergänzt, damit der GitHub-Mypy-Lauf den PDF-Export ohne fehlende Stub-Pakete prüfen kann.
+- CI-Coverage-Fix:
+  - Core-Tests für `tax_domains` ergänzt, damit §22-/EÜR-/Data-Credit-/Derivate-Summen regressionssicher geprüft werden.
+  - Core-Tests für `reconciliation` ergänzt, damit Transfer-Erkennung, Time-Window-Matching und Fee-Toleranz abgesichert sind.
+  - API-Coverage-Tests für Rulesets, Export, Integrity/Snapshots, Compliance-Klassifikation und Review-Gates ergänzt.
+- Golden-Hash-Härtung:
+  - `tests/fixtures/golden/hashes.json` als explizite Referenz für `DE-2024`, `DE-2025`, `DE-2026` ergänzt.
+  - `scripts/verify_integrity.py` schlägt jetzt bei Golden-Hash-Drift fehl, statt nur Hashes auszugeben.
+  - Integrity-Fingerprint vom Ruleset-Registry-Import entkoppelt, damit Integritäts-Tests ohne Import-Zyklus laufen.
+  - Ruleset-Auswahl bevorzugt deterministisch das Jahres-Standardruleset (`DE-YYYY-v1.0`) und lässt Draft-Custom-Rulesets nicht die automatische Auswahl kippen.
+- API-Refactoring:
+  - Report-/Export-Helfer für JSON/CSV/PDF und 100-Seiten-PDF-Splitting aus `api/app.py` in `api/reporting.py` ausgelagert.
+  - Bestehende interne `_build_*`-Imports bleiben kompatibel, damit Endpunkte und Tests ohne API-Vertragsbruch weiterlaufen.
+  - Ruleset-Endpunkte und `RulesetUpsertRequest` in `api/rulesets.py` als eigenen `APIRouter` ausgelagert.
+  - `api/app.py` registriert den Ruleset-Router und re-exportiert die bisherigen Namen für Test-/Import-Kompatibilität.
+  - Admin-Endpunkte für Settings, Runtime-Config, Solana-Backfill-Service, Token-Aliases, Ignored Tokens und CEX-Credential-Load in `api/admin.py` ausgelagert.
+  - Admin-Router-Tests erweitert, damit Service-Aktionen, Token-Aliases, Fehlerpfade und Loader-Kantenfälle regressionssicher bleiben.
+  - Wallet-Gruppen-Endpunkte und gemeinsame Wallet-Snapshot-Helfer in `api/wallet_groups.py` ausgelagert.
+  - Import-Endpunkte inklusive Bulk-Folder-Import und Import-Job-Historie in `api/imports.py` ausgelagert.
+  - CEX- und Solana-Connector-Endpunkte in `api/connectors.py` ausgelagert.
+  - Process-, Report-, Compliance-, Integrity-, Snapshot- und Audit-Tax-Line-Endpunkte in `api/processing.py` ausgelagert.
+  - Reconciliation-, Review-Gate-, Issue- und Tax-Override-Endpunkte in `api/review.py` ausgelagert.
+  - Dashboard- und Portfolio-Endpunkte samt Bewertungs-/Jahresanalyse-Helfern in `api/dashboard.py` ausgelagert.
+  - API-Coverage-Report misst die extrahierten Router-Module und lässt den temporären Router-Bootstrap `api/app.py` aus, bis die restlichen Bereiche ausgelagert sind.
 - Projektstruktur mit `src/`, `tests/`, `configs/`, `docs/`, `scripts/` erstellt.
 - Dokumentationsdossier nach `docs/` konsolidiert.
 - GitHub-konformes Root-README erstellt.
@@ -145,9 +272,15 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Admin-UI zeigt Solana-Backfill-Service, Start/Stop/Restart, Log-Auszug und Rate-Control-Kennzahlen
 - Dashboard-Jahresanalyse ergänzt:
   - `/api/v1/dashboard/overview` liefert `yearly_asset_activity` mit Events, Mengen rein/raus/netto, bewertetem Bewegungsvolumen, Trading/Swap-Volumen und unbewerteten Events
+  - `/api/v1/dashboard/yearly-activity` liefert die schwere Jahres-/Quellen-/Asset-Auswertung separat, optional auf ein Jahr begrenzt
+  - `/api/v1/dashboard/portfolio-history` liefert die Portfolio-Wertzeitreihe separat vom Cockpit-Shell
+  - Frontend lädt Dashboard-Grunddaten, Jahresanalyse und Portfolio-Verlauf entkoppelt, damit die Oberfläche schneller sichtbar bleibt
   - Performance-Tab zeigt Jahreschart mit Skalierung `Bewegungsvolumen EUR/USD`, `Trading/Swap-Volumen EUR/USD`, `Menge normalisiert (log10)` oder `Transaktionen`
   - Jahres-Tabelle hilft bei großen Mengenunterschieden wie IOT/MOBILE vs. SOL/HNT, ohne die Y-Achse unlesbar zu machen
   - Klarstellung: Die Jahresanalyse ist keine Portfolio-Wertentwicklung; echte Wertentwicklung basiert auf Snapshots bzw. historischem Price-Backfill
+- Review-Konfliktcenter stabilisiert:
+  - Integrations-Modi werden beim Konfliktaufbau nur noch einmal pro Request geladen statt pro Event
+  - reduziert SQLite-Last bei großen Importständen und vermeidet unnötige DB-Open-Spitzen im Review-Gate
 - Historischer Crypto-Preis-Backfill vorbereitet:
   - `configs/crypto_price_sources.example.json` mappt SOL/HNT/IOT/MOBILE/JUP auf CoinGecko-IDs und lokale Cache-Keys
   - `scripts/crypto_price_backfill_usd.py` füllt historische `ASSET/USD`-Preise in `fx_cache`

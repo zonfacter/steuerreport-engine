@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib
+from decimal import Decimal
 
+from tax_engine.admin import put_admin_setting
 from tax_engine.api.app import (
     CexFullHistoryImportRequest,
     connectors_cex_balances_preview,
@@ -48,7 +50,7 @@ def test_cex_verify_endpoint_with_unsupported_connector_returns_partial() -> Non
 
 def test_cex_balances_preview_endpoint_success_with_monkeypatched_service(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_fetch(**kwargs):
         return {
@@ -85,7 +87,7 @@ def test_cex_transactions_preview_endpoint_success_with_monkeypatched_service(
     monkeypatch,
 ) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_fetch(**kwargs):
         return {
@@ -127,7 +129,7 @@ def test_cex_transactions_preview_endpoint_success_with_monkeypatched_service(
 
 def test_cex_import_confirm_persists_preview_rows(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_fetch(**kwargs):
         return {
@@ -170,7 +172,7 @@ def test_cex_import_confirm_persists_preview_rows(monkeypatch) -> None:
 
 def test_solana_wallet_preview_endpoint_success_with_monkeypatched_service(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_fetch(**kwargs):
         return {
@@ -212,7 +214,7 @@ def test_solana_wallet_preview_endpoint_success_with_monkeypatched_service(monke
 
 def test_solana_rpc_probe_endpoint_success_with_monkeypatched_service(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_probe(**kwargs):
         return {
@@ -252,7 +254,7 @@ def test_solana_rpc_probe_endpoint_success_with_monkeypatched_service(monkeypatc
 
 def test_solana_import_confirm_persists_preview_rows(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_fetch(**kwargs):
         return {
@@ -295,7 +297,7 @@ def test_solana_import_confirm_persists_preview_rows(monkeypatch) -> None:
 
 def test_cex_import_full_history_binance(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_fetch(**kwargs):
         return {
@@ -339,7 +341,7 @@ def test_cex_import_full_history_binance(monkeypatch) -> None:
 
 def test_cex_import_full_history_splits_failed_windows(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     def _fake_fetch(**kwargs):
         start_ms = int(kwargs.get("start_time_ms") or 0)
@@ -389,7 +391,7 @@ def test_cex_import_full_history_splits_failed_windows(monkeypatch) -> None:
 
 def test_solana_import_full_history_endpoint_paginates_with_cursor(monkeypatch) -> None:
     _reset_store()
-    app_module = importlib.import_module("tax_engine.api.app")
+    app_module = importlib.import_module("tax_engine.api.connectors")
 
     call_state: dict[str, int] = {"call": 0}
 
@@ -482,3 +484,53 @@ def test_solana_import_full_history_endpoint_invalid_window() -> None:
     assert response.status == "error"
     assert response.data == {}
     assert response.errors[0]["code"] == "invalid_time_window"
+
+
+def test_connector_token_display_helpers_cover_alias_ignore_and_spam_paths() -> None:
+    _reset_store()
+    connector_module = importlib.import_module("tax_engine.api.connectors")
+
+    put_admin_setting(
+        "runtime.token_aliases",
+        {
+            "mint1": {"symbol": "abc", "name": "Alias Coin", "notes": "test"},
+            "invalid": {"symbol": "", "name": ""},
+        },
+        is_secret=False,
+    )
+    put_admin_setting(
+        "runtime.ignored_tokens",
+        {
+            "mint1": {"reason": "Spam", "updated_at_utc": "2026-01-01T00:00:00+00:00"},
+            "invalid": {"reason": ""},
+        },
+        is_secret=False,
+    )
+
+    assert connector_module._safe_decimal("invalid") == Decimal("0")
+    assert connector_module._normalize_mint(" mint1 ") == "MINT1"
+    assert connector_module._load_token_aliases()["MINT1"]["symbol"] == "ABC"
+    assert connector_module._load_ignored_tokens()["MINT1"]["reason"] == "Spam"
+    assert connector_module._resolve_token_display("mint1")["display_source"] == "alias"
+    assert connector_module._is_spam_candidate("UNKNOWN", Decimal("0.001"), known=False) is True
+    assert connector_module._is_spam_candidate("UNKNOWN", Decimal("0"), known=False) is False
+    assert connector_module._is_spam_candidate("SOL", Decimal("10000000"), known=True) is False
+
+    decorated = connector_module._decorate_token_rows(
+        [
+            {"asset": "mint1", "quantity": "1.2300"},
+            "not-a-row",
+        ]
+    )
+    assert decorated == [
+        {
+            "asset": "mint1",
+            "quantity": "1.23",
+            "symbol": "ABC",
+            "name": "Alias Coin",
+            "display_source": "alias",
+            "ignored": "true",
+            "ignored_reason": "Spam",
+            "spam_candidate": "false",
+        }
+    ]

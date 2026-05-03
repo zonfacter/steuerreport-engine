@@ -91,6 +91,14 @@
       </section>
 
       <section id="toast" class="toast hidden"></section>
+      <section id="apiErrorPanel" class="api-error-panel hidden">
+        <div>
+          <strong id="apiErrorTitle">API-Fehler</strong>
+          <p id="apiErrorMessage" class="muted"></p>
+          <small id="apiErrorMeta" class="muted"></small>
+        </div>
+        <button id="btnApiErrorClose" type="button">Schließen</button>
+      </section>
 
       <nav class="steps">
         <button class="step" data-step="4">Dashboard</button>
@@ -108,6 +116,12 @@
               <option value="usd">USD</option>
             </select>
           </label>
+          <label>Dashboard-Zeitraum
+            <select id="globalYearFilter">
+              <option value="">Alle Jahre</option>
+            </select>
+          </label>
+          <button id="btnGlobalYearApply" type="button">Zeitraum anwenden</button>
           <label><input id="uiExpertMode" type="checkbox" /> Expert-Modus</label>
           <label><input id="uiDenseMode" type="checkbox" /> Kompakte Tabellen</label>
           <button id="btnResetViewPrefs">Ansicht zurücksetzen</button>
@@ -213,13 +227,14 @@
           <button id="btnImportSourcesRefresh">Importhistorie aktualisieren</button>
         </div>
         <div class="grid">
-          <div>
+          <div id="integrationHub">
             <h3>Integrationen (Übersicht)</h3>
             <div class="table-wrap">
               <table id="integrationTable">
                 <thead>
                   <tr>
                     <th>Integration</th>
+                    <th>Modus</th>
                     <th class="num">Events</th>
                     <th class="num">Assets</th>
                     <th class="num">Sources</th>
@@ -230,10 +245,88 @@
                 <tbody></tbody>
               </table>
             </div>
-          </div>
-          <div>
-            <h3>Import-Aktivität</h3>
+            <div class="row compact-row">
+              <button id="btnIntegrationConflictsLoad" type="button">Konflikte prüfen</button>
+              <button id="btnIntegrationConflictsSelectAll" type="button">Alle markieren</button>
+              <button id="btnIntegrationConflictsSelectNone" type="button">Markierung löschen</button>
+              <label>Aktion
+                <select id="integrationConflictAction">
+                  <option value="exclude_reference_events" selected>Referenz-Events ausschließen</option>
+                  <option value="disable_reference_sources">Referenzquellen deaktivieren</option>
+                  <option value="confirm_reference_only">Referenzmodus bestätigen</option>
+                </select>
+              </label>
+              <label>Grund
+                <select id="integrationConflictReason">
+                  <option value="duplicate_import" selected>Duplikat / Referenzreport</option>
+                  <option value="reference_import_only">Nur Referenzimport</option>
+                  <option value="wrong_assignment">Falsche Zuordnung</option>
+                  <option value="not_tax_relevant">Nicht steuerrelevant</option>
+                </select>
+              </label>
+              <input id="integrationConflictNote" placeholder="Pflichtnotiz für Audit-Trail" />
+              <button id="btnIntegrationConflictsResolve" type="button" class="btn-primary">Markierte anwenden</button>
+              <span id="integrationConflictInfo" class="muted">Noch nicht geprüft.</span>
+            </div>
             <div class="table-wrap">
+              <table id="integrationConflictTable">
+                <thead>
+                  <tr>
+                    <th>Auswahl</th>
+                    <th>Tag</th>
+                    <th>Asset</th>
+                    <th class="num">Menge</th>
+                    <th>Richtung</th>
+                    <th>Primärquellen</th>
+                    <th>Referenzen</th>
+                    <th>Aktion</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="importActivity">
+            <h3>Import-Aktivität</h3>
+            <div class="row compact-row">
+              <select id="importJobIntegration">
+                <option value="">Alle Quellen</option>
+                <option value="solana">Solana</option>
+                <option value="binance">Binance</option>
+                <option value="bitget">Bitget</option>
+                <option value="coinbase">Coinbase</option>
+                <option value="blockpit">Blockpit</option>
+                <option value="heliumgeek">HeliumGeek</option>
+                <option value="helium_legacy_cointracking">Helium Legacy</option>
+              </select>
+              <select id="importJobStatus">
+                <option value="">Alle Status</option>
+                <option value="completed">completed</option>
+                <option value="partial">partial</option>
+                <option value="duplicate">duplicate</option>
+                <option value="empty">empty</option>
+              </select>
+              <button id="btnImportJobsRefresh">Aktivitätsprotokoll laden</button>
+            </div>
+            <div class="table-wrap">
+              <table id="importJobsTable">
+                <thead>
+                  <tr>
+                    <th>Zeit</th>
+                    <th>Connector</th>
+                    <th>Status</th>
+                    <th class="num">Rows</th>
+                    <th class="num">Imported</th>
+                    <th class="num">Duplikate</th>
+                    <th>Quelle</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div id="importJobDetail" class="notice notice-neutral">Kein Import ausgewählt.</div>
+            <details class="raw-box expert-only">
+              <summary>Source-Dateien Rohübersicht</summary>
               <table id="importSourcesTable">
                 <thead>
                   <tr>
@@ -246,7 +339,7 @@
                 </thead>
                 <tbody></tbody>
               </table>
-            </div>
+            </details>
           </div>
         </div>
         <p class="muted expert-only">Manueller Expert-Import: Events als JSON-Array in <code>raw_events</code> schreiben.</p>
@@ -372,6 +465,11 @@
               <textarea id="wgWallets" rows="4" placeholder="Wallet1&#10;Wallet2"></textarea>
             </label>
           </div>
+          <div>
+            <label>Quellenzuordnung für virtuelle Wallet</label>
+            <p class="muted">Optional: Importquellen auswählen, die zu dieser virtuellen Wallet gehören. Ohne Auswahl nutzt die Wertkurve alle Quellen.</p>
+            <div id="wgSourceFilters" class="chip-row"></div>
+          </div>
           <div class="row">
             <button id="btnWgSave" class="btn-primary">Gruppe speichern</button>
             <button id="btnWgDelete">Gruppe löschen</button>
@@ -428,6 +526,33 @@
 
         <h3>Transfer-Nachverfolgung</h3>
         <p class="muted">Zeigt nachvollziehbar: von welcher Quelle/Wallet ein Transfer kam und wohin er gematcht wurde.</p>
+        <div class="grid">
+          <div class="metric"><span>Legacy HNT gesendet</span><strong id="legacyHntSent">-</strong></div>
+          <div class="metric"><span>Legacy HNT erhalten</span><strong id="legacyHntReceived">-</strong></div>
+          <div class="metric"><span>Gegenparteien</span><strong id="legacyHntCounterparties">-</strong></div>
+          <div class="metric"><span>Legacy Zeitraum</span><strong id="legacyHntRange">-</strong></div>
+        </div>
+        <div class="row">
+          <button id="btnLegacyHntTransfers">Legacy-HNT Transfers laden</button>
+          <span class="muted">Für alte Helium-L1-Transfers vor der Solana-Migration, inkl. Staking-/Rücktransfer-Spuren.</span>
+        </div>
+        <div class="table-wrap">
+          <table id="legacyHntTransferTable">
+            <thead>
+              <tr>
+                <th>Gegenwallet</th>
+                <th class="num">Gesendet HNT</th>
+                <th class="num">Erhalten HNT</th>
+                <th class="num">Fees HNT</th>
+                <th class="num">Netto HNT</th>
+                <th>Von</th>
+                <th>Bis</th>
+                <th>Beispiel</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
         <div class="table-wrap">
           <table id="transferLedgerTable">
             <thead>
@@ -441,11 +566,16 @@
                 <th>Von Wallet</th>
                 <th>An (Plattform)</th>
                 <th>An Wallet</th>
+                <th>Transfer Chain</th>
                 <th>Match</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
+        </div>
+        <div id="transferChainDetail" class="tax-run-preview">
+          <h4>Transfer-Chain Detail</h4>
+          <p class="muted">Klicke auf eine Transfer Chain, um die vollständige interne Transferkette mit Haltefrist-Fortführung zu prüfen.</p>
         </div>
 
       </section>
@@ -478,9 +608,13 @@
             <label>Ruleset
               <input id="rulesetId" value="DE-2026-v1.0" readonly />
             </label>
+            <button id="btnPreflight">Preflight prüfen</button>
             <button id="btnRun" class="btn-primary tax-run-main">Steuerlauf starten</button>
           </div>
           <div id="taxRunPreview" class="tax-run-preview"></div>
+          <div id="preflightPanel" class="notice notice-neutral">
+            Preflight noch nicht geprüft. Vor dem Steuerlauf werden Importdaten, Ruleset, offene Issues und Transfers geprüft.
+          </div>
         </div>
         <div class="row process-toolbar">
           <label>Auto-Refresh
@@ -564,17 +698,28 @@
       </section>
 
       <section class="card step-panel" data-panel="4">
-        <h2>Dashboard</h2>
-        <div class="row">
-          <button id="btnDashRefresh" class="btn-primary">Dashboard aktualisieren</button>
-          <label>Rollenmodus
-            <select id="dashRoleMode">
-              <option value="auto">auto</option>
-              <option value="private">private</option>
-              <option value="business">business</option>
-            </select>
-          </label>
-          <button id="btnDashSaveRole">Rollenmodus speichern</button>
+        <div class="dashboard-toolbar">
+          <div>
+            <h2>Dashboard</h2>
+            <p class="muted">Wähle hier das Steuer-/Analysejahr für Cockpit, Performance, Portfolio-Verlauf und Tabellen.</p>
+          </div>
+          <div class="dashboard-toolbar-controls">
+            <label>Zeitraum / Jahr
+              <select id="dashboardYearMirror">
+                <option value="">Alle Jahre</option>
+              </select>
+            </label>
+            <button id="btnDashboardYearApply" class="btn-primary" type="button">Zeitraum anzeigen</button>
+            <button id="btnDashRefresh">Dashboard aktualisieren</button>
+            <label>Rollenmodus
+              <select id="dashRoleMode">
+                <option value="auto">auto</option>
+                <option value="private">private</option>
+                <option value="business">business</option>
+              </select>
+            </label>
+            <button id="btnDashSaveRole">Rollenmodus speichern</button>
+          </div>
         </div>
         <nav class="review-tabs">
           <button class="review-tab active" data-review-tab="cockpit">Cockpit</button>
@@ -600,6 +745,19 @@
               <ol id="cockpitImportTimeline" class="timeline-list"></ol>
             </div>
           </div>
+          <div class="card compact-card">
+            <div class="section-head">
+              <div>
+                <h4>Operations Status</h4>
+                <p class="muted">Laufende Imports, RPC-Backfill und Steuerjobs mit direktem Sprung zur passenden Bedienseite.</p>
+              </div>
+              <div class="row compact-row">
+                <button id="btnCockpitOpsRefresh">Status aktualisieren</button>
+                <button id="btnCockpitOpenAdminServices">Services öffnen</button>
+              </div>
+            </div>
+            <div id="cockpitOpsGrid" class="ops-grid"></div>
+          </div>
           <div class="grid">
             <div>
               <h4>Portfolio vs Steuerblöcke</h4>
@@ -617,6 +775,16 @@
               </div>
               <p id="cockpitHint" class="muted">Lade Dashboard und Process-Daten für eine vollständige Sicht.</p>
             </div>
+          </div>
+          <div class="card compact-card">
+            <div class="section-head">
+              <div>
+                <h4>Offene Prüfungen</h4>
+                <p class="muted">Priorisierte Issues, die Steuerlauf oder Export fachlich blockieren können.</p>
+              </div>
+              <button id="btnCockpitOpenIssues">Review öffnen</button>
+            </div>
+            <div id="cockpitIssuePile" class="issue-pile"></div>
           </div>
         </section>
 
@@ -655,22 +823,20 @@
             </div>
           </div>
           <div class="card quick-card">
-            <h4>Jahresübersicht: Transaktionen, Volumen und Mengen</h4>
-            <p class="muted">Das ist keine Portfolio-Wertentwicklung. Reine Transfers/Deposits/Withdrawals werden wertseitig nicht als Umsatz gezählt, bleiben aber als Mengenbewegung sichtbar.</p>
+            <h4>Jahresübersicht: Aktivität, Volumen und Mengen</h4>
+            <p class="muted">Wichtig: EUR-Volumen ist Handels-/Bewertungsvolumen, kein Gewinn und kein steuerliches Ergebnis. Gewinne stehen erst nach dem Steuerlauf im Bereich Steuer / Anlage SO.</p>
             <div class="row">
               <label>Jahr
                 <select id="yearlyYearFilter">
                   <option value="">Alle Jahre</option>
                 </select>
               </label>
-              <label>Skalierung
+              <label>Kennzahl
                 <select id="yearlyScaleMode">
-                  <option value="eur" selected>Wirtschaftlicher Wert EUR</option>
-                  <option value="usd">Wirtschaftlicher Wert USD</option>
-                  <option value="trading_eur">Trading/Swap-Volumen EUR</option>
-                  <option value="trading_usd">Trading/Swap-Volumen USD</option>
+                  <option value="events" selected>Transaktionen</option>
+                  <option value="trading_eur">Dedupliziertes Swap-/Handelsvolumen EUR</option>
+                  <option value="trading_usd">Dedupliziertes Swap-/Handelsvolumen USD</option>
                   <option value="quantity_log">Menge normalisiert (log10)</option>
-                  <option value="events">Transaktionen</option>
                 </select>
               </label>
               <label>Asset-Filter<input id="yearlyAssetFilter" placeholder="z. B. SOL, IOT, HNT" /></label>
@@ -679,6 +845,12 @@
             <div>
               <h5>Quellenfilter</h5>
               <p class="muted">Schalte Importquellen ab, um z. B. Blockpit-Referenzdaten getrennt von Solana/Binance/HeliumGeek zu prüfen.</p>
+              <div class="row compact-row">
+                <button id="btnYearlySourcesAll" type="button">Alle Quellen</button>
+                <button id="btnYearlySourcesNone" type="button">Keine Quellen</button>
+                <button id="btnYearlySourcesPrimary" type="button">Nur Primärdaten</button>
+                <span id="yearlySourceSummary" class="muted">Quellen werden nach dem Laden angezeigt.</span>
+              </div>
               <div id="yearlySourceFilter" class="chip-row"></div>
             </div>
             <div class="chart-box">
@@ -726,15 +898,48 @@
                     <th class="num">Menge rein</th>
                     <th class="num">Menge raus</th>
                     <th class="num">Netto</th>
-                    <th class="num">Wert USD</th>
-                    <th class="num">Wert EUR</th>
+                    <th class="num">Wirtschaftl. Wert USD</th>
+                    <th class="num">Wirtschaftl. Wert EUR</th>
                     <th class="num">USD/EUR Ø</th>
                     <th class="num">Trading EUR</th>
-                    <th class="num">Unbewertet</th>
+                    <th class="num">Bewertung fehlt</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
               </table>
+            </div>
+            <div class="card compact-card">
+              <h5>Transaktionssuche mit Wallet-Bezug</h5>
+              <p class="muted">Suche nach TX-ID, Wallet, Asset, Quelle oder Event-Typ. Jede Zeile enthält Source Event ID, Wallet-Felder und Rohdaten-Auszug für Review/Override.</p>
+              <div class="row">
+                <label>Suche<input id="txSearchQ" placeholder="TX, Wallet, JUP, USDC, Bitget..." /></label>
+                <label>Jahr<input id="txSearchYear" placeholder="2024" /></label>
+                <label>Quelle<input id="txSearchSource" placeholder="solana_rpc" /></label>
+                <label>Asset<input id="txSearchAsset" placeholder="JUP" /></label>
+                <label>Wallet<input id="txSearchWallet" placeholder="Wallet-Adresse" /></label>
+                <label>Typ<input id="txSearchType" placeholder="swap" /></label>
+                <button id="btnTxSearch" type="button">Suchen</button>
+              </div>
+              <div class="table-wrap">
+                <table id="transactionSearchTable">
+                  <thead>
+                    <tr>
+                      <th>Zeit</th>
+                      <th>Quelle</th>
+                      <th>Typ</th>
+                      <th>Asset</th>
+                      <th class="num">Menge</th>
+                      <th>Wallet / Gegenwallet</th>
+                      <th>TX</th>
+                      <th class="num">Wert EUR</th>
+                      <th>Source Event ID</th>
+                      <th>Review</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <pre id="transactionSearchDetail" class="log-box">Noch keine Transaktion ausgewählt.</pre>
             </div>
           </div>
           <div class="grid">
@@ -769,6 +974,8 @@
                   <th>Name</th>
                   <th>Group ID</th>
                   <th class="num">Wallets</th>
+                  <th class="num">Quellen</th>
+                  <th class="num">Events</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -892,6 +1099,22 @@
             <label>As-Of UTC<input id="dashLotAsOf" placeholder="2026-12-31T23:59:59Z" /></label>
             <button id="btnLoadLotAging">Lot Aging laden</button>
           </div>
+          <div id="dashLotSummaryCards" class="metrics"></div>
+          <div class="table-wrap">
+            <table id="dashLotAssetSummaryTable">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th class="num">Gesamtmenge</th>
+                  <th class="num">Steuerfrei</th>
+                  <th class="num">Noch steuerpflichtig</th>
+                  <th class="num">Lots</th>
+                  <th class="num">Älteste Haltedauer</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
           <div class="table-wrap">
             <table id="dashLotTable">
               <thead>
@@ -900,6 +1123,8 @@
                   <th class="num">Menge</th>
                   <th>Kaufzeitpunkt</th>
                   <th class="num">Haltedauer (Tage)</th>
+                  <th class="num">Tage bis frei</th>
+                  <th>Fortschritt</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -984,8 +1209,15 @@
         <section class="review-panel hidden" data-review-panel="transfers">
           <h3>Transfers</h3>
           <p class="muted">Zentrale Nachverfolgung für interne Transfers inkl. Quelle/Ziel und Haltefrist-Kontinuität.</p>
+          <div class="grid">
+            <div class="metric"><span>Legacy HNT gesendet</span><strong id="reviewLegacyHntSent">-</strong></div>
+            <div class="metric"><span>Legacy HNT erhalten</span><strong id="reviewLegacyHntReceived">-</strong></div>
+            <div class="metric"><span>Gegenparteien</span><strong id="reviewLegacyHntCounterparties">-</strong></div>
+            <div class="metric"><span>Legacy Zeitraum</span><strong id="reviewLegacyHntRange">-</strong></div>
+          </div>
           <div class="row">
             <button id="btnReviewTransferLoad" class="btn-primary">Transfer-Ledger laden</button>
+            <button id="btnReviewLegacyHntTransfers">Legacy-HNT laden</button>
             <input id="reviewTransferSearch" placeholder="Suche Asset/Wallet/Plattform/Match" />
             <label>Status
               <select id="reviewTransferStatus">
@@ -1030,6 +1262,23 @@
             <button id="btnIssuesCsv">Issues CSV</button>
           </div>
           <div class="table-wrap">
+            <table id="reviewLegacyHntTransferTable">
+              <thead>
+                <tr>
+                  <th>Gegenwallet</th>
+                  <th class="num">Gesendet HNT</th>
+                  <th class="num">Erhalten HNT</th>
+                  <th class="num">Fees HNT</th>
+                  <th class="num">Netto HNT</th>
+                  <th>Von</th>
+                  <th>Bis</th>
+                  <th>Beispiel</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
             <table id="reviewTransferTable">
               <thead>
                 <tr>
@@ -1042,11 +1291,16 @@
                   <th>Von Wallet</th>
                   <th>An (Plattform)</th>
                   <th>An Wallet</th>
+                  <th>Transfer Chain</th>
                   <th>Match</th>
                 </tr>
               </thead>
               <tbody></tbody>
             </table>
+          </div>
+          <div id="reviewTransferChainDetail" class="tax-run-preview">
+            <h4>Transfer-Chain Detail</h4>
+            <p class="muted">Klicke auf eine Transfer Chain, um die vollständige interne Transferkette mit Haltefrist-Fortführung zu prüfen.</p>
           </div>
           <h4>Issue Inbox</h4>
           <div id="issueSummaryCards" class="metrics"></div>
@@ -1099,6 +1353,36 @@
             <ul id="gateWarnings" class="gate-list muted"></ul>
           </div>
 
+          <div class="gate-card">
+            <div class="row">
+              <h4>Report Export</h4>
+              <button id="btnReportFiles" class="btn-primary">Export-Dateien laden</button>
+              <span id="reportFilesInfo" class="muted">Noch keine Export-Dateien geladen.</span>
+            </div>
+            <p class="muted">PDF-Dateien werden automatisch in Teile mit maximal 100 Seiten aufgeteilt. Jede Exportzeile enthält Integritäts- und Ruleset-Referenzen.</p>
+            <div id="reportFilesGrid" class="source-grid"></div>
+          </div>
+
+          <div class="gate-card">
+            <h4>Revisionssicherheit</h4>
+            <div class="row">
+              <label>Vergleichs-Ruleset<input id="compareRulesetId" value="DE-2026-v1.0" /></label>
+              <label>Version<input id="compareRulesetVersion" value="1.0" /></label>
+              <button id="btnCompareRuleset">Ruleset vergleichen</button>
+            </div>
+            <div class="row">
+              <label class="grow">Snapshot-Notiz<input id="snapshotNote" placeholder="z. B. Finaler Entwurf 2026 nach Review" /></label>
+              <button id="btnCreateSnapshot" class="btn-primary">Snapshot erstellen</button>
+            </div>
+            <div class="row">
+              <label class="grow">Snapshot-ID prüfen<input id="snapshotPreviewId" placeholder="snapshot_id" /></label>
+              <button id="btnPreviewSnapshot">Snapshot-Vorschau laden</button>
+              <button id="btnSnapshotRestorePlan">Restore-Plan prüfen</button>
+            </div>
+            <div id="integrityActionResult" class="tax-run-preview"></div>
+            <div id="snapshotPreviewResult" class="tax-run-preview"></div>
+          </div>
+
           <h3>Result Summary</h3>
           <details class="raw-box expert-only">
             <summary>Result Summary (JSON)</summary>
@@ -1125,21 +1409,32 @@
             <pre id="taxDomainSummaryOut" class="muted"></pre>
           </details>
 
-          <h4>Event-Umklassifizierung (Privat/Gewerbe)</h4>
-          <p class="muted">Für Mining/Staking/Rewards kannst du einzelne Events manuell in <code>PRIVATE_SO</code> oder <code>BUSINESS</code> klassifizieren. Nach Änderung bitte Process erneut laufen lassen.</p>
+          <h4>Event-Korrektur (Privat/Gewerbe/Ausschluss)</h4>
+          <p class="muted">RAW-Daten bleiben unverändert. Korrekturen werden als Override mit Pflichtbegründung über die Rohdaten gelegt. <code>EXCLUDED</code> entfernt ein Event nur aus der Steuerberechnung, nicht aus dem Audit-Trail.</p>
           <div class="row">
             <label class="grow">Source Event ID<input id="taxOverrideEventId" placeholder="unique_event_id" /></label>
             <label>Kategorie
               <select id="taxOverrideCategory">
                 <option value="PRIVATE_SO">PRIVATE_SO (Anlage SO)</option>
                 <option value="BUSINESS">BUSINESS (EÜR/Anlage G)</option>
+                <option value="EXCLUDED">EXCLUDED (nicht steuerwirksam)</option>
+              </select>
+            </label>
+            <label>Grund
+              <select id="taxOverrideReason">
+                <option value="">Kein Ausschluss</option>
+                <option value="duplicate_import">Duplikat</option>
+                <option value="wrong_assignment">Falsche Zuordnung</option>
+                <option value="spam_or_dust">Spam/Dust</option>
+                <option value="reference_import_only">Nur Referenzimport</option>
+                <option value="not_tax_relevant">Nicht steuerrelevant</option>
               </select>
             </label>
           </div>
           <div class="row">
             <label class="grow">Notiz<input id="taxOverrideNote" placeholder="Begründung / Dokumentation" /></label>
             <button id="btnTaxOverrideSave" class="btn-primary">Override speichern</button>
-            <button id="btnTaxOverrideDelete">Override löschen</button>
+            <button id="btnTaxOverrideDelete">Override entfernen</button>
             <button id="btnTaxOverrideLoad">Overrides laden</button>
           </div>
           <div class="table-wrap">
@@ -1148,6 +1443,55 @@
                 <tr>
                   <th>Event ID</th>
                   <th>Kategorie</th>
+                  <th>Grund</th>
+                  <th>Notiz</th>
+                  <th>Aktualisiert</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <h4>Review-Aktionen (Zeitzone / Merge / Split)</h4>
+          <p class="muted">Diese Aktionen dokumentieren fachliche Korrekturen versioniert. Zeitzonen-Korrekturen werden beim nächsten Steuerlauf angewendet; Merge/Split dient aktuell als prüfungssichere Review-Entscheidung ohne RAW-Löschung.</p>
+          <div class="row">
+            <label class="grow">Source Event ID<input id="reviewActionEventId" placeholder="unique_event_id" /></label>
+            <label>Korrigierter UTC-Zeitpunkt<input id="reviewTimezoneValue" placeholder="2026-01-01T11:00:00Z" /></label>
+            <label>Grund
+              <select id="reviewActionReason">
+                <option value="timezone_wrong">Zeitzone falsch</option>
+                <option value="source_timezone_cet">Quelle war CET/CEST</option>
+                <option value="same_economic_event">Gleicher wirtschaftlicher Vorgang</option>
+                <option value="bundled_event_split">Gebündeltes Event aufteilen</option>
+                <option value="reference_match">Referenz bestätigt Primärdaten</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <label class="grow">Notiz<input id="reviewActionNote" placeholder="Pflichtbegründung für Audit-Trail" /></label>
+            <button id="btnReviewTimezoneSave">Zeitzone speichern</button>
+            <button id="btnReviewActionsLoad">Review-Aktionen laden</button>
+          </div>
+          <details class="raw-box">
+            <summary>Merge/Split Expertenmodus</summary>
+            <p class="muted">Merge erwartet mehrere Event IDs getrennt durch Komma/Zeilenumbruch. Split erwartet JSON-Teilzeilen. Die Rohdaten bleiben unverändert.</p>
+            <div class="row">
+              <label class="grow">Merge Event IDs<textarea id="reviewMergeEventIds" rows="3" placeholder="event_id_1&#10;event_id_2"></textarea></label>
+              <button id="btnReviewMergeSave">Merge dokumentieren</button>
+            </div>
+            <div class="row">
+              <label class="grow">Split Event ID<input id="reviewSplitEventId" placeholder="unique_event_id" /></label>
+              <label class="grow">Split JSON<textarea id="reviewSplitRows" rows="3" placeholder='[{"asset":"SOL","quantity":"0.5"}]'></textarea></label>
+              <button id="btnReviewSplitSave">Split dokumentieren</button>
+            </div>
+          </details>
+          <div class="table-wrap">
+            <table id="reviewActionTable">
+              <thead>
+                <tr>
+                  <th>Typ</th>
+                  <th>Event(s)</th>
+                  <th>Grund</th>
                   <th>Notiz</th>
                   <th>Aktualisiert</th>
                 </tr>
@@ -1192,6 +1536,8 @@
               <label><input class="col-toggle" data-table-id="taxTable" data-col-key="gain" type="checkbox" checked /> Gewinn/Verlust</label>
               <label><input class="col-toggle" data-table-id="taxTable" data-col-key="hold" type="checkbox" checked /> Haltedauer</label>
               <label><input class="col-toggle" data-table-id="taxTable" data-col-key="status" type="checkbox" checked /> Status</label>
+              <label><input class="col-toggle" data-table-id="taxTable" data-col-key="lot" type="checkbox" /> Lot-Event</label>
+              <label><input class="col-toggle" data-table-id="taxTable" data-col-key="chain" type="checkbox" /> Transfer-Chain</label>
               <label><input class="col-toggle" data-table-id="taxTable" data-col-key="audit" type="checkbox" checked /> Audit</label>
             </div>
           </details>
@@ -1214,6 +1560,8 @@
                   <th class="c-gain">Gewinn/Verlust</th>
                   <th class="c-hold">Haltedauer</th>
                   <th class="c-status">Status</th>
+                  <th class="c-lot">Lot Event</th>
+                  <th class="c-chain">Transfer Chain</th>
                   <th class="c-audit">Audit</th>
                 </tr>
               </thead>
@@ -1284,6 +1632,7 @@
             <button class="admin-tab" data-admin-tab="services">Services</button>
             <button class="admin-tab" data-admin-tab="aliases">Token Aliases</button>
             <button class="admin-tab" data-admin-tab="ignore">Spam/Ignore</button>
+            <button class="admin-tab" data-admin-tab="rulesets">Regelwerke</button>
             <button class="admin-tab" data-admin-tab="security">Security</button>
             <button class="admin-tab" data-admin-tab="raw">Raw Settings</button>
           </aside>
@@ -1351,6 +1700,9 @@
                   <div><span>Letzter Lauf</span><strong id="backfillLastRun">-</strong></div>
                   <div><span>RPC Delay</span><strong id="backfillRpcDelay">-</strong></div>
                   <div><span>Rate-Limits</span><strong id="backfillRateLimits">-</strong></div>
+                  <div><span>Solana Events lokal</span><strong id="backfillCoverageEvents">-</strong></div>
+                  <div><span>Zeitraum lokal</span><strong id="backfillCoverageRange">-</strong></div>
+                  <div><span>Cursor bis Chain-Start</span><strong id="backfillReachedStart">-</strong></div>
                   <div><span>Regler</span><strong id="backfillRateMode">adaptiv</strong></div>
                 </div>
                 <div class="row">
@@ -1421,6 +1773,31 @@
                   <tbody></tbody>
                 </table>
               </div>
+            </section>
+
+            <section class="admin-panel hidden" data-admin-panel="rulesets">
+              <h3>Regelwerke</h3>
+              <p class="muted">Zeigt Freigabestatus und Änderungshistorie je steuerlichem Ruleset. Für finalisierte Reports wird die Ruleset-Version im Audit-Trail gespeichert.</p>
+              <div class="row">
+                <button id="btnRulesetsLoad" class="btn-primary">Regelwerke laden</button>
+                <span id="rulesetInfo" class="muted">Noch nicht geladen.</span>
+              </div>
+              <div class="table-wrap">
+                <table id="rulesetTable">
+                  <thead>
+                    <tr>
+                      <th>Ruleset</th>
+                      <th>Version</th>
+                      <th>Status</th>
+                      <th>Gültig</th>
+                      <th>Freigabe</th>
+                      <th>Änderungen</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div id="rulesetChangeLog" class="tax-run-preview"></div>
             </section>
 
             <section class="admin-panel hidden" data-admin-panel="security">

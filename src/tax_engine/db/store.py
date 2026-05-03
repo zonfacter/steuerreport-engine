@@ -51,8 +51,26 @@ class SQLiteImportStore:
                         column_name="ruleset_version",
                         column_ddl="TEXT NOT NULL DEFAULT ''",
                     )
+                    self._ensure_column(
+                        conn=conn,
+                        table_name="processing_queue",
+                        column_name="config_json",
+                        column_ddl="TEXT NOT NULL DEFAULT '{}'",
+                    )
                 schema_sql = (Path(__file__).with_name("migration_v1.sql")).read_text(encoding="utf-8")
                 conn.executescript(schema_sql)
+                self._ensure_column(
+                    conn=conn,
+                    table_name="tax_lines",
+                    column_name="lot_source_event_id",
+                    column_ddl="TEXT NOT NULL DEFAULT ''",
+                )
+                self._ensure_column(
+                    conn=conn,
+                    table_name="tax_lines",
+                    column_name="transfer_chain_id",
+                    column_ddl="TEXT NOT NULL DEFAULT ''",
+                )
                 self._ensure_table_if_missing(
                     conn=conn,
                     table_name="ruleset_catalog",
@@ -231,6 +249,7 @@ class SQLiteImportStore:
         ruleset_id: str,
         ruleset_version: str | None,
         config_hash: str,
+        config_json: str,
         status: str,
         progress: int,
     ) -> None:
@@ -245,6 +264,7 @@ class SQLiteImportStore:
                     ruleset_id,
                     ruleset_version,
                     config_hash,
+                    config_json,
                     status,
                     progress,
                     current_step,
@@ -252,7 +272,7 @@ class SQLiteImportStore:
                     result_json,
                     created_at_utc,
                     updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -260,6 +280,7 @@ class SQLiteImportStore:
                     ruleset_id,
                     normalized_ruleset_version,
                     config_hash,
+                    config_json,
                     status,
                     progress,
                     "queued",
@@ -403,6 +424,7 @@ class SQLiteImportStore:
                     p.tax_year,
                     p.ruleset_id,
                     p.ruleset_version,
+                    p.config_json,
                     p.status,
                     p.progress,
                     p.current_step,
@@ -435,6 +457,7 @@ class SQLiteImportStore:
                 "tax_year": int(row["tax_year"]),
                 "ruleset_id": row["ruleset_id"],
                 "ruleset_version": str(row["ruleset_version"] or ""),
+                "config": json.loads(row["config_json"] or "{}"),
                 "status": row["status"],
                 "progress": int(row["progress"]),
                 "current_step": row["current_step"],
@@ -465,8 +488,10 @@ class SQLiteImportStore:
                         gain_loss_eur,
                         hold_days,
                         tax_status,
-                        source_event_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        source_event_id,
+                        lot_source_event_id,
+                        transfer_chain_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
@@ -481,6 +506,8 @@ class SQLiteImportStore:
                         int(line["hold_days"]),
                         str(line["tax_status"]),
                         str(line["source_event_id"]),
+                        str(line.get("lot_source_event_id", "")),
+                        str(line.get("transfer_chain_id", "")),
                     ),
                 )
             conn.commit()
@@ -500,7 +527,9 @@ class SQLiteImportStore:
                     gain_loss_eur,
                     hold_days,
                     tax_status,
-                    source_event_id
+                    source_event_id,
+                    lot_source_event_id,
+                    transfer_chain_id
                 FROM tax_lines
                 WHERE job_id = ?
                 ORDER BY line_no ASC
@@ -520,6 +549,8 @@ class SQLiteImportStore:
                 "hold_days": int(row["hold_days"]),
                 "tax_status": row["tax_status"],
                 "source_event_id": row["source_event_id"],
+                "lot_source_event_id": row["lot_source_event_id"],
+                "transfer_chain_id": row["transfer_chain_id"],
             }
             for row in rows
         ]
@@ -539,7 +570,9 @@ class SQLiteImportStore:
                     gain_loss_eur,
                     hold_days,
                     tax_status,
-                    source_event_id
+                    source_event_id,
+                    lot_source_event_id,
+                    transfer_chain_id
                 FROM tax_lines
                 WHERE job_id = ? AND line_no = ?
                 """,
@@ -559,6 +592,8 @@ class SQLiteImportStore:
             "hold_days": int(row["hold_days"]),
             "tax_status": row["tax_status"],
             "source_event_id": row["source_event_id"],
+            "lot_source_event_id": row["lot_source_event_id"],
+            "transfer_chain_id": row["transfer_chain_id"],
         }
 
     def get_raw_event(self, unique_event_id: str) -> dict[str, Any] | None:
@@ -1129,6 +1164,7 @@ class SQLiteImportStore:
                     ruleset_id,
                     ruleset_version,
                     config_hash,
+                    config_json,
                     status,
                     progress,
                     current_step,
@@ -1149,6 +1185,7 @@ class SQLiteImportStore:
             "ruleset_id": row["ruleset_id"],
             "ruleset_version": str(row["ruleset_version"] or ""),
             "config_hash": row["config_hash"],
+            "config": json.loads(row["config_json"] or "{}"),
             "status": row["status"],
             "progress": int(row["progress"]),
             "current_step": row["current_step"],
@@ -1297,6 +1334,35 @@ class SQLiteImportStore:
             "source_rate_date": str(row["source_rate_date"] or ""),
             "updated_at_utc": str(row["updated_at_utc"]),
         }
+
+    def list_fx_rates(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    rate_date,
+                    base_ccy,
+                    quote_ccy,
+                    rate,
+                    source,
+                    source_rate_date,
+                    updated_at_utc
+                FROM fx_cache
+                ORDER BY base_ccy, quote_ccy, rate_date
+                """
+            ).fetchall()
+        return [
+            {
+                "rate_date": str(row["rate_date"]),
+                "base_ccy": str(row["base_ccy"]),
+                "quote_ccy": str(row["quote_ccy"]),
+                "rate": str(row["rate"]),
+                "source": str(row["source"]),
+                "source_rate_date": str(row["source_rate_date"] or ""),
+                "updated_at_utc": str(row["updated_at_utc"]),
+            }
+            for row in rows
+        ]
 
     def get_fx_rate_on_or_before(self, rate_date: str, base_ccy: str, quote_ccy: str) -> dict[str, Any] | None:
         with self._connect() as conn:

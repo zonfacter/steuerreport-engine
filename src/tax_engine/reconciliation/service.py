@@ -6,6 +6,7 @@ from typing import Any
 
 from tax_engine.core.reconciliation import auto_match_transfers, extract_transfer_events
 from tax_engine.ingestion.store import STORE
+from tax_engine.reconciliation.chains import build_transfer_chain_index
 
 
 def _matched_event_ids() -> set[str]:
@@ -94,11 +95,54 @@ def manual_match(outbound_event_id: str, inbound_event_id: str, note: str | None
 
 
 def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    rows = _build_transfer_ledger_rows()
+    total_count = len(rows)
+    start = max(offset, 0)
+    end = start + max(limit, 1)
+    page = rows[start:end]
+    return {
+        "total_count": total_count,
+        "offset": start,
+        "limit": max(limit, 1),
+        "rows": page,
+    }
+
+
+def get_transfer_chain(transfer_chain_id: str) -> dict[str, Any] | None:
+    chain_id = str(transfer_chain_id or "").strip()
+    if not chain_id:
+        return None
+    rows = [row for row in _build_transfer_ledger_rows() if str(row.get("transfer_chain_id", "")) == chain_id]
+    if not rows:
+        return None
+    rows.sort(key=lambda item: str(item.get("timestamp_utc", "")))
+    assets = sorted({str(row.get("asset", "")) for row in rows if str(row.get("asset", ""))})
+    wallets: list[str] = []
+    for row in rows:
+        for key in ("from_depot_id", "to_depot_id"):
+            value = str(row.get(key, "")).strip()
+            if value and value not in wallets:
+                wallets.append(value)
+    return {
+        "transfer_chain_id": chain_id,
+        "row_count": len(rows),
+        "asset_count": len(assets),
+        "assets": assets,
+        "wallet_path": wallets,
+        "first_timestamp_utc": rows[0].get("timestamp_utc", ""),
+        "last_timestamp_utc": rows[-1].get("timestamp_utc", ""),
+        "holding_period_continues": all(str(row.get("holding_period_continues", "")).lower() == "true" for row in rows),
+        "rows": rows,
+    }
+
+
+def _build_transfer_ledger_rows() -> list[dict[str, Any]]:
     raw_events = STORE.list_raw_events()
     transfer_events = extract_transfer_events(raw_events)
     matches = STORE.list_transfer_matches()
     match_by_outbound = {str(item["outbound_event_id"]): item for item in matches}
     inbound_matched_ids = {str(item["inbound_event_id"]) for item in matches}
+    transfer_chain_by_event_id = build_transfer_chain_index(matches)
 
     transfer_ids = [str(item.unique_event_id) for item in transfer_events]
     detail_by_id = _load_event_details(transfer_ids)
@@ -142,6 +186,7 @@ def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
                     "to_depot_id": to_depot,
                     "tx_id": tx_id,
                     "match_id": str(match["match_id"]) if match else "",
+                    "transfer_chain_id": transfer_chain_by_event_id.get(event_id, ""),
                     "method": str(match["method"]) if match else "",
                     "confidence_score": str(match["confidence_score"]) if match else "",
                     "time_diff_seconds": int(match["time_diff_seconds"]) if match else None,
@@ -173,6 +218,7 @@ def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
                 "to_depot_id": from_depot,
                 "tx_id": tx_id,
                 "match_id": "",
+                "transfer_chain_id": transfer_chain_by_event_id.get(event_id, ""),
                 "method": "",
                 "confidence_score": "",
                 "time_diff_seconds": None,
@@ -183,16 +229,7 @@ def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
         )
 
     rows.sort(key=lambda item: str(item.get("timestamp_utc", "")), reverse=True)
-    total_count = len(rows)
-    start = max(offset, 0)
-    end = start + max(limit, 1)
-    page = rows[start:end]
-    return {
-        "total_count": total_count,
-        "offset": start,
-        "limit": max(limit, 1),
-        "rows": page,
-    }
+    return rows
 
 
 def _load_event_details(event_ids: list[str]) -> dict[str, dict[str, Any]]:

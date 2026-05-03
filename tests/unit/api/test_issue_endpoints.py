@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 from tax_engine.api.app import (
+    IntegrationConflictResolveRequest,
     IssueStatusUpdateRequest,
+    ReviewMergeRequest,
+    ReviewSplitRequest,
+    ReviewTimezoneCorrectRequest,
     import_confirm,
     issues_inbox,
     issues_update_status,
     process_run,
     process_worker_run_next,
+    review_actions,
     review_gates,
+    review_integration_conflicts,
+    review_integration_conflicts_resolve,
+    review_merge,
+    review_split,
+    review_timezone_correct,
+    tax_event_overrides_list,
 )
 from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
@@ -134,3 +145,214 @@ def test_issues_inbox_contains_missing_fx_rate_issue(monkeypatch) -> None:
     assert resp.status == "success"
     issues = resp.data.get("issues", [])
     assert any(str(item.get("type")) == "missing_fx_rate" for item in issues)
+
+
+def test_integration_conflicts_compare_reference_and_primary_sources() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="primary.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T12:00:00Z",
+                    "source": "binance",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "0.5",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="blockpit_reference.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T14:00:00Z",
+                    "source": "blockpit",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "0.500000000",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+
+    conflicts = review_integration_conflicts()
+    assert conflicts.status == "success"
+    assert conflicts.data["count"] == 1
+    row = conflicts.data["conflicts"][0]
+    assert row["asset"] == "BTC"
+    assert row["primary_sources"] == ["binance"]
+    assert row["reference_sources"] == ["blockpit"]
+
+    inbox = issues_inbox()
+    assert any(str(item.get("type")) == "integration_conflict" for item in inbox.data.get("issues", []))
+
+
+def test_integration_conflict_resolve_excludes_reference_events() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="primary.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T12:00:00Z",
+                    "source": "binance",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "0.5",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="blockpit_reference.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T14:00:00Z",
+                    "source": "blockpit",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "0.500000000",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+    conflict = review_integration_conflicts().data["conflicts"][0]
+
+    result = review_integration_conflicts_resolve(
+        IntegrationConflictResolveRequest(
+            conflict_ids=[conflict["conflict_id"]],
+            action="exclude_reference_events",
+            reason_code="duplicate_import",
+            note="Blockpit ist nur Referenz, Primärdaten sind vorhanden.",
+        )
+    )
+
+    assert result.status == "success"
+    assert result.data["resolved_count"] == 1
+    assert result.data["excluded_event_count"] == 1
+    overrides = tax_event_overrides_list()
+    assert overrides.data["rows"][0]["tax_category"] == "EXCLUDED"
+    inbox = issues_inbox()
+    conflict_issues = [item for item in inbox.data["issues"] if item["type"] == "integration_conflict"]
+    assert conflict_issues[0]["status"] == "resolved"
+
+
+def test_review_timezone_correction_closes_timezone_issue_and_is_applied() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="timezone.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "amount": "0.1",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+    inbox = issues_inbox()
+    issue = next(item for item in inbox.data.get("issues", []) if item.get("type") == "timezone_conflict")
+    event_id = str(issue["source_event_id"])
+
+    corrected = review_timezone_correct(
+        ReviewTimezoneCorrectRequest(
+            source_event_id=event_id,
+            corrected_timestamp_utc="2026-01-01T11:00:00Z",
+            reason_code="source_timezone_cet",
+            note="Importquelle war CET, nicht UTC.",
+        )
+    )
+    assert corrected.status == "success"
+
+    inbox_after = issues_inbox()
+    assert not any(
+        str(item.get("type")) == "timezone_conflict" and str(item.get("source_event_id")) == event_id
+        for item in inbox_after.data.get("issues", [])
+    )
+
+    from tax_engine.queue import apply_review_actions
+
+    adjusted, summary = apply_review_actions(STORE.list_raw_events())
+    assert summary["timezone_correction_count"] == 1
+    assert adjusted[0]["payload"]["timestamp_utc"] == "2026-01-01T11:00:00+00:00"
+    assert adjusted[0]["payload"]["review_action"] == "timezone_correct"
+
+
+def test_review_merge_and_split_actions_are_persisted_without_raw_delete() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="merge_split.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T12:00:00Z",
+                    "asset": "SOL",
+                    "event_type": "swap_out_aggregated",
+                    "side": "sell",
+                    "amount": "1",
+                    "price_eur": "10",
+                },
+                {
+                    "timestamp_utc": "2026-01-01T12:00:01Z",
+                    "asset": "USDC",
+                    "event_type": "swap_in_aggregated",
+                    "side": "buy",
+                    "amount": "10",
+                    "price_eur": "1",
+                },
+            ],
+        )
+    )
+    event_ids = [str(item["unique_event_id"]) for item in STORE.list_raw_events()]
+
+    merge = review_merge(
+        ReviewMergeRequest(
+            source_event_ids=event_ids,
+            reason_code="same_economic_event",
+            note="Jupiter Multi-Hop als ein wirtschaftlicher Swap.",
+        )
+    )
+    assert merge.status == "success"
+
+    split = review_split(
+        ReviewSplitRequest(
+            source_event_id=event_ids[0],
+            split_rows=[{"asset": "SOL", "quantity": "0.5"}, {"asset": "SOL", "quantity": "0.5"}],
+            reason_code="bundled_event_split",
+            note="Teilvorgaenge fuer Review dokumentiert.",
+        )
+    )
+    assert split.status == "success"
+    assert len(STORE.list_raw_events()) == 2
+
+    actions = review_actions()
+    action_types = {str(item.get("action_type")) for item in actions.data.get("rows", [])}
+    assert {"merge", "split"}.issubset(action_types)
+
+    from tax_engine.queue import apply_review_actions
+
+    adjusted, summary = apply_review_actions(STORE.list_raw_events())
+    assert len(STORE.list_raw_events()) == 2
+    assert summary["merge_annotation_count"] == 1
+    assert summary["split_replacement_count"] == 2
+    split_rows = [item for item in adjusted if ":split:" in str(item["unique_event_id"])]
+    assert [row["payload"]["amount"] for row in split_rows] == ["0.5", "0.5"]
+    assert split_rows[0]["payload"]["review_action_parent_event_id"] == event_ids[0]
+    merged_rows = [item for item in adjusted if item["payload"].get("economic_event_id")]
+    assert len(merged_rows) == 1
