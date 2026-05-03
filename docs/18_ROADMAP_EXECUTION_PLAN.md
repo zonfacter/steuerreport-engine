@@ -24,6 +24,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Die UI zeigt Export-Artefakte im Steuer-Tab als klickbare Karten und bietet Ruleset-Vergleich sowie Snapshot-Erstellung an.
 - Die UI bietet eine nicht-destruktive Snapshot-Vorschau mit Integritätsdaten, Zeilenzahlen und Beispielzeilen.
 - Snapshot-Restore ist als nicht-destruktiver Restore-Plan umgesetzt: Vergleich von Snapshot-Run, aktuellem Run, Report-Integrity, Data-Hash und Config-Hash ohne Überschreiben aktueller Daten.
+- Ruleset-Change-Log ist umgesetzt: `GET /api/v1/rulesets/{ruleset_id}/{ruleset_version}/change-log` liefert Freigabe-/Änderungshistorie; die Admin-UI zeigt Status und Change Log.
 - Lot-Aging ist UI-ready: offene FIFO-Lots zeigen Menge, Anschaffungszeitpunkt, Haltedauer, Tage bis Steuerfreiheit, Fortschritt und Asset-Zusammenfassung.
 - `GET /api/v1/process/options` liefert validierte Steuerlauf-Optionen fuer den Wizard.
 - `POST /api/v1/process/preflight` prueft Importdaten, Ruleset, offene High-Issues, unmatched Transfers und Bewertungsabdeckung vor dem Lauf.
@@ -147,6 +148,7 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 ### 4.1 Ruleset-Vergleich
 - Implementiere Vergleichsrun mit identischem Input, zwei Rulesets (und klarer Differenz-Bericht).
 - `rule_change_log` inkl. Freigabestatus (`draft/approved/deprecated`) anzeigen.
+- Stand: umgesetzt als Ruleset-Change-Log-Endpunkt plus Admin-Ansicht für Status und Änderungshistorie.
 
 ### 4.2 Snapshot- und Versionsmanagement
 - Snapshot-Workflow in UI und API verankern:

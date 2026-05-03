@@ -1584,6 +1584,7 @@
             <button class="admin-tab" data-admin-tab="services">Services</button>
             <button class="admin-tab" data-admin-tab="aliases">Token Aliases</button>
             <button class="admin-tab" data-admin-tab="ignore">Spam/Ignore</button>
+            <button class="admin-tab" data-admin-tab="rulesets">Regelwerke</button>
             <button class="admin-tab" data-admin-tab="security">Security</button>
             <button class="admin-tab" data-admin-tab="raw">Raw Settings</button>
           </aside>
@@ -1724,6 +1725,31 @@
                   <tbody></tbody>
                 </table>
               </div>
+            </section>
+
+            <section class="admin-panel hidden" data-admin-panel="rulesets">
+              <h3>Regelwerke</h3>
+              <p class="muted">Zeigt Freigabestatus und Änderungshistorie je steuerlichem Ruleset. Für finalisierte Reports wird die Ruleset-Version im Audit-Trail gespeichert.</p>
+              <div class="row">
+                <button id="btnRulesetsLoad" class="btn-primary">Regelwerke laden</button>
+                <span id="rulesetInfo" class="muted">Noch nicht geladen.</span>
+              </div>
+              <div class="table-wrap">
+                <table id="rulesetTable">
+                  <thead>
+                    <tr>
+                      <th>Ruleset</th>
+                      <th>Version</th>
+                      <th>Status</th>
+                      <th>Gültig</th>
+                      <th>Freigabe</th>
+                      <th>Änderungen</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div id="rulesetChangeLog" class="tax-run-preview"></div>
             </section>
 
             <section class="admin-panel hidden" data-admin-panel="security">

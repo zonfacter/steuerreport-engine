@@ -35,6 +35,7 @@ from tax_engine.api.app import (
     process_worker_run_next,
     report_export,
     review_gates,
+    ruleset_change_log,
     ruleset_get,
     ruleset_list,
     ruleset_upsert,
@@ -177,8 +178,16 @@ def test_ruleset_catalog_roundtrip_and_validation_paths() -> None:
     assert any(row["ruleset_id"] == "DE-CUSTOM" for row in listed.data["rulesets"])
     fetched = ruleset_get("DE-CUSTOM", "1.0")
     assert fetched.status == "success"
+    change_log = ruleset_change_log("DE-CUSTOM", "1.0")
+    assert change_log.status == "success"
+    assert change_log.data["change_count"] >= 1
+    assert change_log.data["changes"][0]["change_type"] == "created"
+    builtin_change_log = ruleset_change_log("DE-2026-v1.0", "1.0")
+    assert builtin_change_log.status == "success"
+    assert any(item["change_type"] == "approved" for item in builtin_change_log.data["changes"])
     missing = ruleset_get("NOPE", "1.0")
     assert missing.status == "error"
+    assert ruleset_change_log("NOPE", "1.0").errors[0]["code"] == "ruleset_not_found"
 
 
 def test_report_export_integrity_snapshot_and_compliance_paths() -> None:

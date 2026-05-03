@@ -92,6 +92,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - PDF-Teilung und Zeilenanzahl werden direkt in der Oberfläche sichtbar.
 - Revisions-UX ergänzt:
   - Steuer-Tab kann einen aktuellen Lauf gegen ein zweites Ruleset vergleichen.
+  - Neuer Endpoint `GET /api/v1/rulesets/{ruleset_id}/{ruleset_version}/change-log` liefert Änderungshistorie und Freigabestatus je Ruleset.
+  - Admin-UI ergänzt eine Regelwerk-Ansicht mit Status (`draft/approved/deprecated`), Gültigkeitszeitraum und Change-Log-Drilldown.
   - Snapshot-Erstellung aus der Oberfläche ergänzt, inklusive Notizfeld für Nachprüfungsstände.
   - Nicht-destruktive Snapshot-Vorschau ergänzt: Snapshot-ID lädt Integritätsdaten, Steuerjahr, Ruleset, Zeilenzahlen, SO-Zusammenfassung und Beispielzeilen.
   - Neuer Endpoint `POST /api/v1/snapshots/restore-plan/{snapshot_id}` erstellt einen nicht-destruktiven Wiederherstellungsplan mit Vergleich von Snapshot-Run, aktuellem Run, Report-Integrity, Data-Hash und Config-Hash.

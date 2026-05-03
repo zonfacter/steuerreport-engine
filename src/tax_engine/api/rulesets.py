@@ -187,3 +187,114 @@ def ruleset_get(ruleset_id: str, ruleset_version: str) -> StandardResponse:
         data = _format_ruleset_row(row, include_status=True)
 
     return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
+
+
+@router.get("/{ruleset_id}/{ruleset_version}/change-log", response_model=StandardResponse)
+def ruleset_change_log(ruleset_id: str, ruleset_version: str) -> StandardResponse:
+    trace_id = str(uuid4())
+    registry = build_default_registry()
+    row = STORE.get_ruleset(ruleset_id=ruleset_id, ruleset_version=ruleset_version)
+    ruleset_data: dict[str, Any] | None = None
+    source = "catalog"
+    if row is not None:
+        ruleset_data = _format_ruleset_row(row, include_status=True)
+    else:
+        try:
+            ruleset = registry.get(ruleset_id, ruleset_version)
+            ruleset_data = ruleset.to_dict()
+            ruleset_data.update(
+                {
+                    "status": "approved",
+                    "source_hash": ruleset_fingerprint(ruleset)[:128],
+                    "approved_by": "builtin",
+                    "notes": "Eingebautes DE-Standard-Ruleset.",
+                    "created_at_utc": "",
+                }
+            )
+            source = "builtin"
+        except Exception:
+            ruleset_data = None
+    if ruleset_data is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "ruleset_not_found", "message": f"Ruleset {ruleset_id} v{ruleset_version} not found"}],
+            warnings=[],
+        )
+
+    changes = _build_ruleset_change_log(ruleset_data=ruleset_data, source=source)
+    write_audit(
+        trace_id=trace_id,
+        action="rulesets.change_log",
+        payload={"ruleset_id": ruleset_id, "ruleset_version": ruleset_version, "change_count": len(changes)},
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "ruleset_id": ruleset_data["ruleset_id"],
+            "ruleset_version": ruleset_data["ruleset_version"],
+            "status": ruleset_data.get("status", "draft"),
+            "source": source,
+            "source_hash": ruleset_data.get("source_hash", ""),
+            "change_count": len(changes),
+            "changes": changes,
+        },
+        errors=[],
+        warnings=[],
+    )
+
+
+def _build_ruleset_change_log(ruleset_data: dict[str, Any], source: str) -> list[dict[str, Any]]:
+    created_at = str(ruleset_data.get("created_at_utc") or "")
+    ruleset_id = str(ruleset_data.get("ruleset_id") or "")
+    version = str(ruleset_data.get("ruleset_version") or "")
+    status = str(ruleset_data.get("status") or "draft")
+    changes: list[dict[str, Any]] = [
+        {
+            "change_type": "created",
+            "changed_at_utc": created_at,
+            "status": status,
+            "summary": f"Ruleset {ruleset_id} v{version} angelegt.",
+            "details": {
+                "valid_from": ruleset_data.get("valid_from", ""),
+                "valid_to": ruleset_data.get("valid_to", ""),
+                "source": source,
+            },
+        }
+    ]
+    if source == "builtin":
+        changes.append(
+            {
+                "change_type": "approved",
+                "changed_at_utc": created_at,
+                "status": "approved",
+                "summary": "Eingebautes Standard-Ruleset ist für Berechnungen freigegeben.",
+                "details": {"approved_by": "builtin", "source_hash": ruleset_data.get("source_hash", "")},
+            }
+        )
+    elif status in {"approved", "active"}:
+        changes.append(
+            {
+                "change_type": "approved",
+                "changed_at_utc": created_at,
+                "status": status,
+                "summary": "Ruleset wurde freigegeben.",
+                "details": {
+                    "approved_by": ruleset_data.get("approved_by", ""),
+                    "source_hash": ruleset_data.get("source_hash", ""),
+                },
+            }
+        )
+    elif status in {"deprecated", "disabled"}:
+        changes.append(
+            {
+                "change_type": "deprecated",
+                "changed_at_utc": created_at,
+                "status": status,
+                "summary": "Ruleset ist veraltet oder deaktiviert.",
+                "details": {"notes": ruleset_data.get("notes", "")},
+            }
+        )
+    return changes

@@ -37,6 +37,7 @@ const state = {
     runtime: null,
     aliases: [],
     ignoredTokens: [],
+    rulesets: [],
     backfillService: null,
   },
   walletGroups: [],
@@ -1852,6 +1853,7 @@ async function loadAdminData() {
   await loadBackfillService();
   await loadTokenAliases();
   await loadIgnoredTokens();
+  await loadRulesets(true);
   const lastTokens = state.dashboard?.last_live_tokens ?? [];
   if (Array.isArray(lastTokens) && lastTokens.length > 0) {
     renderLiveTokenTable(lastTokens);
@@ -3791,6 +3793,89 @@ async function loadIgnoredTokens() {
   if (res?.status !== "success") return;
   state.admin.ignoredTokens = res.data?.ignored_tokens ?? [];
   renderIgnoreTable(state.admin.ignoredTokens);
+}
+
+function renderRulesetTable(rows) {
+  const tbody = el("rulesetTable")?.querySelector("tbody");
+  const info = el("rulesetInfo");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (rows || []).forEach((item) => {
+    const tr = document.createElement("tr");
+    const status = item.status || "builtin";
+    const statusClass = status === "approved" || status === "active" || status === "builtin"
+      ? "status-badge status-alias"
+      : status === "deprecated"
+        ? "status-badge status-fail"
+        : "status-badge status-default";
+    tr.innerHTML = `
+      <td>${escapeHtml(item.ruleset_id || "")}</td>
+      <td>${escapeHtml(item.ruleset_version || "")}</td>
+      <td><span class="${statusClass}">${escapeHtml(status)}</span></td>
+      <td>${escapeHtml(item.valid_from || "")} bis ${escapeHtml(item.valid_to || "")}</td>
+      <td>${escapeHtml(item.approved_by || item.source_hash || "-")}</td>
+      <td><button type="button" class="btn-small btn-ruleset-changelog" data-ruleset-id="${escapeHtml(item.ruleset_id || "")}" data-ruleset-version="${escapeHtml(item.ruleset_version || "")}">Change Log</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!(rows || []).length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6">Keine Regelwerke gefunden.</td>';
+    tbody.appendChild(tr);
+  }
+  if (info) info.textContent = rows?.length ? `${rows.length} Regelwerke geladen.` : "Keine Regelwerke geladen.";
+}
+
+async function loadRulesets(silent = true) {
+  const res = await callApi("/api/v1/rulesets?include_pending=true", "GET", null, null, silent);
+  if (res?.status !== "success") return;
+  state.admin.rulesets = res.data?.rulesets ?? [];
+  renderRulesetTable(state.admin.rulesets);
+}
+
+async function loadRulesetChangeLog(rulesetId, rulesetVersion, trigger = null) {
+  const id = String(rulesetId || "").trim();
+  const version = String(rulesetVersion || "").trim();
+  if (!id || !version) return;
+  const res = await callApi(
+    `/api/v1/rulesets/${encodeURIComponent(id)}/${encodeURIComponent(version)}/change-log`,
+    "GET",
+    null,
+    trigger
+  );
+  if (res?.status !== "success") return;
+  renderRulesetChangeLog(res.data || {});
+}
+
+function renderRulesetChangeLog(data) {
+  const host = el("rulesetChangeLog");
+  if (!host) return;
+  const rows = data.changes || [];
+  host.innerHTML = `
+    <h4>Ruleset Change Log</h4>
+    <div class="metrics">
+      <div class="metric"><span>Ruleset</span><strong>${escapeHtml(data.ruleset_id || "-")}</strong></div>
+      <div class="metric"><span>Version</span><strong>${escapeHtml(data.ruleset_version || "-")}</strong></div>
+      <div class="metric"><span>Status</span><strong>${escapeHtml(data.status || "-")}</strong></div>
+      <div class="metric"><span>Quelle</span><strong>${escapeHtml(data.source || "-")}</strong></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Typ</th><th>Zeit</th><th>Status</th><th>Zusammenfassung</th><th>Details</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.change_type || "")}</td>
+              <td>${escapeHtml(row.changed_at_utc || "-")}</td>
+              <td>${escapeHtml(row.status || "")}</td>
+              <td>${escapeHtml(row.summary || "")}</td>
+              <td><code>${escapeHtml(JSON.stringify(row.details || {}))}</code></td>
+            </tr>
+          `).join("") || '<tr><td colspan="5">Keine Änderungen dokumentiert.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 async function loadTaxAudit(lineNo) {
@@ -5798,6 +5883,17 @@ async function loadUnmatched() {
 
   el("btnAdminRefresh").addEventListener("click", async () => {
     await loadAdminData();
+  });
+  el("btnRulesetsLoad")?.addEventListener("click", async () => {
+    await loadRulesets(false);
+    showToast("Regelwerke geladen.", "ok");
+  });
+  el("rulesetTable")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const btn = target.closest(".btn-ruleset-changelog");
+    if (!(btn instanceof HTMLElement)) return;
+    await loadRulesetChangeLog(btn.dataset.rulesetId || "", btn.dataset.rulesetVersion || "", btn);
   });
 
   el("btnBackfillRefresh").addEventListener("click", async () => {
