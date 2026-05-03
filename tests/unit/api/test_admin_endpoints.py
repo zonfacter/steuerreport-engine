@@ -29,6 +29,7 @@ from tax_engine.api.app import (
     admin_token_aliases_upsert,
     dashboard_overview,
     dashboard_role_override,
+    dashboard_shell,
     dashboard_transaction_search,
     portfolio_helium_legacy_transfers,
 )
@@ -102,6 +103,32 @@ def test_dashboard_role_override_and_overview() -> None:
     role = overview_resp.data.get("role_detection", {})
     assert role.get("override_mode") == "business"
     assert role.get("effective_mode") == "business"
+
+
+def test_dashboard_shell_returns_lightweight_dashboard_contract() -> None:
+    _reset_store()
+    confirm_import(
+        "shell-test",
+        [
+            {
+                "timestamp_utc": "2024-01-01T00:00:00+00:00",
+                "asset": "SOL",
+                "quantity": "2",
+                "side": "in",
+                "event_type": "deposit",
+                "source": "solana_rpc",
+            }
+        ],
+    )
+
+    response = dashboard_shell()
+
+    assert response.status == "success"
+    assert response.data["summary"]["is_partial"] is True
+    assert response.data["summary"]["suggested_tax_year"] == 2024
+    assert response.data["activity_years"] == [{"year": 2024, "count": 1}]
+    assert response.data["yearly_asset_activity"] == {}
+    assert response.data["portfolio_value_history"] == []
 
 
 def test_dashboard_transaction_search_filters_wallet_tx_and_asset() -> None:

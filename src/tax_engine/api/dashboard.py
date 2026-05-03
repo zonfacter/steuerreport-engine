@@ -295,6 +295,103 @@ def dashboard_overview() -> StandardResponse:
     return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
 
 
+@router.get("/api/v1/dashboard/shell", response_model=StandardResponse, tags=["dashboard"])
+def dashboard_shell() -> StandardResponse:
+    trace_id = str(uuid4())
+    events = STORE.list_raw_events()
+    by_source: dict[str, int] = {}
+    by_event_type: dict[str, int] = {}
+    by_day: dict[str, int] = {}
+    by_year: dict[int, int] = {}
+    asset_balances: dict[str, Decimal] = {}
+    reward_events = 0
+    mining_events = 0
+    ignored_mints = set(_load_ignored_tokens().keys())
+
+    for row in events:
+        payload = row.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        source = str(payload.get("source") or "unknown")
+        event_type = str(payload.get("event_type") or "unknown")
+        by_source[source] = by_source.get(source, 0) + 1
+        by_event_type[event_type] = by_event_type.get(event_type, 0) + 1
+        ts_raw = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")
+        day = ts_raw[:10] if len(ts_raw) >= 10 else "unknown"
+        by_day[day] = by_day.get(day, 0) + 1
+        year = _extract_year(ts_raw)
+        if year is not None:
+            by_year[year] = by_year.get(year, 0) + 1
+        asset = str(payload.get("asset") or "").upper()
+        if asset and _normalize_mint(asset) not in ignored_mints:
+            qty = _dashboard_event_quantity(payload)
+            side = str(payload.get("side") or "").lower()
+            sign = Decimal("1") if side == "in" else Decimal("-1") if side == "out" else Decimal("0")
+            if sign != 0:
+                asset_balances[asset] = asset_balances.get(asset, Decimal("0")) + (sign * qty)
+        lowered = event_type.lower()
+        if any(tag in lowered for tag in ("reward", "claim", "staking", "income")):
+            reward_events += 1
+        if "mining" in lowered:
+            mining_events += 1
+
+    balances: list[dict[str, str]] = []
+    for asset, qty in sorted(asset_balances.items(), key=lambda item: abs(item[1]), reverse=True)[:20]:
+        meta = _resolve_token_display(asset)
+        balances.append(
+            {
+                "asset": asset,
+                "symbol": str(meta["symbol"]),
+                "name": str(meta["name"]),
+                "display_source": str(meta["display_source"]),
+                "quantity": _decimal_to_plain(qty),
+                "quantity_abs": _decimal_to_plain(abs(qty)),
+                "flow_direction": "net_in" if qty > 0 else ("net_out" if qty < 0 else "flat"),
+                "spam_candidate": "true" if _is_spam_candidate(asset=asset, qty=qty, known=meta["is_known"]) else "false",
+            }
+        )
+
+    override_mode = _load_dashboard_role_override()
+    auto_business = (reward_events > 0 and len(events) >= 500) or mining_events > 0
+    detected_mode = "business" if auto_business else "private"
+    effective_mode = detected_mode if override_mode == "auto" else override_mode
+    activity_history = [{"day": day, "count": count} for day, count in sorted(by_day.items()) if day != "unknown"]
+    activity_years = [{"year": year, "count": count} for year, count in sorted(by_year.items())]
+    data = {
+        "summary": {
+            "total_events": len(events),
+            "unique_sources": len(by_source),
+            "unique_event_types": len(by_event_type),
+            "unique_assets": len({item["asset"] for item in balances}),
+            "suggested_tax_year": max(by_year.keys()) if by_year else None,
+            "is_partial": True,
+        },
+        "role_detection": {
+            "is_commercial": effective_mode == "business",
+            "detected_mode": detected_mode,
+            "override_mode": override_mode,
+            "effective_mode": effective_mode,
+            "signals": {
+                "has_reward_events": reward_events > 0,
+                "reward_events": reward_events,
+                "mining_events": mining_events,
+                "high_activity": len(events) >= 500,
+                "event_count": len(events),
+            },
+        },
+        "by_source": by_source,
+        "by_event_type": by_event_type,
+        "activity_history": activity_history,
+        "activity_years": activity_years,
+        "portfolio_value_history": [],
+        "yearly_asset_activity": {},
+        "asset_balances": balances,
+        "wallet_groups": _decorate_wallet_groups_with_sources(_load_wallet_groups(), by_source),
+    }
+    write_audit(trace_id=trace_id, action="dashboard.shell", payload={"total_events": len(events)})
+    return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
+
+
 def _decorate_wallet_groups_with_sources(groups: list[dict[str, Any]], by_source: dict[str, int]) -> list[dict[str, Any]]:
     available_sources = set(by_source.keys())
     decorated: list[dict[str, Any]] = []

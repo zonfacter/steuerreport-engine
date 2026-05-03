@@ -344,6 +344,16 @@ function currencyLabel() {
   return displayCurrency().toUpperCase();
 }
 
+function dashboardYearFilter() {
+  return String(el("globalYearFilter")?.value || "").trim();
+}
+
+function filterRowsByDashboardYear(rows, field = "year") {
+  const selectedYear = dashboardYearFilter();
+  if (!selectedYear) return Array.isArray(rows) ? rows : [];
+  return (Array.isArray(rows) ? rows : []).filter((row) => String(row?.[field] || "") === selectedYear);
+}
+
 function prefKey(name) {
   return `ui.pref.${name}`;
 }
@@ -724,6 +734,7 @@ function savePresets(scope, value) {
 function collectCurrentViewState() {
   const fields = [
     "uiDisplayCurrency",
+    "globalYearFilter",
     "dashTokenSearch",
     "dashTokenStatusFilter",
     "dashTokenSort",
@@ -890,13 +901,18 @@ function updateMetrics(data) {
 function renderDashboard(data) {
   if (!data) return;
   state.dashboard = data;
+  populateGlobalYearFilter(data.activity_years ?? []);
   const summary = data.summary || {};
   const role = data.role_detection || {};
   const signals = role.signals || {};
-  el("dTotalEvents").textContent = String(summary.total_events ?? "-");
+  const selectedYear = dashboardYearFilter();
+  const yearly = selectedYear ? (data.activity_years ?? []).find((item) => String(item.year || "") === selectedYear) : null;
+  el("dTotalEvents").textContent = String(yearly?.count ?? summary.total_events ?? "-");
   el("dAssets").textContent = String(summary.unique_assets ?? "-");
   el("dRole").textContent = String(role.effective_mode ?? "-");
-  el("dSignals").textContent = `reward:${signals.reward_events ?? 0} / events:${signals.event_count ?? 0}`;
+  el("dSignals").textContent = selectedYear
+    ? `Jahr ${selectedYear} / events:${yearly?.count ?? 0}`
+    : `reward:${signals.reward_events ?? 0} / events:${signals.event_count ?? 0}`;
   el("dSuggestedTaxYear").textContent = String(summary.suggested_tax_year ?? "-");
   el("dashRoleMode").value = String(role.override_mode ?? "auto");
   renderActivityDailyChart(data.activity_history ?? []);
@@ -912,6 +928,46 @@ function renderDashboard(data) {
   renderMiningPanel();
   renderTradingPanel();
   updateWorkflowGuide();
+}
+
+function populateGlobalYearFilter(activityYears) {
+  const select = el("globalYearFilter");
+  if (!select) return;
+  const current = select.value || loadPref("field.globalYearFilter", "");
+  const years = (Array.isArray(activityYears) ? activityYears : [])
+    .map((item) => String(item.year || ""))
+    .filter(Boolean)
+    .sort();
+  const signature = years.join("|");
+  if (select.dataset.signature !== signature) {
+    select.dataset.signature = signature;
+    select.innerHTML = '<option value="">Alle Jahre</option>';
+    years.forEach((year) => {
+      const option = document.createElement("option");
+      option.value = year;
+      option.textContent = year;
+      select.appendChild(option);
+    });
+  }
+  if (current && years.includes(current)) {
+    select.value = current;
+  } else if (!current) {
+    select.value = "";
+  }
+  syncDashboardYearControls(false);
+}
+
+function syncDashboardYearControls(updateTaxYear = true) {
+  const selectedYear = dashboardYearFilter();
+  if (el("yearlyYearFilter")) {
+    el("yearlyYearFilter").value = selectedYear;
+  }
+  if (updateTaxYear && selectedYear && el("taxYear")) {
+    el("taxYear").value = selectedYear;
+    syncTaxRunSelection();
+    savePref("field.taxYear", selectedYear);
+  }
+  savePref("field.globalYearFilter", selectedYear);
 }
 
 async function refreshUsdEurRateBestEffort() {
@@ -1974,12 +2030,22 @@ async function controlBackfillService(action, button) {
 }
 
 async function loadDashboard() {
+  const shell = await callApi("/api/v1/dashboard/shell", "GET", null, null, true);
+  if (shell?.status === "success") {
+    renderDashboard({ ...(state.dashboard || {}), ...shell.data });
+  }
   const res = await callApi("/api/v1/dashboard/overview", "GET", null, null, true);
   if (res?.status === "success") {
     renderDashboard(res.data);
     loadLegacyHntTransfers(true);
     const suggestedYear = res.data?.summary?.suggested_tax_year;
     const currentTaxYear = el("taxYear").value.trim();
+    const currentDashboardYear = dashboardYearFilter();
+    if (suggestedYear && !currentDashboardYear) {
+      el("globalYearFilter").value = String(suggestedYear);
+      syncDashboardYearControls(false);
+      renderDashboard(state.dashboard);
+    }
     if (suggestedYear && (!currentTaxYear || currentTaxYear === "2026")) {
       el("taxYear").value = String(suggestedYear);
       syncTaxRunSelection();
@@ -2366,8 +2432,10 @@ function buildChart(id, config) {
 }
 
 function renderActivityDailyChart(rows) {
-  const labels = rows.map((item) => String(item.day || "").slice(5));
-  const data = rows.map((item) => Number(item.count || 0));
+  const selectedYear = dashboardYearFilter();
+  const visible = selectedYear ? rows.filter((item) => String(item.day || "").startsWith(`${selectedYear}-`)) : rows;
+  const labels = visible.map((item) => String(item.day || "").slice(selectedYear ? 5 : 0));
+  const data = visible.map((item) => Number(item.count || 0));
   buildChart("chartActivityDaily", {
     type: "line",
     data: {
@@ -2391,11 +2459,17 @@ function renderActivityDailyChart(rows) {
 function renderActivityYearlyChart(rows) {
   const labels = rows.map((item) => String(item.year || ""));
   const data = rows.map((item) => Number(item.count || 0));
+  const selectedYear = dashboardYearFilter();
   buildChart("chartActivityYearly", {
     type: "bar",
     data: {
       labels,
-      datasets: [{ data, backgroundColor: ["#89b5e7", "#5f9ee0", "#367fcf", "#225d9f"], borderColor: "#2f6ead", borderWidth: 1 }],
+      datasets: [{
+        data,
+        backgroundColor: labels.map((year) => selectedYear && year !== selectedYear ? "rgba(137,181,231,0.35)" : "#367fcf"),
+        borderColor: "#2f6ead",
+        borderWidth: 1,
+      }],
     },
     options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
   });
@@ -2409,7 +2483,10 @@ function renderYearlyAssetActivity(activity) {
   const filter = (el("yearlyAssetFilter")?.value || "").trim().toLowerCase();
   populateYearlyYearFilter(activity?.years ?? [], rows);
   populateYearlySourceFilter(sourceBreakdown, rows);
-  const selectedYear = (el("yearlyYearFilter")?.value || "").trim();
+  const selectedYear = dashboardYearFilter() || (el("yearlyYearFilter")?.value || "").trim();
+  if (el("yearlyYearFilter") && el("yearlyYearFilter").value !== selectedYear) {
+    el("yearlyYearFilter").value = selectedYear;
+  }
   const selectedSources = selectedYearlySources(sourceBreakdown, rows);
   const sourceFilterActive = selectedSources.active;
   const mode = normalizeYearlyScaleMode(el("yearlyScaleMode")?.value || "events");
@@ -3327,12 +3404,16 @@ function renderCockpit() {
   const euer = tax.euer || {};
   const term = tax.termingeschaefte || {};
   const cls = tax.classification_counts || {};
+  const selectedYear = dashboardYearFilter();
+  const yearCount = selectedYear
+    ? (dashboard.activity_years || []).find((item) => String(item.year || "") === selectedYear)?.count
+    : null;
 
   const host = el("cockpitMainKpis");
   if (!host) return;
   host.innerHTML = "";
   const cards = [
-    { label: "Events Gesamt", value: formatQty(s.total_events || 0), sub: "importiert" },
+    { label: selectedYear ? `Events ${selectedYear}` : "Events Gesamt", value: formatQty(yearCount ?? s.total_events ?? 0), sub: selectedYear ? "Zeitraumfilter" : "importiert" },
     { label: "Assets", value: formatQty(s.unique_assets || 0), sub: "erkannt" },
     { label: "SO Netto", value: formatMoney(toNumber(anlage.private_veraeusserung_net_taxable_eur || 0)), sub: "Anlage SO" },
     { label: "EÜR Ergebnis", value: formatMoney(toNumber(euer.betriebsergebnis_eur || 0)), sub: "betrieblich" },
@@ -4451,6 +4532,7 @@ function init() {
   setExpertMode(expertMode);
   [
     ["uiDisplayCurrency", "eur"],
+    ["globalYearFilter", ""],
     ["dashTokenSearch", ""],
     ["dashTokenStatusFilter", ""],
     ["dashTokenSort", "usd_desc"],
@@ -5689,7 +5771,23 @@ async function loadUnmatched() {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
   });
   el("yearlyYearFilter")?.addEventListener("change", () => {
+    if (el("globalYearFilter")) {
+      el("globalYearFilter").value = el("yearlyYearFilter")?.value || "";
+      syncDashboardYearControls();
+    }
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
+    renderDashboard(state.dashboard);
+  });
+  el("globalYearFilter")?.addEventListener("change", () => {
+    syncDashboardYearControls();
+    renderDashboard(state.dashboard);
+    if (currentJobId()) void loadTaxDomainSummary(currentJobId(), true);
+  });
+  el("btnGlobalYearApply")?.addEventListener("click", async () => {
+    syncDashboardYearControls();
+    renderDashboard(state.dashboard);
+    if (currentJobId()) await loadTaxDomainSummary(currentJobId(), true);
+    showToast(dashboardYearFilter() ? `Dashboard-Zeitraum ${dashboardYearFilter()} aktiv.` : "Dashboard zeigt alle Jahre.", "ok");
   });
   el("yearlyAssetFilter")?.addEventListener("input", () => {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
@@ -5797,6 +5895,11 @@ async function loadUnmatched() {
   el("taxYear")?.addEventListener("change", () => {
     syncTaxRunSelection();
     savePref("field.taxYear", el("taxYear")?.value || "2026");
+    if (el("globalYearFilter")) {
+      el("globalYearFilter").value = el("taxYear")?.value || "";
+      syncDashboardYearControls(false);
+      renderDashboard(state.dashboard);
+    }
   });
   el("cwSolanaFocus")?.addEventListener("click", () => {
     openSettingsPanel("solanaSettings", "solWallet");

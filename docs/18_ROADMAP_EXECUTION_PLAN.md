@@ -47,6 +47,8 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Das Cockpit enthält eine Operations-Statusleiste für Solana-Backfill, Import-Aktivität und Steuerjobs inklusive RPC-Delay/Rate-Limit-Hinweis und direktem Sprung zur passenden Bedienseite.
 - Import-Jobs liefern Statusgrund, Severity und Retry-Hinweis; die Import-Detailansicht zeigt diese Angaben direkt für manuelle Wiederholung oder Quellenprüfung.
 - Dashboard-Bewertung nutzt Request-lokale FX-/Asset-Preis-Caches; weiterer Performance-Hebel bleibt die Aufteilung von `dashboard_overview` in kleinere, separat ladbare Widgets.
+- Dashboard-Zeitraumsteuerung ist global verfügbar: Jahr im Kopfbereich wählen, Performance/Jahresanalyse/Portfolio-Verlauf und Steuerjahr laufen synchron.
+- Erster Split-Endpunkt umgesetzt: `GET /api/v1/dashboard/shell` liefert schnelle Cockpit-Grunddaten, während die schwere Bewertungsübersicht nachgeladen werden kann.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)

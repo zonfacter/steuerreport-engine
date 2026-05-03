@@ -45,6 +45,11 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
 - Dashboard-Performance verbessert:
   - Dashboard-Bewertung nutzt innerhalb eines Requests FX-/Asset-Preis-Caches, statt dieselben Kursabfragen pro Event mehrfach gegen SQLite auszuführen.
   - Zusätzlich kann der lokale `fx_cache` für Dashboard-Auswertungen vorab in einen Lookup geladen werden.
+  - Neuer leichter Endpoint `GET /api/v1/dashboard/shell` liefert Cockpit-Grunddaten ohne schwere Jahres-/Bewertungsaggregation.
+- Globale Dashboard-Zeitraumsteuerung ergänzt:
+  - Neuer globaler Jahresfilter im Dashboard-Kopfbereich.
+  - Auswahl synchronisiert Performance-Ansichten, Jahresübersicht, Portfolio-Verlauf und Steuerjahr-Auswahl.
+  - Jahresdiagramm hebt das gewählte Jahr hervor; Tagesaktivität und Portfolio-Verlauf werden auf das Jahr gefiltert.
 - Integrationssteuerung ergänzt:
   - `GET /api/v1/portfolio/integrations` liefert jetzt pro Quelle den steuerlichen Modus `active`, `reference` oder `disabled`.
   - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.
