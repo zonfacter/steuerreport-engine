@@ -37,6 +37,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Review-Ignore und Review-Kommentare sind als auditierbare Endpunkte umgesetzt; Ausschlüsse verlangen Pflichtgrund und Notiz, Raw Events werden nicht gelöscht.
 - Die Transaktionssuche kann Events direkt in den Korrektur-/Ausschlussdialog übernehmen.
 - Versionierte Review-Actions sind umgesetzt: Zeitzonen-Korrekturen werden beim Steuerlauf angewendet; Merge/Split-Entscheidungen werden ohne RAW-Löschung auditierbar dokumentiert.
+- Review-Merge/Split wird in der Steuer-Arbeitskopie angewendet: Merge annotiert Events mit gemeinsamer `economic_event_id`, Split ersetzt ein Rohereignis durch dokumentierte Teil-Events.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)
@@ -181,6 +182,6 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 
 ## Nächste konkrete Arbeitspakete (Backlog)
 1. Snapshot-Wiederherstellungsworkflow mit explizitem, nicht destruktivem Restore-Plan modellieren: umgesetzt als `POST /api/v1/snapshots/restore-plan/{snapshot_id}`.
-2. Review-Merge/Split fachlich auf die Steuer-Arbeitskopie anwenden, sobald die genaue Split-Semantik je Connector definiert ist.
+2. Review-Merge/Split fachlich auf die Steuer-Arbeitskopie anwenden: Basis umgesetzt, connector-spezifische Feinschemata bleiben Erweiterung.
 3. Integrations-Konfliktcenter um manuelle Massenentscheidung erweitern: umgesetzt für markierte Konfliktgruppen mit `exclude_reference_events`, `disable_reference_sources` und `confirm_reference_only`.
 4. Transfer-Chain-Detailansicht ergänzen: vollständige mehrstufige Timeline pro Chain-ID statt nur direkter Zeile.

@@ -74,37 +74,82 @@ def _load_review_actions() -> dict[str, dict[str, Any]]:
 def apply_review_actions(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     actions = _load_review_actions()
     timezone_corrections = actions.get("timezone_corrections", {})
-    if not timezone_corrections:
-        return raw_events, {"timezone_correction_count": 0}
+    merges = actions.get("merges", {})
+    splits = actions.get("splits", {})
+    if not timezone_corrections and not merges and not splits:
+        return raw_events, {"timezone_correction_count": 0, "merge_annotation_count": 0, "split_replacement_count": 0}
+
+    merge_index: dict[str, dict[str, Any]] = {}
+    for action_id, merge in merges.items():
+        if not isinstance(merge, dict):
+            continue
+        for event_id in merge.get("source_event_ids", []):
+            event_id_str = str(event_id or "").strip()
+            if event_id_str:
+                merge_index[event_id_str] = {"action_id": str(action_id), **merge}
 
     transformed: list[dict[str, Any]] = []
     applied_timezone = 0
+    applied_merges = 0
+    applied_splits = 0
     for event in raw_events:
         event_id = str(event.get("unique_event_id", "")).strip()
+        split_action = splits.get(event_id)
+        if isinstance(split_action, dict):
+            payload = event.get("payload", {})
+            split_rows = split_action.get("split_rows", [])
+            if isinstance(payload, dict) and isinstance(split_rows, list) and split_rows:
+                for index, split_row in enumerate(split_rows, start=1):
+                    if not isinstance(split_row, dict):
+                        continue
+                    payload_copy = dict(payload)
+                    for key, value in split_row.items():
+                        normalized_key = "amount" if str(key) == "quantity" else str(key)
+                        payload_copy[normalized_key] = value
+                    payload_copy["review_action"] = "split"
+                    payload_copy["review_action_id"] = str(split_action.get("action_id", f"split:{event_id}"))
+                    payload_copy["review_action_parent_event_id"] = event_id
+                    payload_copy["review_action_note"] = str(split_action.get("note", "")).strip()
+                    payload_copy["review_action_updated_at_utc"] = str(split_action.get("updated_at_utc", "")).strip()
+                    event_copy = dict(event)
+                    event_copy["unique_event_id"] = f"{event_id}:split:{index}"
+                    event_copy["payload"] = payload_copy
+                    transformed.append(event_copy)
+                    applied_splits += 1
+                continue
+
         correction = timezone_corrections.get(event_id)
-        if not isinstance(correction, dict):
-            transformed.append(event)
-            continue
-        corrected_timestamp = str(correction.get("corrected_timestamp_utc", "")).strip()
-        if not corrected_timestamp:
-            transformed.append(event)
-            continue
+        event_copy = dict(event)
         payload = event.get("payload", {})
         if not isinstance(payload, dict):
-            transformed.append(event)
+            transformed.append(event_copy)
             continue
         payload_copy = dict(payload)
-        payload_copy["original_timestamp_utc"] = payload_copy.get("timestamp_utc", "")
-        payload_copy["timestamp_utc"] = corrected_timestamp
-        payload_copy["review_action"] = "timezone_correct"
-        payload_copy["review_action_note"] = str(correction.get("note", "")).strip()
-        payload_copy["review_action_updated_at_utc"] = str(correction.get("updated_at_utc", "")).strip()
-        event_copy = dict(event)
+        if not isinstance(correction, dict):
+            correction = None
+        if correction is not None:
+            corrected_timestamp = str(correction.get("corrected_timestamp_utc", "")).strip()
+            if corrected_timestamp:
+                payload_copy["original_timestamp_utc"] = payload_copy.get("timestamp_utc", "")
+                payload_copy["timestamp_utc"] = corrected_timestamp
+                payload_copy["review_action"] = "timezone_correct"
+                payload_copy["review_action_note"] = str(correction.get("note", "")).strip()
+                payload_copy["review_action_updated_at_utc"] = str(correction.get("updated_at_utc", "")).strip()
+                applied_timezone += 1
+        merge_action = merge_index.get(event_id)
+        if merge_action is not None:
+            payload_copy["review_merge_action_id"] = str(merge_action.get("action_id", ""))
+            payload_copy["economic_event_id"] = str(merge_action.get("action_id", ""))
+            payload_copy["review_merge_note"] = str(merge_action.get("note", "")).strip()
+            applied_merges += 1
         event_copy["payload"] = payload_copy
         transformed.append(event_copy)
-        applied_timezone += 1
 
-    return transformed, {"timezone_correction_count": applied_timezone}
+    return transformed, {
+        "timezone_correction_count": applied_timezone,
+        "merge_annotation_count": applied_merges,
+        "split_replacement_count": applied_splits,
+    }
 
 
 def apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:

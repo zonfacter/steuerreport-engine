@@ -48,6 +48,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Review-Actions ergänzt: `GET /api/v1/review/actions`, `POST /api/v1/review/timezone-correct`, `POST /api/v1/review/merge` und `POST /api/v1/review/split`.
   - Zeitzonen-Korrekturen werden versioniert gespeichert, schließen das entsprechende Review-Issue und werden beim nächsten Steuerlauf auf die Arbeitskopie angewendet.
   - Merge/Split-Entscheidungen werden auditierbar dokumentiert; RAW-Daten bleiben unverändert.
+  - Merge/Split-Entscheidungen wirken jetzt auf die Steuer-Arbeitskopie:
+    - Merge annotiert zusammengehörige Events mit gemeinsamer `economic_event_id`.
+    - Split ersetzt ein Rohereignis in der Arbeitskopie durch dokumentierte Teil-Events mit Parent-Referenz.
   - UI ergänzt Review-Actions für Zeitzone, Merge und Split im Steuer-/Review-Bereich.
 - Helium-Legacy-Import ergänzt:
   - CoinTracking-/Fairspot-kompatible Helium-L1-Exports werden als `helium_legacy_cointracking` erkannt.

@@ -344,3 +344,15 @@ def test_review_merge_and_split_actions_are_persisted_without_raw_delete() -> No
     actions = review_actions()
     action_types = {str(item.get("action_type")) for item in actions.data.get("rows", [])}
     assert {"merge", "split"}.issubset(action_types)
+
+    from tax_engine.queue import apply_review_actions
+
+    adjusted, summary = apply_review_actions(STORE.list_raw_events())
+    assert len(STORE.list_raw_events()) == 2
+    assert summary["merge_annotation_count"] == 1
+    assert summary["split_replacement_count"] == 2
+    split_rows = [item for item in adjusted if ":split:" in str(item["unique_event_id"])]
+    assert [row["payload"]["amount"] for row in split_rows] == ["0.5", "0.5"]
+    assert split_rows[0]["payload"]["review_action_parent_event_id"] == event_ids[0]
+    merged_rows = [item for item in adjusted if item["payload"].get("economic_event_id")]
+    assert len(merged_rows) == 1
