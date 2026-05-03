@@ -18,6 +18,7 @@ from tax_engine.integrity import (
     report_integrity_id,
     ruleset_fingerprint,
 )
+from tax_engine.reconciliation.chains import build_transfer_chain_index
 from tax_engine.rulesets import build_default_registry
 
 from .models import ProcessRunRequest
@@ -291,13 +292,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
 
 
 def _attach_transfer_trace(tax_lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    transfer_chain_by_event_id: dict[str, str] = {}
-    for match in STORE.list_transfer_matches():
-        chain_id = str(match.get("match_id", ""))
-        if not chain_id:
-            continue
-        transfer_chain_by_event_id[str(match.get("outbound_event_id", ""))] = chain_id
-        transfer_chain_by_event_id[str(match.get("inbound_event_id", ""))] = chain_id
+    transfer_chain_by_event_id = build_transfer_chain_index(STORE.list_transfer_matches())
 
     enriched: list[dict[str, Any]] = []
     for line in tax_lines:

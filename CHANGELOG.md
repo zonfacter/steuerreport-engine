@@ -70,6 +70,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Exportzeilen enthalten `report_integrity_id`, `config_hash` und `data_hash`, damit CSV/JSON/PDF prüfungssicherer nachvollziehbar sind.
   - Tax Lines speichern und exportieren jetzt `lot_source_event_id` und `transfer_chain_id`, damit verbrauchte Anschaffungs-Lots und Eigenübertragsketten nachvollziehbar bleiben.
   - Steuer-UI und Tax-CSV enthalten die neuen Trace-Spalten für Lot und Transfer Chain.
+  - `transfer_chain_id` wird jetzt deterministisch über zusammenhängende Transfer-Matches gebildet, damit mehrstufige Eigenüberträge über mehrere Wallets dieselbe Chain erhalten.
   - Processing-End-to-End-Test prüft jetzt, dass Report-Artefakte nach einem erfolgreichen Lauf auffindbar sind.
 - Ruleset-Vergleich ergänzt:
   - `POST /api/v1/process/compare-rulesets` ist zusätzlich zum bestehenden GET-Endpunkt verfügbar, damit der API-Vertrag aus der Roadmap ohne Freitext-/Query-Workaround nutzbar ist.

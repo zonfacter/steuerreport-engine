@@ -123,3 +123,4 @@ def test_reconcile_ledger_contains_from_to_trace() -> None:
     assert row.get("status") == "matched"
     assert row.get("from_wallet") == "binance-wallet"
     assert row.get("to_wallet") == "phantom-wallet"
+    assert str(row.get("transfer_chain_id", "")).startswith("transfer-chain:")

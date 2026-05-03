@@ -6,6 +6,7 @@ from typing import Any
 
 from tax_engine.core.reconciliation import auto_match_transfers, extract_transfer_events
 from tax_engine.ingestion.store import STORE
+from tax_engine.reconciliation.chains import build_transfer_chain_index
 
 
 def _matched_event_ids() -> set[str]:
@@ -99,6 +100,7 @@ def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
     matches = STORE.list_transfer_matches()
     match_by_outbound = {str(item["outbound_event_id"]): item for item in matches}
     inbound_matched_ids = {str(item["inbound_event_id"]) for item in matches}
+    transfer_chain_by_event_id = build_transfer_chain_index(matches)
 
     transfer_ids = [str(item.unique_event_id) for item in transfer_events]
     detail_by_id = _load_event_details(transfer_ids)
@@ -142,6 +144,7 @@ def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
                     "to_depot_id": to_depot,
                     "tx_id": tx_id,
                     "match_id": str(match["match_id"]) if match else "",
+                    "transfer_chain_id": transfer_chain_by_event_id.get(event_id, ""),
                     "method": str(match["method"]) if match else "",
                     "confidence_score": str(match["confidence_score"]) if match else "",
                     "time_diff_seconds": int(match["time_diff_seconds"]) if match else None,
@@ -173,6 +176,7 @@ def list_transfer_ledger(limit: int = 200, offset: int = 0) -> dict[str, Any]:
                 "to_depot_id": from_depot,
                 "tx_id": tx_id,
                 "match_id": "",
+                "transfer_chain_id": transfer_chain_by_event_id.get(event_id, ""),
                 "method": "",
                 "confidence_score": "",
                 "time_diff_seconds": None,

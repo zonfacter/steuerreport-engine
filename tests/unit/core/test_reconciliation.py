@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from tax_engine.core.reconciliation import auto_match_transfers, extract_transfer_events
+from tax_engine.reconciliation.chains import build_transfer_chain_index
 
 
 def test_extract_transfer_events_and_auto_match_with_time_window_and_fee_tolerance() -> None:
@@ -76,3 +77,21 @@ def test_extract_transfer_events_and_auto_match_with_time_window_and_fee_toleran
     assert result["matches"][0]["amount_diff"] == "0.01"
     assert result["unmatched_outbound_ids"] == ["out-unmatched"]
     assert result["unmatched_inbound_ids"] == []
+
+
+def test_transfer_chain_index_groups_multistage_transfers_deterministically() -> None:
+    matches = [
+        {"match_id": "m1", "outbound_event_id": "wallet-a-out", "inbound_event_id": "wallet-b-in"},
+        {"match_id": "m2", "outbound_event_id": "wallet-b-out", "inbound_event_id": "wallet-c-in"},
+        {"match_id": "m3", "outbound_event_id": "wallet-b-in", "inbound_event_id": "wallet-b-out"},
+        {"match_id": "m4", "outbound_event_id": "other-out", "inbound_event_id": "other-in"},
+    ]
+
+    index = build_transfer_chain_index(matches)
+
+    assert index["wallet-a-out"] == index["wallet-b-in"]
+    assert index["wallet-b-out"] == index["wallet-c-in"]
+    assert index["wallet-a-out"] == index["wallet-c-in"]
+    assert index["other-out"] == index["other-in"]
+    assert index["other-out"] != index["wallet-a-out"]
+    assert index == build_transfer_chain_index(list(reversed(matches)))
