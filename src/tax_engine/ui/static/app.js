@@ -2043,12 +2043,8 @@ async function loadDashboard() {
   const shell = await callApi("/api/v1/dashboard/shell", "GET", null, null, true);
   if (shell?.status === "success") {
     renderDashboard({ ...(state.dashboard || {}), ...shell.data });
-  }
-  const res = await callApi("/api/v1/dashboard/overview", "GET", null, null, true);
-  if (res?.status === "success") {
-    renderDashboard(res.data);
     loadLegacyHntTransfers(true);
-    const suggestedYear = res.data?.summary?.suggested_tax_year;
+    const suggestedYear = shell.data?.summary?.suggested_tax_year;
     const currentTaxYear = el("taxYear").value.trim();
     const currentDashboardYear = dashboardYearFilter();
     if (suggestedYear && !currentDashboardYear) {
@@ -2061,6 +2057,34 @@ async function loadDashboard() {
       syncTaxRunSelection();
     }
   }
+  await Promise.all([
+    loadDashboardYearlyActivity(),
+    loadDashboardPortfolioHistory(),
+  ]);
+}
+
+async function loadDashboardYearlyActivity() {
+  const year = dashboardYearFilter();
+  const query = year ? `?year=${encodeURIComponent(year)}` : "";
+  const res = await callApi(`/api/v1/dashboard/yearly-activity${query}`, "GET", null, null, true);
+  if (res?.status !== "success") return;
+  state.dashboard = {
+    ...(state.dashboard || {}),
+    yearly_asset_activity: res.data?.yearly_asset_activity || {},
+  };
+  renderYearlyAssetActivity(state.dashboard.yearly_asset_activity);
+  renderCockpit();
+}
+
+async function loadDashboardPortfolioHistory() {
+  const res = await callApi("/api/v1/dashboard/portfolio-history?window_days=3650", "GET", null, null, true);
+  if (res?.status !== "success") return;
+  state.dashboard = {
+    ...(state.dashboard || {}),
+    portfolio_value_history: res.data?.portfolio_value_history || [],
+  };
+  renderPortfolioValueHistory(state.dashboard.portfolio_value_history, dashboardYearFilter());
+  renderCockpit();
 }
 
 function renderIntegrationTable(rows) {

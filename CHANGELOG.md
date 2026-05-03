@@ -272,6 +272,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Admin-UI zeigt Solana-Backfill-Service, Start/Stop/Restart, Log-Auszug und Rate-Control-Kennzahlen
 - Dashboard-Jahresanalyse ergänzt:
   - `/api/v1/dashboard/overview` liefert `yearly_asset_activity` mit Events, Mengen rein/raus/netto, bewertetem Bewegungsvolumen, Trading/Swap-Volumen und unbewerteten Events
+  - `/api/v1/dashboard/yearly-activity` liefert die schwere Jahres-/Quellen-/Asset-Auswertung separat, optional auf ein Jahr begrenzt
+  - `/api/v1/dashboard/portfolio-history` liefert die Portfolio-Wertzeitreihe separat vom Cockpit-Shell
+  - Frontend lädt Dashboard-Grunddaten, Jahresanalyse und Portfolio-Verlauf entkoppelt, damit die Oberfläche schneller sichtbar bleibt
   - Performance-Tab zeigt Jahreschart mit Skalierung `Bewegungsvolumen EUR/USD`, `Trading/Swap-Volumen EUR/USD`, `Menge normalisiert (log10)` oder `Transaktionen`
   - Jahres-Tabelle hilft bei großen Mengenunterschieden wie IOT/MOBILE vs. SOL/HNT, ohne die Y-Achse unlesbar zu machen
   - Klarstellung: Die Jahresanalyse ist keine Portfolio-Wertentwicklung; echte Wertentwicklung basiert auf Snapshots bzw. historischem Price-Backfill

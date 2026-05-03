@@ -49,6 +49,8 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Dashboard-Bewertung nutzt Request-lokale FX-/Asset-Preis-Caches; weiterer Performance-Hebel bleibt die Aufteilung von `dashboard_overview` in kleinere, separat ladbare Widgets.
 - Dashboard-Zeitraumsteuerung ist global verfügbar: Jahr im Kopfbereich wählen, Performance/Jahresanalyse/Portfolio-Verlauf und Steuerjahr laufen synchron.
 - Erster Split-Endpunkt umgesetzt: `GET /api/v1/dashboard/shell` liefert schnelle Cockpit-Grunddaten, während die schwere Bewertungsübersicht nachgeladen werden kann.
+- Widget-Split erweitert: `GET /api/v1/dashboard/yearly-activity` lädt Jahres-/Quellen-/Asset-Auswertung separat und optional jahresgefiltert; `GET /api/v1/dashboard/portfolio-history` lädt die Wertzeitreihe separat.
+- Die UI ruft den monolithischen `dashboard_overview` nicht mehr im normalen Dashboard-Load auf, sondern rendert zuerst den Shell und aktualisiert Jahresanalyse/Portfolio-Verlauf asynchron nach.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)

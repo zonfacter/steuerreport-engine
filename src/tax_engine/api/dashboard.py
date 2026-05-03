@@ -392,6 +392,85 @@ def dashboard_shell() -> StandardResponse:
     return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
 
 
+@router.get("/api/v1/dashboard/yearly-activity", response_model=StandardResponse, tags=["dashboard"])
+def dashboard_yearly_activity(year: int | None = None) -> StandardResponse:
+    trace_id = str(uuid4())
+    events = STORE.list_raw_events()
+    activity = _build_yearly_asset_activity(events, year=year)
+    write_audit(
+        trace_id=trace_id,
+        action="dashboard.yearly_activity",
+        payload={
+            "event_count": len(events),
+            "year": year,
+            "row_count": len(activity.get("rows", [])),
+        },
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "year": year,
+            "yearly_asset_activity": activity,
+        },
+        errors=[],
+        warnings=[],
+    )
+
+
+@router.get("/api/v1/dashboard/portfolio-history", response_model=StandardResponse, tags=["dashboard"])
+def dashboard_portfolio_history(window_days: int = 3650) -> StandardResponse:
+    trace_id = str(uuid4())
+    events = STORE.list_raw_events()
+    runtime_fx = _runtime_usd_to_eur_rate()
+    ignored_mints = set(_load_ignored_tokens().keys())
+    points = _build_portfolio_value_history(
+        events,
+        ignored_mints,
+        runtime_fx,
+        fx_rate_cache={},
+        asset_usd_price_cache={},
+        fx_lookup=_load_fx_lookup(),
+    )
+    if window_days > 0:
+        cutoff = datetime.now(UTC) - timedelta(days=window_days)
+        filtered_points: list[dict[str, Any]] = []
+        for point in points:
+            ts = _parse_iso_timestamp(f"{point.get('date', '')}T00:00:00+00:00")
+            if ts is None or ts < cutoff:
+                continue
+            filtered_points.append(point)
+        points = filtered_points
+
+    values = [_safe_decimal(point.get("value_usd", "0")) for point in points]
+    start_value = values[0] if values else Decimal("0")
+    end_value = values[-1] if values else Decimal("0")
+    pnl_abs_total = end_value - start_value
+    pnl_pct_total = (pnl_abs_total / start_value * Decimal("100")) if start_value > 0 else Decimal("0")
+    write_audit(
+        trace_id=trace_id,
+        action="dashboard.portfolio_history",
+        payload={"event_count": len(events), "window_days": window_days, "point_count": len(points)},
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "window_days": window_days,
+            "event_count": len(events),
+            "portfolio_value_history": points,
+            "summary": {
+                "start_value_usd": _decimal_to_plain(start_value),
+                "end_value_usd": _decimal_to_plain(end_value),
+                "pnl_abs_usd": _decimal_to_plain(pnl_abs_total),
+                "pnl_pct": _decimal_to_plain(pnl_pct_total) if start_value > 0 else "",
+            },
+        },
+        errors=[],
+        warnings=[],
+    )
+
+
 def _decorate_wallet_groups_with_sources(groups: list[dict[str, Any]], by_source: dict[str, int]) -> list[dict[str, Any]]:
     available_sources = set(by_source.keys())
     decorated: list[dict[str, Any]] = []
@@ -1271,6 +1350,117 @@ def _build_portfolio_value_history(
         )
         month_marks.remove(day)
     return points
+
+
+def _build_yearly_asset_activity(events: list[dict[str, Any]], year: int | None = None) -> dict[str, Any]:
+    yearly_asset_buckets: dict[tuple[int, str, str], dict[str, Any]] = {}
+    yearly_deduped_values: dict[int, dict[str, Any]] = {}
+    yearly_event_buckets: dict[tuple[int, str], dict[str, Any]] = {}
+    yearly_source_buckets: dict[tuple[int, str], dict[str, Any]] = {}
+    runtime_fx = _runtime_usd_to_eur_rate()
+    fx_rate_cache: dict[str, Decimal] = {}
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] = {}
+    fx_lookup = _load_fx_lookup()
+    ignored_mints = set(_load_ignored_tokens().keys())
+
+    for row in events:
+        payload = row.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        ts_raw = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")
+        event_year = _extract_year(ts_raw)
+        if event_year is None or (year is not None and event_year != year):
+            continue
+
+        asset = str(payload.get("asset") or "").upper().strip()
+        if not asset or _normalize_mint(asset) in ignored_mints:
+            continue
+
+        qty = _dashboard_event_quantity(payload)
+        side = str(payload.get("side") or "").lower()
+        source = str(payload.get("source") or "unknown").strip() or "unknown"
+        event_type = str(payload.get("event_type") or "unknown")
+        value = _estimate_event_values(
+            payload=payload,
+            asset=asset,
+            quantity=qty,
+            runtime_fx=runtime_fx,
+            fx_rate_cache=fx_rate_cache,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        )
+        value_counts = _is_dashboard_value_event(payload)
+        _accumulate_yearly_event_breakdown(
+            yearly_event_buckets=yearly_event_buckets,
+            year=event_year,
+            payload=payload,
+            value=value,
+            value_counts=value_counts,
+        )
+        _accumulate_yearly_source_breakdown(
+            yearly_source_buckets=yearly_source_buckets,
+            year=event_year,
+            payload=payload,
+            value=value,
+            value_counts=value_counts,
+        )
+        bucket_key = (event_year, asset, source)
+        bucket = yearly_asset_buckets.setdefault(
+            bucket_key,
+            {
+                "year": event_year,
+                "asset": asset,
+                "source": source,
+                "events": 0,
+                "quantity_in": Decimal("0"),
+                "quantity_out": Decimal("0"),
+                "quantity_net": Decimal("0"),
+                "quantity_abs": Decimal("0"),
+                "value_usd": Decimal("0"),
+                "value_eur": Decimal("0"),
+                "trading_value_usd": Decimal("0"),
+                "trading_value_eur": Decimal("0"),
+                "priced_events": 0,
+                "unpriced_events": 0,
+                "valuation_required_events": 0,
+            },
+        )
+        bucket["events"] += 1
+        bucket["quantity_abs"] += abs(qty)
+        if side == "in":
+            bucket["quantity_in"] += abs(qty)
+            bucket["quantity_net"] += abs(qty)
+        elif side == "out":
+            bucket["quantity_out"] += abs(qty)
+            bucket["quantity_net"] -= abs(qty)
+        else:
+            bucket["quantity_net"] += qty
+        if value_counts:
+            bucket["value_usd"] += value["usd_abs"]
+            bucket["value_eur"] += value["eur_abs"]
+            _accumulate_yearly_deduped_value(
+                yearly_deduped_values=yearly_deduped_values,
+                year=event_year,
+                payload=payload,
+                value=value,
+                event_type=event_type,
+            )
+        if _is_trading_volume_event(event_type):
+            bucket["trading_value_usd"] += value["usd_abs"]
+            bucket["trading_value_eur"] += value["eur_abs"]
+        if _requires_dashboard_valuation(payload):
+            bucket["valuation_required_events"] += 1
+            if value["priced"]:
+                bucket["priced_events"] += 1
+            else:
+                bucket["unpriced_events"] += 1
+
+    return _format_yearly_asset_activity(
+        yearly_asset_buckets,
+        yearly_deduped_values,
+        yearly_event_buckets,
+        yearly_source_buckets,
+    )
 
 
 def _first_positive_decimal(payload: dict[str, Any], keys: tuple[str, ...]) -> Decimal:

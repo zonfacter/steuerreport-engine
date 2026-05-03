@@ -28,9 +28,11 @@ from tax_engine.api.app import (
     admin_token_aliases_list,
     admin_token_aliases_upsert,
     dashboard_overview,
+    dashboard_portfolio_history,
     dashboard_role_override,
     dashboard_shell,
     dashboard_transaction_search,
+    dashboard_yearly_activity,
     portfolio_helium_legacy_transfers,
 )
 from tax_engine.ingestion.service import confirm_import
@@ -309,6 +311,17 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
     source_breakdown = {(item["year"], item["source"]): item for item in activity["source_breakdown"]}
     assert source_breakdown[(2025, "blockpit")]["events"] == 2
     assert overview_resp.data["portfolio_value_history"]
+
+    yearly_resp = dashboard_yearly_activity(year=2025)
+    assert yearly_resp.status == "success"
+    yearly_activity = yearly_resp.data["yearly_asset_activity"]
+    yearly_totals = {item["year"]: item for item in yearly_activity["totals_by_year"]}
+    assert yearly_totals[2025]["value_usd"] == "1415"
+    assert all(item["year"] == 2025 for item in yearly_activity["rows"])
+
+    history_resp = dashboard_portfolio_history(window_days=0)
+    assert history_resp.status == "success"
+    assert history_resp.data["portfolio_value_history"]
 
 
 def test_portfolio_helium_legacy_transfers_groups_counterparties() -> None:
