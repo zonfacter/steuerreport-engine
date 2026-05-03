@@ -30,6 +30,7 @@ from tax_engine.core.processor import process_events_for_year
 from tax_engine.core.tax_domains import build_tax_domain_summary
 from tax_engine.ingestion import write_audit
 from tax_engine.ingestion.store import STORE
+from tax_engine.integrations import filter_events_for_processing
 from tax_engine.queue import (
     ProcessRunRequest,
     WorkerRunNextRequest,
@@ -233,7 +234,8 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
             }
         )
 
-    raw_events = STORE.list_raw_events()
+    raw_events_all = STORE.list_raw_events()
+    raw_events, integration_filter_summary = filter_events_for_processing(raw_events_all, payload.config)
     year_events = []
     unresolved_valuation_events = 0
     unclassified_events = 0
@@ -251,7 +253,7 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
         if _preflight_needs_valuation(item) and not _preflight_has_valuation(item):
             unresolved_valuation_events += 1
 
-    if not raw_events:
+    if not raw_events_all:
         blockers.append(
             {
                 "code": "no_import_data",
@@ -357,7 +359,8 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
         "tax_year": payload.tax_year,
         "ruleset": resolved_ruleset.to_dict() if resolved_ruleset is not None else None,
         "counts": {
-            "raw_events_total": len(raw_events),
+            "raw_events_total": len(raw_events_all),
+            "effective_events_total": len(raw_events),
             "tax_year_events": len(year_events),
             "issues_total": len(issues),
             "high_severity_open": len(open_high_issues),
@@ -367,6 +370,7 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
         },
         "blockers": blockers,
         "warnings": warnings,
+        "integration_filter_summary": integration_filter_summary,
     }
     write_audit(
         trace_id=trace_id,
@@ -413,7 +417,7 @@ def process_run(payload: ProcessRunRequest) -> StandardResponse:
                 ),
             }
         )
-    events = STORE.list_raw_events()
+    events, integration_filter_summary = filter_events_for_processing(STORE.list_raw_events(), payload.config)
     year_count = 0
     for row in events:
         item = row.get("payload", {})
@@ -444,6 +448,7 @@ def process_run(payload: ProcessRunRequest) -> StandardResponse:
             "resolved_ruleset_version": job.get("ruleset_version"),
             "dry_run": payload.dry_run,
             "tax_year_event_count": year_count,
+            "integration_filter_summary": integration_filter_summary,
         },
     )
     return StandardResponse(trace_id=trace_id, status="success", data=job, errors=[], warnings=warnings)
@@ -1033,7 +1038,8 @@ def _process_compare_rulesets_impl(
             warnings=[],
         )
 
-    raw_events = STORE.list_raw_events()
+    base_config = base_job.get("config", {}) if isinstance(base_job.get("config"), dict) else {}
+    raw_events, integration_filter_summary = filter_events_for_processing(STORE.list_raw_events(), base_config)
     effective_events, override_count = apply_tax_event_overrides(raw_events)
     if not effective_events:
         return StandardResponse(
@@ -1094,6 +1100,7 @@ def _process_compare_rulesets_impl(
                 "result_summary": compare_result,
                 "tax_domain_summary": compare_summary,
                 "tax_event_override_count": override_count,
+                "integration_filter_summary": integration_filter_summary,
             },
         },
         errors=[],

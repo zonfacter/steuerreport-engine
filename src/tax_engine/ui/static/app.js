@@ -162,23 +162,32 @@ function syncTaxRunSelection() {
   const host = el("taxRunPreview");
   if (!host) return;
   const exemption = Number(year) >= 2024 ? "1.000 EUR Freigrenze" : "600 EUR Freigrenze";
+  const activeSources = (state.integrationRows || []).filter((row) => String(row.mode || "active").toLowerCase() === "active");
   host.innerHTML = `
     <span><strong>Jurisdiktion:</strong> Deutschland</span>
     <span><strong>FIFO:</strong> aktiv</span>
     <span><strong>Haltefrist:</strong> 12 Monate</span>
     <span><strong>SO:</strong> ${exemption}</span>
     <span><strong>Ruleset:</strong> ${ruleset}</span>
+    <span><strong>Quellen:</strong> ${activeSources.length || 0} aktiv</span>
   `;
 }
 
 function processRequestPayload() {
   syncTaxRunSelection();
+  const activeSourceFilters = (state.integrationRows || [])
+    .filter((row) => String(row.mode || "active").toLowerCase() === "active")
+    .map((row) => String(row.integration_id || "").trim())
+    .filter(Boolean);
   return {
     tax_year: Number(el("taxYear")?.value || "2026"),
     ruleset_id: el("rulesetId")?.value.trim() || rulesetForYear(el("taxYear")?.value || "2026"),
     config: {
       tax_method: el("taxMethod")?.value || "fifo",
       calculation_mode: "global",
+      source_filters: activeSourceFilters,
+      include_reference_sources: false,
+      include_disabled_sources: false,
       validation_flags: {
         short_sell_guard: true,
         transfer_check: true,
@@ -1769,9 +1778,18 @@ function renderIntegrationTable(rows) {
   if (!tbody) return;
   tbody.innerHTML = "";
   (rows || []).forEach((item) => {
+    const mode = String(item.mode || "active").toLowerCase();
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${item.integration_id || ""}</td>
+      <td>
+        <select class="integration-mode-select" data-integration-id="${item.integration_id || ""}" title="${item.mode_note || ""}">
+          <option value="active"${mode === "active" ? " selected" : ""}>Aktiv</option>
+          <option value="reference"${mode === "reference" ? " selected" : ""}>Referenz</option>
+          <option value="disabled"${mode === "disabled" ? " selected" : ""}>Deaktiviert</option>
+        </select>
+        <small class="muted">${item.mode_overridden ? "manuell" : `Standard: ${item.default_mode || "active"}`}</small>
+      </td>
       <td class="num">${formatQty(item.event_count || 0)}</td>
       <td class="num">${formatQty(item.asset_count || 0)}</td>
       <td class="num">${formatQty(item.source_file_count || 0)}</td>
@@ -1782,9 +1800,29 @@ function renderIntegrationTable(rows) {
   });
   if (!(rows || []).length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="6">Noch keine Integrationen mit Daten.</td>';
+    tr.innerHTML = '<td colspan="7">Noch keine Integrationen mit Daten.</td>';
     tbody.appendChild(tr);
   }
+}
+
+async function saveIntegrationMode(integrationId, mode, trigger = null) {
+  const id = String(integrationId || "").trim();
+  const selectedMode = String(mode || "").trim();
+  if (!id || !selectedMode) return;
+  const data = await callApi(
+    "/api/v1/portfolio/integrations/mode",
+    "POST",
+    {
+      integration_id: id,
+      mode: selectedMode,
+      note: `UI: Modus auf ${selectedMode} gesetzt`,
+    },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  await loadIntegrationOverview();
+  syncTaxRunSelection();
+  showToast(`Integration ${id} ist jetzt ${selectedMode}.`, "ok");
 }
 
 function renderImportSourcesTable(rows) {
@@ -4279,6 +4317,12 @@ function init() {
   el("btnIntegrationRefresh")?.addEventListener("click", async () => {
     await loadIntegrationOverview();
     showToast("Integrationsübersicht aktualisiert.", "ok");
+  });
+  el("integrationTable")?.addEventListener("change", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    if (!target.classList.contains("integration-mode-select")) return;
+    await saveIntegrationMode(target.dataset.integrationId || "", target.value, target);
   });
 
   el("btnImportSourcesRefresh")?.addEventListener("click", async () => {

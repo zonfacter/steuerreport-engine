@@ -128,6 +128,36 @@ def test_process_preflight_allows_clean_year_with_priced_trade() -> None:
     assert response.data["blockers"] == []
 
 
+def test_process_preflight_ignores_reference_integrations_by_default() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="blockpit_reference.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00Z",
+                    "source": "blockpit",
+                    "asset": "BTC",
+                    "side": "buy",
+                    "amount": "1",
+                    "price_eur": "100",
+                    "event_type": "buy",
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2026, ruleset_id="DE-2026-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["counts"]["raw_events_total"] == 1
+    assert response.data["counts"]["effective_events_total"] == 0
+    assert response.data["counts"]["tax_year_events"] == 0
+    assert any(item["code"] == "tax_year_no_events" for item in response.data["blockers"])
+
+
 def test_process_preflight_returns_guided_action_for_missing_valuation() -> None:
     _reset_store()
     import_confirm(

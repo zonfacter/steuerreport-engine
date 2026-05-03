@@ -11,6 +11,7 @@ from tax_engine.core.processor import process_events_for_year
 from tax_engine.core.tax_domains import build_tax_domain_summary
 from tax_engine.fx import FallbackFxResolver
 from tax_engine.ingestion.store import STORE
+from tax_engine.integrations import filter_events_for_processing
 from tax_engine.integrity import (
     config_fingerprint,
     data_fingerprint,
@@ -104,6 +105,7 @@ def create_processing_job(payload: ProcessRunRequest) -> dict[str, Any]:
         ruleset_id=ruleset.ruleset_id,
         ruleset_version=ruleset.ruleset_version,
         config_hash=cfg_hash,
+        config_json=json.dumps(payload.config, sort_keys=True, separators=(",", ":")),
         status="queued",
         progress=0,
     )
@@ -130,7 +132,8 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             progress=35,
             current_step="load_events",
         )
-        raw_events = STORE.list_raw_events()
+        job_config = claimed.get("config", {}) if isinstance(claimed.get("config"), dict) else {}
+        raw_events, integration_filter_summary = filter_events_for_processing(STORE.list_raw_events(), job_config)
         effective_events, override_count = apply_tax_event_overrides(raw_events)
         fx_config = resolve_effective_runtime_config()
         runtime_fx = fx_config.get("runtime", {}).get("fx", {})
@@ -160,6 +163,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             ruleset_id=ruleset_id,
             ruleset_version=ruleset_version,
         )
+        processing_result["integration_filter_summary"] = integration_filter_summary
         tax_lines = processing_result.pop("tax_lines")
         derivative_result = process_derivatives_for_year(raw_events=effective_events, tax_year=claimed["tax_year"])
         derivative_lines = derivative_result.pop("lines")

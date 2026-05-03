@@ -51,6 +51,12 @@ class SQLiteImportStore:
                         column_name="ruleset_version",
                         column_ddl="TEXT NOT NULL DEFAULT ''",
                     )
+                    self._ensure_column(
+                        conn=conn,
+                        table_name="processing_queue",
+                        column_name="config_json",
+                        column_ddl="TEXT NOT NULL DEFAULT '{}'",
+                    )
                 schema_sql = (Path(__file__).with_name("migration_v1.sql")).read_text(encoding="utf-8")
                 conn.executescript(schema_sql)
                 self._ensure_table_if_missing(
@@ -231,6 +237,7 @@ class SQLiteImportStore:
         ruleset_id: str,
         ruleset_version: str | None,
         config_hash: str,
+        config_json: str,
         status: str,
         progress: int,
     ) -> None:
@@ -245,6 +252,7 @@ class SQLiteImportStore:
                     ruleset_id,
                     ruleset_version,
                     config_hash,
+                    config_json,
                     status,
                     progress,
                     current_step,
@@ -252,7 +260,7 @@ class SQLiteImportStore:
                     result_json,
                     created_at_utc,
                     updated_at_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -260,6 +268,7 @@ class SQLiteImportStore:
                     ruleset_id,
                     normalized_ruleset_version,
                     config_hash,
+                    config_json,
                     status,
                     progress,
                     "queued",
@@ -403,6 +412,7 @@ class SQLiteImportStore:
                     p.tax_year,
                     p.ruleset_id,
                     p.ruleset_version,
+                    p.config_json,
                     p.status,
                     p.progress,
                     p.current_step,
@@ -435,6 +445,7 @@ class SQLiteImportStore:
                 "tax_year": int(row["tax_year"]),
                 "ruleset_id": row["ruleset_id"],
                 "ruleset_version": str(row["ruleset_version"] or ""),
+                "config": json.loads(row["config_json"] or "{}"),
                 "status": row["status"],
                 "progress": int(row["progress"]),
                 "current_step": row["current_step"],
@@ -1129,6 +1140,7 @@ class SQLiteImportStore:
                     ruleset_id,
                     ruleset_version,
                     config_hash,
+                    config_json,
                     status,
                     progress,
                     current_step,
@@ -1149,6 +1161,7 @@ class SQLiteImportStore:
             "ruleset_id": row["ruleset_id"],
             "ruleset_version": str(row["ruleset_version"] or ""),
             "config_hash": row["config_hash"],
+            "config": json.loads(row["config_json"] or "{}"),
             "status": row["status"],
             "progress": int(row["progress"]),
             "current_step": row["current_step"],

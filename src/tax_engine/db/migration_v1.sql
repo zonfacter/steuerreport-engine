@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS processing_queue (
     ruleset_id TEXT NOT NULL,
     ruleset_version TEXT NOT NULL DEFAULT '',
     config_hash TEXT NOT NULL,
+    config_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL,
     progress INTEGER NOT NULL,
     current_step TEXT NOT NULL DEFAULT '',

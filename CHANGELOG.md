@@ -28,6 +28,11 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Wallet-Gruppen können optional Importquellen wie `solana_rpc`, `binance_api`, Blockpit oder Helium Legacy zugeordnet bekommen.
   - Neues Dashboard-Endpoint `GET /api/v1/dashboard/portfolio-set-history` erzeugt eine Set-spezifische Wertkurve aus den zugeordneten Quellen.
   - UI zeigt Quellenchips, Quellen-/Event-Anzahl je virtueller Wallet und nutzt die Set-Kurve im Wertverlaufs-Chart.
+- Integrationssteuerung ergänzt:
+  - `GET /api/v1/portfolio/integrations` liefert jetzt pro Quelle den steuerlichen Modus `active`, `reference` oder `disabled`.
+  - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.
+  - Blockpit/CoinTracking-nahe Quellen werden standardmäßig als Referenz behandelt; Steuerläufe und Preflight verwenden standardmäßig nur aktive Quellen.
+  - UI erlaubt die Modusänderung direkt in der Integrationsübersicht und übergibt aktive Quellen an den Steuerlauf.
 - Review- und Korrekturworkflow gehärtet:
   - Tax-Event-Overrides unterstützen jetzt `EXCLUDED`, damit ein Event mit Pflichtgrund und Notiz aus der Steuerberechnung ausgeschlossen werden kann, ohne `raw_events` zu verändern.
   - UI ergänzt vorausgewählte Ausschlussgründe für Duplikat, falsche Zuordnung, Spam/Dust, reinen Referenzimport und nicht steuerrelevante Vorgänge.

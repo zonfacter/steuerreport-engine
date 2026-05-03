@@ -27,6 +27,14 @@ from tax_engine.connectors.token_metadata import resolve_token_metadata
 from tax_engine.core.processor import build_open_lot_aging_snapshot
 from tax_engine.ingestion import write_audit
 from tax_engine.ingestion.store import STORE
+from tax_engine.integrations import (
+    active_sources_from_integrations,
+    effective_integration_mode,
+    infer_default_integration_mode,
+    load_integration_mode_overrides,
+    normalize_integration_mode,
+    upsert_integration_mode,
+)
 
 
 class StandardResponse(BaseModel):
@@ -35,6 +43,12 @@ class StandardResponse(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
     errors: list[dict[str, str]] = Field(default_factory=list)
     warnings: list[dict[str, str]] = Field(default_factory=list)
+
+
+class IntegrationModeUpdateRequest(BaseModel):
+    integration_id: str = Field(min_length=1, max_length=120)
+    mode: str = Field(min_length=3, max_length=30)
+    note: str | None = Field(default=None, max_length=500)
 
 
 router = APIRouter()
@@ -339,6 +353,7 @@ def dashboard_transaction_search(
 def portfolio_integrations() -> StandardResponse:
     trace_id = str(uuid4())
     events = STORE.list_raw_events()
+    mode_overrides = load_integration_mode_overrides()
     buckets: dict[str, dict[str, Any]] = {}
     for row in events:
         payload = row.get("payload", {})
@@ -375,9 +390,18 @@ def portfolio_integrations() -> StandardResponse:
 
     rows: list[dict[str, Any]] = []
     for bucket in buckets.values():
+        integration_id = str(bucket["integration_id"])
+        default_mode = infer_default_integration_mode(integration_id)
+        mode = effective_integration_mode(integration_id, mode_overrides)
+        override = mode_overrides.get(integration_id, {})
         rows.append(
             {
-                "integration_id": str(bucket["integration_id"]),
+                "integration_id": integration_id,
+                "mode": mode,
+                "default_mode": default_mode,
+                "mode_overridden": mode != default_mode,
+                "mode_note": str(override.get("note", "")),
+                "mode_updated_at_utc": str(override.get("updated_at_utc", "")),
                 "event_count": int(bucket["event_count"]),
                 "asset_count": len(bucket["assets"]),
                 "source_file_count": len(bucket["source_file_ids"]),
@@ -396,10 +420,50 @@ def portfolio_integrations() -> StandardResponse:
     return StandardResponse(
         trace_id=trace_id,
         status="success",
-        data={"count": len(rows), "event_count_total": len(events), "rows": rows},
+        data={
+            "count": len(rows),
+            "event_count_total": len(events),
+            "active_sources": active_sources_from_integrations(rows),
+            "mode_catalog": [
+                {"mode": "active", "label": "Aktiv fuer Steuerlauf"},
+                {"mode": "reference", "label": "Nur Referenz/Kontrolle"},
+                {"mode": "disabled", "label": "Deaktiviert"},
+            ],
+            "rows": rows,
+        },
         errors=[],
         warnings=[],
     )
+
+
+@router.post("/api/v1/portfolio/integrations/mode", response_model=StandardResponse, tags=["dashboard"])
+def portfolio_integration_mode_update(payload: IntegrationModeUpdateRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    mode = normalize_integration_mode(payload.mode)
+    if mode is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "invalid_integration_mode", "message": "mode muss active|reference|disabled sein."}],
+            warnings=[],
+        )
+    try:
+        entry = upsert_integration_mode(payload.integration_id, mode, payload.note or "")
+    except ValueError as exc:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": str(exc), "message": "Integration-Modus konnte nicht gespeichert werden."}],
+            warnings=[],
+        )
+    write_audit(
+        trace_id=trace_id,
+        action="portfolio.integration_mode.update",
+        payload={"integration_id": entry["integration_id"], "mode": entry["mode"]},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data={**entry, "saved": True}, errors=[], warnings=[])
 
 
 @router.get("/api/v1/portfolio/helium-legacy-transfers", response_model=StandardResponse, tags=["dashboard"])

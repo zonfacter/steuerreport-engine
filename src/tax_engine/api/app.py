@@ -58,6 +58,7 @@ from tax_engine.api.connectors import (
 )
 from tax_engine.api.dashboard import (
     DashboardRoleOverrideRequest,
+    IntegrationModeUpdateRequest,
     _accumulate_deduped_bucket_value,
     _accumulate_yearly_deduped_value,
     _accumulate_yearly_event_breakdown,
@@ -98,6 +99,7 @@ from tax_engine.api.dashboard import (
     dashboard_transaction_search,
     dashboard_wallet_snapshots,
     portfolio_helium_legacy_transfers,
+    portfolio_integration_mode_update,
     portfolio_integrations,
     portfolio_lot_aging,
 )
@@ -236,6 +238,7 @@ __all__ = [
     "CexFullHistoryImportRequest",
     "CexCredentialsLoadRequest",
     "DashboardRoleOverrideRequest",
+    "IntegrationModeUpdateRequest",
     "IgnoredTokenDeleteRequest",
     "IgnoredTokenUpsertRequest",
     "IssueStatusUpdateRequest",
@@ -351,6 +354,7 @@ __all__ = [
     "issues_inbox",
     "issues_update_status",
     "portfolio_integrations",
+    "portfolio_integration_mode_update",
     "portfolio_helium_legacy_transfers",
     "portfolio_lot_aging",
     "process_compare_rulesets",

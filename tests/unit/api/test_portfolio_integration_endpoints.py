@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from tax_engine.api.app import import_confirm, portfolio_integrations
+from tax_engine.api.app import (
+    IntegrationModeUpdateRequest,
+    import_confirm,
+    portfolio_integration_mode_update,
+    portfolio_integrations,
+)
 from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
 
@@ -60,3 +65,37 @@ def test_portfolio_integrations_groups_by_source() -> None:
     binance = next(row for row in rows if row["integration_id"] == "binance_api")
     assert int(binance["event_count"]) == 2
     assert int(binance["asset_count"]) >= 2
+    assert binance["mode"] == "active"
+
+
+def test_portfolio_integration_mode_can_mark_reference_source() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="blockpit.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T00:00:00Z",
+                    "source": "blockpit",
+                    "event_type": "trade",
+                    "asset": "BTC",
+                    "quantity": "1",
+                    "side": "in",
+                }
+            ],
+        )
+    )
+
+    response = portfolio_integrations()
+    blockpit = next(row for row in response.data["rows"] if row["integration_id"] == "blockpit")
+    assert blockpit["mode"] == "reference"
+
+    update = portfolio_integration_mode_update(
+        IntegrationModeUpdateRequest(integration_id="blockpit", mode="active", note="Primaerdaten fuer Test")
+    )
+    assert update.status == "success"
+
+    response2 = portfolio_integrations()
+    blockpit2 = next(row for row in response2.data["rows"] if row["integration_id"] == "blockpit")
+    assert blockpit2["mode"] == "active"
+    assert blockpit2["mode_overridden"] is True
