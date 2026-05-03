@@ -1219,6 +1219,7 @@ function renderTransferLedgerTable(tableId, rows) {
       <td title="${item.from_counterparty || ""}">${item.from_wallet || ""}<br><small class="muted">${item.from_depot_id || ""}</small></td>
       <td>${item.to_platform || ""}</td>
       <td title="${item.to_counterparty || ""}">${item.to_wallet || ""}<br><small class="muted">${item.to_depot_id || ""}</small></td>
+      <td title="${item.transfer_chain_id || ""}">${shortHash(item.transfer_chain_id || "")}<br><small class="muted">${formatTransferPath(item)}</small></td>
       <td>${item.method || ""}${confidence}</td>
     `;
     tbody.appendChild(tr);
@@ -1226,9 +1227,16 @@ function renderTransferLedgerTable(tableId, rows) {
 
   if (!rows?.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="10">Keine Transfer-Daten vorhanden.</td>';
+    tr.innerHTML = '<td colspan="11">Keine Transfer-Daten vorhanden.</td>';
     tbody.appendChild(tr);
   }
+}
+
+function formatTransferPath(item) {
+  const from = item.from_depot_id || item.from_platform || item.from_wallet || "?";
+  const to = item.to_depot_id || item.to_platform || item.to_wallet || "?";
+  if (!from && !to) return "";
+  return `${shortHash(from)} -> ${shortHash(to)}`;
 }
 
 function renderTransferLedger(rows) {
@@ -1246,6 +1254,7 @@ function renderTransferLedger(rows) {
       item.to_wallet,
       item.method,
       item.match_id,
+      item.transfer_chain_id,
       item.status,
     ]
       .map((v) => String(v || "").toLowerCase())
