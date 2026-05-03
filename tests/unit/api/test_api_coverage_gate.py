@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 
 from tax_engine.api.app import (
     ReportSnapshotCreateRequest,
+    ReportSnapshotRestorePlanRequest,
     RulesetUpsertRequest,
     _build_csv_from_rows,
     _build_export_rows,
@@ -37,6 +38,7 @@ from tax_engine.api.app import (
     ruleset_get,
     ruleset_list,
     ruleset_upsert,
+    snapshot_restore_plan,
 )
 from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
@@ -216,6 +218,19 @@ def test_report_export_integrity_snapshot_and_compliance_paths() -> None:
     assert snapshot_preview.data["snapshot_id"] == snapshot_id
     assert snapshot_preview.data["restore_supported"] is False
     assert "preview_rows" in snapshot_preview.data
+    restore_plan = snapshot_restore_plan(
+        snapshot_id,
+        ReportSnapshotRestorePlanRequest(current_run_id=job_id, include_preview_rows=True),
+    )
+    assert restore_plan.status == "success"
+    assert restore_plan.data["restore_supported"] is True
+    assert restore_plan.data["restore_mode"] == "non_destructive_plan"
+    assert restore_plan.data["comparison"]["same_run"] is True
+    assert restore_plan.data["plan_steps"]
+    assert snapshot_restore_plan(
+        "missing",
+        ReportSnapshotRestorePlanRequest(current_run_id=job_id),
+    ).errors[0]["code"] == "snapshot_not_found"
     assert get_snapshot("missing").errors[0]["code"] == "snapshot_not_found"
     assert preview_snapshot("missing").errors[0]["code"] == "snapshot_not_found"
 

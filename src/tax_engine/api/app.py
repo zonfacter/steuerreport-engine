@@ -134,6 +134,7 @@ from tax_engine.api.processing import (
     ProcessCompareRulesetsRequest,
     ProcessPreflightRequest,
     ReportSnapshotCreateRequest,
+    ReportSnapshotRestorePlanRequest,
     audit_tax_line,
     compliance_classification,
     create_snapshot,
@@ -155,6 +156,7 @@ from tax_engine.api.processing import (
     process_worker_run_next,
     report_export,
     report_files,
+    snapshot_restore_plan,
 )
 from tax_engine.api.processing import (
     router as processing_router,
@@ -258,6 +260,7 @@ __all__ = [
     "ProcessCompareRulesetsRequest",
     "ProcessPreflightRequest",
     "ReportSnapshotCreateRequest",
+    "ReportSnapshotRestorePlanRequest",
     "RulesetUpsertRequest",
     "TaxEventOverrideDeleteRequest",
     "TaxEventOverrideUpsertRequest",
@@ -392,6 +395,7 @@ __all__ = [
     "reconcile_manual",
     "report_export",
     "report_files",
+    "snapshot_restore_plan",
     "review_gates",
     "review_actions",
     "review_ignore",

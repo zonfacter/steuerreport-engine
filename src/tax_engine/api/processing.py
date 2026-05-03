@@ -55,6 +55,11 @@ class ReportSnapshotCreateRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
 
 
+class ReportSnapshotRestorePlanRequest(BaseModel):
+    current_run_id: str | None = Field(default=None, min_length=1, max_length=200)
+    include_preview_rows: bool = True
+
+
 class ProcessCompareRulesetsRequest(BaseModel):
     job_id: str = Field(min_length=1, max_length=200)
     compare_ruleset_id: str = Field(min_length=1, max_length=80)
@@ -1053,6 +1058,107 @@ def preview_snapshot(snapshot_id: str) -> StandardResponse:
         trace_id=trace_id,
         action="snapshot.preview",
         payload={"snapshot_id": snapshot_id, "job_id": snapshot["job_id"]},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
+
+
+@router.post("/api/v1/snapshots/restore-plan/{snapshot_id}", response_model=StandardResponse, tags=["integrity"])
+def snapshot_restore_plan(snapshot_id: str, payload: ReportSnapshotRestorePlanRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    snapshot = STORE.get_report_snapshot(snapshot_id)
+    if snapshot is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "snapshot_not_found", "message": f"Snapshot not found: {snapshot_id}"}],
+            warnings=[],
+        )
+    snapshot_job_id = str(snapshot["job_id"])
+    snapshot_payload = _safe_json_object(snapshot.get("payload_json", "{}"))
+    snapshot_summary = _safe_json_object(snapshot.get("summary_json", "{}"))
+    snapshot_job = get_processing_job(snapshot_job_id)
+    snapshot_integrity = STORE.get_report_integrity(snapshot_job_id) or {}
+    current_run_id = str(payload.current_run_id or snapshot_job_id).strip()
+    current_job = get_processing_job(current_run_id)
+    current_integrity = STORE.get_report_integrity(current_run_id) or {}
+    tax_lines = STORE.get_tax_lines(snapshot_job_id)
+    derivative_lines = STORE.get_derivative_lines(snapshot_job_id)
+    preview_rows: list[dict[str, Any]] = []
+    if payload.include_preview_rows:
+        preview_rows.extend(
+            {
+                "line_type": "tax",
+                "line_no": row.get("line_no"),
+                "asset": row.get("asset"),
+                "qty": row.get("qty"),
+                "gain_loss_eur": row.get("gain_loss_eur"),
+                "tax_status": row.get("tax_status"),
+                "source_event_id": row.get("source_event_id"),
+                "lot_source_event_id": row.get("lot_source_event_id"),
+                "transfer_chain_id": row.get("transfer_chain_id"),
+            }
+            for row in tax_lines[:10]
+        )
+        preview_rows.extend(
+            {
+                "line_type": "derivative",
+                "line_no": row.get("line_no"),
+                "asset": row.get("asset"),
+                "gain_loss_eur": row.get("gain_loss_eur"),
+                "tax_status": row.get("loss_bucket"),
+                "source_event_id": row.get("source_event_id"),
+            }
+            for row in derivative_lines[:10]
+        )
+
+    comparison = {
+        "current_run_id": current_run_id,
+        "current_job_found": current_job is not None,
+        "same_run": current_run_id == snapshot_job_id,
+        "report_integrity_matches": str(current_integrity.get("report_integrity_id", ""))
+        == str(snapshot_integrity.get("report_integrity_id", "")),
+        "data_hash_matches": str(current_integrity.get("data_hash", "")) == str(snapshot_integrity.get("data_hash", "")),
+        "config_hash_matches": str(current_integrity.get("config_hash", ""))
+        == str(snapshot_integrity.get("config_hash", "")),
+    }
+    plan_steps = [
+        "Snapshot-Payload und Summary laden.",
+        "Report-Integrity-ID, Data-Hash, Config-Hash und Ruleset mit aktuellem Lauf vergleichen.",
+        "Export-Artefakte aus dem Snapshot-Job neu öffnen oder erneut exportieren.",
+        "Keine RAW-Daten, Overrides oder aktuellen Steuerläufe überschreiben.",
+        "Bei Abweichungen neuen Steuerlauf erzeugen und als neue Version/Snapshot speichern.",
+    ]
+    data = {
+        "snapshot_id": snapshot["snapshot_id"],
+        "snapshot_job_id": snapshot_job_id,
+        "created_at_utc": snapshot["created_at_utc"],
+        "notes": snapshot.get("notes"),
+        "restore_supported": True,
+        "restore_mode": "non_destructive_plan",
+        "restore_note": "Dieser Plan ist absichtlich nicht-destruktiv. Er stellt nichts wieder her und verändert keine RAW-Daten.",
+        "snapshot": {
+            "job_found": snapshot_job is not None,
+            "job_status": snapshot_job.get("status") if snapshot_job else "missing",
+            "tax_year": snapshot_job.get("tax_year") if snapshot_job else None,
+            "ruleset_id": snapshot_job.get("ruleset_id") if snapshot_job else "",
+            "ruleset_version": snapshot_job.get("ruleset_version") if snapshot_job else "",
+            "report_integrity_id": snapshot_integrity.get("report_integrity_id", ""),
+            "data_hash": snapshot_integrity.get("data_hash", ""),
+            "config_hash": snapshot_integrity.get("config_hash", ""),
+            "event_count": snapshot_integrity.get("event_count", snapshot_payload.get("processed_events", 0)),
+            "tax_line_count": len(tax_lines),
+            "derivative_line_count": len(derivative_lines),
+            "summary": snapshot_summary,
+        },
+        "comparison": comparison,
+        "plan_steps": plan_steps,
+        "preview_rows": preview_rows,
+    }
+    write_audit(
+        trace_id=trace_id,
+        action="snapshot.restore_plan",
+        payload={"snapshot_id": snapshot_id, "snapshot_job_id": snapshot_job_id, "current_run_id": current_run_id},
     )
     return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
 

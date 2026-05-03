@@ -586,6 +586,17 @@ body {
   font-weight: 800;
 }
 
+.restore-plan-list {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-left: 22px;
+  color: var(--muted);
+}
+
+.restore-plan-list li {
+  margin: 6px 0;
+}
+
 .tax-run-preview span {
   border: 1px solid var(--line);
   background: rgba(13, 17, 23, 0.36);

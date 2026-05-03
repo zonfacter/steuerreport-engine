@@ -91,6 +91,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Steuer-Tab kann einen aktuellen Lauf gegen ein zweites Ruleset vergleichen.
   - Snapshot-Erstellung aus der Oberfläche ergänzt, inklusive Notizfeld für Nachprüfungsstände.
   - Nicht-destruktive Snapshot-Vorschau ergänzt: Snapshot-ID lädt Integritätsdaten, Steuerjahr, Ruleset, Zeilenzahlen, SO-Zusammenfassung und Beispielzeilen.
+  - Neuer Endpoint `POST /api/v1/snapshots/restore-plan/{snapshot_id}` erstellt einen nicht-destruktiven Wiederherstellungsplan mit Vergleich von Snapshot-Run, aktuellem Run, Report-Integrity, Data-Hash und Config-Hash.
+  - UI ergänzt einen Restore-Plan-Button in der Snapshot-Prüfung; der Plan überschreibt keine RAW-Daten, Overrides oder aktuellen Steuerläufe.
 - Lot-Aging-Ansicht erweitert:
   - Offene FIFO-Lots liefern jetzt `days_to_exempt` und `holding_progress_ratio`.
   - Asset-Zusammenfassung zeigt Gesamtmenge, steuerfreie Menge, noch steuerpflichtige Menge, Lot-Anzahl und älteste Haltedauer.

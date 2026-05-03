@@ -3965,6 +3965,23 @@ async function previewSnapshot(trigger = null) {
   showToast("Snapshot-Vorschau geladen.", "ok");
 }
 
+async function loadSnapshotRestorePlan(trigger = null) {
+  const snapshotId = (el("snapshotPreviewId")?.value || "").trim();
+  if (!snapshotId) {
+    showToast("Bitte Snapshot-ID eintragen.", "warn");
+    return;
+  }
+  const data = await callApi(
+    `/api/v1/snapshots/restore-plan/${encodeURIComponent(snapshotId)}`,
+    "POST",
+    { current_run_id: currentJobId() || null, include_preview_rows: true },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  renderSnapshotRestorePlan(data.data || {});
+  showToast("Restore-Plan geladen.", "ok");
+}
+
 function renderSnapshotPreview(data) {
   const host = el("snapshotPreviewResult");
   if (!host) return;
@@ -4003,6 +4020,52 @@ function renderSnapshotPreview(data) {
               <td title="${escapeHtml(row.source_event_id || "")}">${escapeHtml(shortHash(row.source_event_id || ""))}</td>
             </tr>
           `).join("") || '<tr><td colspan="7">Keine Beispielzeilen im Snapshot-Kontext.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSnapshotRestorePlan(data) {
+  const host = el("snapshotPreviewResult");
+  if (!host) return;
+  const snapshot = data.snapshot || {};
+  const comparison = data.comparison || {};
+  const steps = data.plan_steps || [];
+  const rows = data.preview_rows || [];
+  host.innerHTML = `
+    <div class="metrics">
+      <div class="metric"><span>Restore-Modus</span><strong>${escapeHtml(data.restore_mode || "-")}</strong></div>
+      <div class="metric"><span>Snapshot Run</span><strong title="${escapeHtml(data.snapshot_job_id || "")}">${escapeHtml(shortHash(data.snapshot_job_id || ""))}</strong></div>
+      <div class="metric"><span>Current Run gefunden</span><strong>${comparison.current_job_found ? "ja" : "nein"}</strong></div>
+      <div class="metric"><span>Integrity Match</span><strong>${comparison.report_integrity_matches ? "ja" : "nein"}</strong></div>
+      <div class="metric"><span>Data Hash Match</span><strong>${comparison.data_hash_matches ? "ja" : "nein"}</strong></div>
+      <div class="metric"><span>Tax Lines</span><strong>${formatQty(snapshot.tax_line_count || 0)}</strong></div>
+    </div>
+    <div class="kv-list">
+      <div><span>Hinweis</span><strong>${escapeHtml(data.restore_note || "-")}</strong></div>
+      <div><span>Report Integrity</span><strong title="${escapeHtml(snapshot.report_integrity_id || "")}">${escapeHtml(shortHash(snapshot.report_integrity_id || ""))}</strong></div>
+      <div><span>Data Hash</span><strong title="${escapeHtml(snapshot.data_hash || "")}">${escapeHtml(shortHash(snapshot.data_hash || ""))}</strong></div>
+      <div><span>Config Hash</span><strong title="${escapeHtml(snapshot.config_hash || "")}">${escapeHtml(shortHash(snapshot.config_hash || ""))}</strong></div>
+    </div>
+    <ol class="restore-plan-list">
+      ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+    </ol>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Typ</th><th>#</th><th>Asset</th><th>Menge</th><th>Gewinn/Verlust</th><th>Status</th><th>Event</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.line_type || "")}</td>
+              <td>${escapeHtml(row.line_no || "")}</td>
+              <td>${escapeHtml(row.asset || "")}</td>
+              <td class="num">${formatQty(row.qty || 0)}</td>
+              <td class="num">${formatCurrency(row.gain_loss_eur || 0, "EUR")}</td>
+              <td>${escapeHtml(row.tax_status || "")}</td>
+              <td title="${escapeHtml(row.source_event_id || "")}">${escapeHtml(shortHash(row.source_event_id || ""))}</td>
+            </tr>
+          `).join("") || '<tr><td colspan="7">Keine Beispielzeilen im Restore-Plan.</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -4921,6 +4984,9 @@ async function loadUnmatched() {
   });
   el("btnPreviewSnapshot")?.addEventListener("click", async (e) => {
     await previewSnapshot(e.currentTarget);
+  });
+  el("btnSnapshotRestorePlan")?.addEventListener("click", async (e) => {
+    await loadSnapshotRestorePlan(e.currentTarget);
   });
   ["reviewIssueSearch", "reviewIssueStatus"].forEach((id) => {
     const node = el(id);

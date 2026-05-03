@@ -23,6 +23,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - `GET /api/v1/import/jobs` nutzt persistierte Importquellen und unterstützt Filter nach `integration` und `status`.
 - Die UI zeigt Export-Artefakte im Steuer-Tab als klickbare Karten und bietet Ruleset-Vergleich sowie Snapshot-Erstellung an.
 - Die UI bietet eine nicht-destruktive Snapshot-Vorschau mit Integritätsdaten, Zeilenzahlen und Beispielzeilen.
+- Snapshot-Restore ist als nicht-destruktiver Restore-Plan umgesetzt: Vergleich von Snapshot-Run, aktuellem Run, Report-Integrity, Data-Hash und Config-Hash ohne Überschreiben aktueller Daten.
 - Lot-Aging ist UI-ready: offene FIFO-Lots zeigen Menge, Anschaffungszeitpunkt, Haltedauer, Tage bis Steuerfreiheit, Fortschritt und Asset-Zusammenfassung.
 - `GET /api/v1/process/options` liefert validierte Steuerlauf-Optionen fuer den Wizard.
 - `POST /api/v1/process/preflight` prueft Importdaten, Ruleset, offene High-Issues, unmatched Transfers und Bewertungsabdeckung vor dem Lauf.
@@ -179,7 +180,7 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 - UI-Angemessenheit bei 30k+ Zeilen: Performance mit virtualisierten Tabellen erforderlich.
 
 ## Nächste konkrete Arbeitspakete (Backlog)
-1. Snapshot-Wiederherstellungsworkflow mit explizitem, nicht destruktivem Restore-Plan modellieren.
+1. Snapshot-Wiederherstellungsworkflow mit explizitem, nicht destruktivem Restore-Plan modellieren: umgesetzt als `POST /api/v1/snapshots/restore-plan/{snapshot_id}`.
 2. Review-Merge/Split fachlich auf die Steuer-Arbeitskopie anwenden, sobald die genaue Split-Semantik je Connector definiert ist.
 3. Integrations-Konfliktcenter um manuelle Massenentscheidung erweitern: umgesetzt für markierte Konfliktgruppen mit `exclude_reference_events`, `disable_reference_sources` und `confirm_reference_only`.
 4. Transfer-Chain-Detailansicht ergänzen: vollständige mehrstufige Timeline pro Chain-ID statt nur direkter Zeile.
