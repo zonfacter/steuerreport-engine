@@ -14,6 +14,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - `GET /api/v1/report/files/{run_id}` ist implementiert und liefert JSON/CSV/PDF-Artefakte nach Scope.
 - `GET /api/v1/report/export` unterstützt JSON, CSV und PDF; PDF-Dateien werden in Teile mit maximal `100` Seiten geschnitten.
 - Exportzeilen enthalten `report_integrity_id`, `config_hash` und `data_hash`.
+- Tax Lines enthalten `lot_source_event_id` und `transfer_chain_id` für Lot-/Transfer-Nachvollzug im Export.
 - `POST /api/v1/process/compare-rulesets` ist ergänzend zum GET-Endpunkt implementiert.
 - `GET /api/v1/import/jobs` nutzt persistierte Importquellen und unterstützt Filter nach `integration` und `status`.
 - Die UI zeigt Export-Artefakte im Steuer-Tab als klickbare Karten und bietet Ruleset-Vergleich sowie Snapshot-Erstellung an.
@@ -170,7 +171,7 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 - UI-Angemessenheit bei 30k+ Zeilen: Performance mit virtualisierten Tabellen erforderlich.
 
 ## Nächste konkrete Arbeitspakete (Backlog)
-1. Lot-Nachvollzug im Export um `transfer_chain_id` erweitern.
-2. Snapshot-Wiederherstellungsvorschau in der UI ergänzen.
-3. Review-Merge/Split fachlich auf die Steuer-Arbeitskopie anwenden, sobald die genaue Split-Semantik je Connector definiert ist.
-4. Integrations-Konfliktcenter um manuelle Massenentscheidung erweitern: Referenzgruppe bestätigen, Quelle deaktivieren oder Einzelereignisse mit Pflichtgrund ausschließen.
+1. Snapshot-Wiederherstellungsvorschau in der UI ergänzen.
+2. Review-Merge/Split fachlich auf die Steuer-Arbeitskopie anwenden, sobald die genaue Split-Semantik je Connector definiert ist.
+3. Integrations-Konfliktcenter um manuelle Massenentscheidung erweitern: Referenzgruppe bestätigen, Quelle deaktivieren oder Einzelereignisse mit Pflichtgrund ausschließen.
+4. Transfer-Chain-IDs über mehrstufige Wallet-Wechsel aggregieren, statt nur den direkten Match zu referenzieren.

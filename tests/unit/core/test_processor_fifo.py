@@ -53,12 +53,16 @@ def test_fifo_generates_split_tax_lines_with_hold_period_and_fees() -> None:
     assert tax_lines[0]["proceeds_eur"] == "298"
     assert tax_lines[0]["gain_loss_eur"] == "197"
     assert tax_lines[0]["tax_status"] == "exempt"
+    assert tax_lines[0]["source_event_id"] == "sell-1"
+    assert tax_lines[0]["lot_source_event_id"] == "buy-1"
 
     assert tax_lines[1]["qty"] == "0.5"
     assert tax_lines[1]["cost_basis_eur"] == "100.5"
     assert tax_lines[1]["proceeds_eur"] == "149.0"
     assert tax_lines[1]["gain_loss_eur"] == "48.5"
     assert tax_lines[1]["tax_status"] == "taxable"
+    assert tax_lines[1]["source_event_id"] == "sell-1"
+    assert tax_lines[1]["lot_source_event_id"] == "buy-2"
 
 
 def test_fifo_flags_short_sell_and_creates_fallback_tax_line() -> None:

@@ -68,6 +68,8 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Neuer Endpoint `GET /api/v1/report/files/{run_id}` liefert verfügbare virtuelle Export-Artefakte für JSON/CSV/PDF nach Scope (`all`, `tax`, `derivatives`).
   - `GET /api/v1/report/export` unterstützt jetzt PDF-Export mit maximal 100 Seiten je Teil-Datei.
   - Exportzeilen enthalten `report_integrity_id`, `config_hash` und `data_hash`, damit CSV/JSON/PDF prüfungssicherer nachvollziehbar sind.
+  - Tax Lines speichern und exportieren jetzt `lot_source_event_id` und `transfer_chain_id`, damit verbrauchte Anschaffungs-Lots und Eigenübertragsketten nachvollziehbar bleiben.
+  - Steuer-UI und Tax-CSV enthalten die neuen Trace-Spalten für Lot und Transfer Chain.
   - Processing-End-to-End-Test prüft jetzt, dass Report-Artefakte nach einem erfolgreichen Lauf auffindbar sind.
 - Ruleset-Vergleich ergänzt:
   - `POST /api/v1/process/compare-rulesets` ist zusätzlich zum bestehenden GET-Endpunkt verfügbar, damit der API-Vertrag aus der Roadmap ohne Freitext-/Query-Workaround nutzbar ist.

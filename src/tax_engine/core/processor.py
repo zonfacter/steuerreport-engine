@@ -393,6 +393,8 @@ def process_events_for_year(
                             "hold_days": 0,
                             "tax_status": "taxable",
                             "source_event_id": event.unique_event_id,
+                            "lot_source_event_id": "",
+                            "transfer_chain_id": "",
                         }
                     )
                 qty_to_sell = Decimal("0")
@@ -423,6 +425,8 @@ def process_events_for_year(
                         "hold_days": hold_days,
                         "tax_status": tax_status,
                         "source_event_id": event.unique_event_id,
+                        "lot_source_event_id": current_lot.source_event_id,
+                        "transfer_chain_id": "",
                     }
                 )
 

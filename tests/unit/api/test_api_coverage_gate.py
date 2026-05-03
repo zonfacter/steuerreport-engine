@@ -230,7 +230,16 @@ def test_report_helpers_and_review_gate_empty_completed_job_paths() -> None:
     assert any(item["code"] == "job_id_missing" for item in review_gates().data["warning_reasons"])
 
     job = {"job_id": job_id, "tax_year": 2026, "ruleset_id": "DE-2026-v1.0", "ruleset_version": "1.0"}
-    tax_rows = [{"line_no": 1, "asset": "BTC", "qty": "0.1", "gain_loss_eur": "5"}]
+    tax_rows = [
+        {
+            "line_no": 1,
+            "asset": "BTC",
+            "qty": "0.1",
+            "gain_loss_eur": "5",
+            "lot_source_event_id": "buy-event",
+            "transfer_chain_id": "match-1",
+        }
+    ]
     derivative_rows = [{"line_no": 1, "asset": "ETH", "position_id": "p1", "gain_loss_eur": "-7"}]
     export_rows = _build_export_rows(
         job,
@@ -240,7 +249,10 @@ def test_report_helpers_and_review_gate_empty_completed_job_paths() -> None:
         integrity={"report_integrity_id": "rid", "config_hash": "cfg", "data_hash": "data"},
     )
     assert {row["line_type"] for row in export_rows} == {"tax", "derivative"}
+    assert export_rows[0]["lot_source_event_id"] == "buy-event"
+    assert export_rows[0]["transfer_chain_id"] == "match-1"
     assert "report_integrity_id" in _build_csv_from_rows(export_rows)
+    assert "transfer_chain_id" in _build_csv_from_rows(export_rows)
     files = _build_report_file_index(job, tax_line_count=1, derivative_line_count=1)
     assert any(item["format"] == "pdf" and item["scope"] == "all" for item in files)
 

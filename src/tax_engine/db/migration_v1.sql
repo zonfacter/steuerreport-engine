@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS tax_lines (
     hold_days INTEGER NOT NULL,
     tax_status TEXT NOT NULL,
     source_event_id TEXT NOT NULL,
+    lot_source_event_id TEXT NOT NULL DEFAULT '',
+    transfer_chain_id TEXT NOT NULL DEFAULT '',
     FOREIGN KEY(job_id) REFERENCES processing_queue(job_id)
 );
 

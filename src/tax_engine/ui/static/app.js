@@ -948,6 +948,8 @@ function renderTaxTable() {
       <td class="num c-gain ${gainClass}">${formatMoney(gain)}</td>
       <td class="num c-hold">${Number.isFinite(holdDays) ? holdDays : ""}</td>
       <td class="c-status">${line.tax_status}</td>
+      <td class="c-lot" title="${line.lot_source_event_id || ""}">${shortHash(line.lot_source_event_id || "")}</td>
+      <td class="c-chain" title="${line.transfer_chain_id || ""}">${shortHash(line.transfer_chain_id || "")}</td>
       <td class="c-audit">
         <button class="btn-audit" data-line-no="${line.line_no}">Trace</button>
         <button class="btn-classify" data-event-id="${line.source_event_id || ""}">Klassifizieren</button>
@@ -5006,6 +5008,8 @@ async function loadUnmatched() {
       "hold_days",
       "tax_status",
       "source_event_id",
+      "lot_source_event_id",
+      "transfer_chain_id",
     ]);
     downloadCsv(`tax_lines_${currentJobId() || "job"}.csv`, csv);
   });

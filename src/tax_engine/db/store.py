@@ -59,6 +59,18 @@ class SQLiteImportStore:
                     )
                 schema_sql = (Path(__file__).with_name("migration_v1.sql")).read_text(encoding="utf-8")
                 conn.executescript(schema_sql)
+                self._ensure_column(
+                    conn=conn,
+                    table_name="tax_lines",
+                    column_name="lot_source_event_id",
+                    column_ddl="TEXT NOT NULL DEFAULT ''",
+                )
+                self._ensure_column(
+                    conn=conn,
+                    table_name="tax_lines",
+                    column_name="transfer_chain_id",
+                    column_ddl="TEXT NOT NULL DEFAULT ''",
+                )
                 self._ensure_table_if_missing(
                     conn=conn,
                     table_name="ruleset_catalog",
@@ -476,8 +488,10 @@ class SQLiteImportStore:
                         gain_loss_eur,
                         hold_days,
                         tax_status,
-                        source_event_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        source_event_id,
+                        lot_source_event_id,
+                        transfer_chain_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
@@ -492,6 +506,8 @@ class SQLiteImportStore:
                         int(line["hold_days"]),
                         str(line["tax_status"]),
                         str(line["source_event_id"]),
+                        str(line.get("lot_source_event_id", "")),
+                        str(line.get("transfer_chain_id", "")),
                     ),
                 )
             conn.commit()
@@ -511,7 +527,9 @@ class SQLiteImportStore:
                     gain_loss_eur,
                     hold_days,
                     tax_status,
-                    source_event_id
+                    source_event_id,
+                    lot_source_event_id,
+                    transfer_chain_id
                 FROM tax_lines
                 WHERE job_id = ?
                 ORDER BY line_no ASC
@@ -531,6 +549,8 @@ class SQLiteImportStore:
                 "hold_days": int(row["hold_days"]),
                 "tax_status": row["tax_status"],
                 "source_event_id": row["source_event_id"],
+                "lot_source_event_id": row["lot_source_event_id"],
+                "transfer_chain_id": row["transfer_chain_id"],
             }
             for row in rows
         ]
@@ -550,7 +570,9 @@ class SQLiteImportStore:
                     gain_loss_eur,
                     hold_days,
                     tax_status,
-                    source_event_id
+                    source_event_id,
+                    lot_source_event_id,
+                    transfer_chain_id
                 FROM tax_lines
                 WHERE job_id = ? AND line_no = ?
                 """,
@@ -570,6 +592,8 @@ class SQLiteImportStore:
             "hold_days": int(row["hold_days"]),
             "tax_status": row["tax_status"],
             "source_event_id": row["source_event_id"],
+            "lot_source_event_id": row["lot_source_event_id"],
+            "transfer_chain_id": row["transfer_chain_id"],
         }
 
     def get_raw_event(self, unique_event_id: str) -> dict[str, Any] | None:

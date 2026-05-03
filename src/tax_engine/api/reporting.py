@@ -41,6 +41,8 @@ def build_export_rows(
                 "hold_days": line.get("hold_days"),
                 "tax_status": line.get("tax_status"),
                 "source_event_id": line.get("source_event_id"),
+                "lot_source_event_id": line.get("lot_source_event_id"),
+                "transfer_chain_id": line.get("transfer_chain_id"),
             }
         )
     if include_derivatives:
@@ -66,6 +68,8 @@ def build_export_rows(
                     "hold_days": None,
                     "tax_status": line.get("loss_bucket"),
                     "source_event_id": line.get("source_event_id"),
+                    "lot_source_event_id": None,
+                    "transfer_chain_id": None,
                     "fees_eur": line.get("fees_eur"),
                     "funding_eur": line.get("funding_eur"),
                     "event_type": line.get("event_type"),
@@ -141,6 +145,8 @@ def build_csv_from_rows(rows: list[dict[str, Any]]) -> str:
         "hold_days",
         "tax_status",
         "source_event_id",
+        "lot_source_event_id",
+        "transfer_chain_id",
     ]
     buffer = StringIO()
     writer = csv.DictWriter(buffer, fieldnames=headers, extrasaction="ignore")

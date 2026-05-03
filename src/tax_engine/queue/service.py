@@ -221,6 +221,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         )
         processing_result["integration_filter_summary"] = integration_filter_summary
         tax_lines = processing_result.pop("tax_lines")
+        tax_lines = _attach_transfer_trace(tax_lines)
         derivative_result = process_derivatives_for_year(raw_events=effective_events, tax_year=claimed["tax_year"])
         derivative_lines = derivative_result.pop("lines")
         tax_domain_summary = build_tax_domain_summary(
@@ -287,3 +288,26 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         )
 
     return STORE.get_processing_job(job_id)
+
+
+def _attach_transfer_trace(tax_lines: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    transfer_chain_by_event_id: dict[str, str] = {}
+    for match in STORE.list_transfer_matches():
+        chain_id = str(match.get("match_id", ""))
+        if not chain_id:
+            continue
+        transfer_chain_by_event_id[str(match.get("outbound_event_id", ""))] = chain_id
+        transfer_chain_by_event_id[str(match.get("inbound_event_id", ""))] = chain_id
+
+    enriched: list[dict[str, Any]] = []
+    for line in tax_lines:
+        row = dict(line)
+        lot_source_event_id = str(row.get("lot_source_event_id", "")).strip()
+        sell_source_event_id = str(row.get("source_event_id", "")).strip()
+        row["transfer_chain_id"] = (
+            transfer_chain_by_event_id.get(lot_source_event_id)
+            or transfer_chain_by_event_id.get(sell_source_event_id)
+            or str(row.get("transfer_chain_id", "")).strip()
+        )
+        enriched.append(row)
+    return enriched
