@@ -698,17 +698,28 @@
       </section>
 
       <section class="card step-panel" data-panel="4">
-        <h2>Dashboard</h2>
-        <div class="row">
-          <button id="btnDashRefresh" class="btn-primary">Dashboard aktualisieren</button>
-          <label>Rollenmodus
-            <select id="dashRoleMode">
-              <option value="auto">auto</option>
-              <option value="private">private</option>
-              <option value="business">business</option>
-            </select>
-          </label>
-          <button id="btnDashSaveRole">Rollenmodus speichern</button>
+        <div class="dashboard-toolbar">
+          <div>
+            <h2>Dashboard</h2>
+            <p class="muted">Wähle hier das Steuer-/Analysejahr für Cockpit, Performance, Portfolio-Verlauf und Tabellen.</p>
+          </div>
+          <div class="dashboard-toolbar-controls">
+            <label>Zeitraum / Jahr
+              <select id="dashboardYearMirror">
+                <option value="">Alle Jahre</option>
+              </select>
+            </label>
+            <button id="btnDashboardYearApply" class="btn-primary" type="button">Zeitraum anzeigen</button>
+            <button id="btnDashRefresh">Dashboard aktualisieren</button>
+            <label>Rollenmodus
+              <select id="dashRoleMode">
+                <option value="auto">auto</option>
+                <option value="private">private</option>
+                <option value="business">business</option>
+              </select>
+            </label>
+            <button id="btnDashSaveRole">Rollenmodus speichern</button>
+          </div>
         </div>
         <nav class="review-tabs">
           <button class="review-tab active" data-review-tab="cockpit">Cockpit</button>

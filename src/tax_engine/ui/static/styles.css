@@ -350,6 +350,34 @@ body {
   padding: 10px 14px 6px;
 }
 
+.dashboard-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  border: 1px solid rgba(243, 186, 47, 0.28);
+  background: linear-gradient(135deg, rgba(243, 186, 47, 0.12), rgba(47, 127, 209, 0.08));
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.dashboard-toolbar h2 {
+  margin: 0 0 4px;
+}
+
+.dashboard-toolbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: end;
+  gap: 10px;
+}
+
+.dashboard-toolbar-controls select {
+  min-width: 140px;
+}
+
 .quick-card {
   margin-bottom: 10px;
   padding: 10px;

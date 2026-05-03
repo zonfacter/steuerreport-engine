@@ -48,6 +48,7 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Neuer leichter Endpoint `GET /api/v1/dashboard/shell` liefert Cockpit-Grunddaten ohne schwere Jahres-/Bewertungsaggregation.
 - Globale Dashboard-Zeitraumsteuerung ergänzt:
   - Neuer globaler Jahresfilter im Dashboard-Kopfbereich.
+  - Jahresfilter zusätzlich prominent direkt im Dashboard-Toolbar platziert, damit er nicht in der allgemeinen Kopfzeile untergeht.
   - Auswahl synchronisiert Performance-Ansichten, Jahresübersicht, Portfolio-Verlauf und Steuerjahr-Auswahl.
   - Jahresdiagramm hebt das gewählte Jahr hervor; Tagesaktivität und Portfolio-Verlauf werden auf das Jahr gefiltert.
 - Integrationssteuerung ergänzt:

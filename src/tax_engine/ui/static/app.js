@@ -932,33 +932,43 @@ function renderDashboard(data) {
 
 function populateGlobalYearFilter(activityYears) {
   const select = el("globalYearFilter");
-  if (!select) return;
-  const current = select.value || loadPref("field.globalYearFilter", "");
+  const mirror = el("dashboardYearMirror");
+  if (!select && !mirror) return;
+  const current = select?.value || mirror?.value || loadPref("field.globalYearFilter", "");
   const years = (Array.isArray(activityYears) ? activityYears : [])
     .map((item) => String(item.year || ""))
     .filter(Boolean)
     .sort();
   const signature = years.join("|");
-  if (select.dataset.signature !== signature) {
-    select.dataset.signature = signature;
-    select.innerHTML = '<option value="">Alle Jahre</option>';
+  [select, mirror].filter(Boolean).forEach((node) => {
+    if (node.dataset.signature === signature) return;
+    node.dataset.signature = signature;
+    node.innerHTML = '<option value="">Alle Jahre</option>';
     years.forEach((year) => {
       const option = document.createElement("option");
       option.value = year;
       option.textContent = year;
-      select.appendChild(option);
+      node.appendChild(option);
     });
-  }
+  });
   if (current && years.includes(current)) {
-    select.value = current;
+    if (select) select.value = current;
+    if (mirror) mirror.value = current;
   } else if (!current) {
-    select.value = "";
+    if (select) select.value = "";
+    if (mirror) mirror.value = "";
   }
   syncDashboardYearControls(false);
 }
 
 function syncDashboardYearControls(updateTaxYear = true) {
-  const selectedYear = dashboardYearFilter();
+  const selectedYear = dashboardYearFilter() || String(el("dashboardYearMirror")?.value || "").trim();
+  if (el("globalYearFilter")) {
+    el("globalYearFilter").value = selectedYear;
+  }
+  if (el("dashboardYearMirror")) {
+    el("dashboardYearMirror").value = selectedYear;
+  }
   if (el("yearlyYearFilter")) {
     el("yearlyYearFilter").value = selectedYear;
   }
@@ -5783,7 +5793,18 @@ async function loadUnmatched() {
     renderDashboard(state.dashboard);
     if (currentJobId()) void loadTaxDomainSummary(currentJobId(), true);
   });
+  el("dashboardYearMirror")?.addEventListener("change", () => {
+    syncDashboardYearControls();
+    renderDashboard(state.dashboard);
+    if (currentJobId()) void loadTaxDomainSummary(currentJobId(), true);
+  });
   el("btnGlobalYearApply")?.addEventListener("click", async () => {
+    syncDashboardYearControls();
+    renderDashboard(state.dashboard);
+    if (currentJobId()) await loadTaxDomainSummary(currentJobId(), true);
+    showToast(dashboardYearFilter() ? `Dashboard-Zeitraum ${dashboardYearFilter()} aktiv.` : "Dashboard zeigt alle Jahre.", "ok");
+  });
+  el("btnDashboardYearApply")?.addEventListener("click", async () => {
     syncDashboardYearControls();
     renderDashboard(state.dashboard);
     if (currentJobId()) await loadTaxDomainSummary(currentJobId(), true);
