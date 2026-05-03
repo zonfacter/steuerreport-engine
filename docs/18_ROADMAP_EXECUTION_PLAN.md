@@ -25,6 +25,9 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Die UI bietet eine nicht-destruktive Snapshot-Vorschau mit Integritätsdaten, Zeilenzahlen und Beispielzeilen.
 - Snapshot-Restore ist als nicht-destruktiver Restore-Plan umgesetzt: Vergleich von Snapshot-Run, aktuellem Run, Report-Integrity, Data-Hash und Config-Hash ohne Überschreiben aktueller Daten.
 - Ruleset-Change-Log ist umgesetzt: `GET /api/v1/rulesets/{ruleset_id}/{ruleset_version}/change-log` liefert Freigabe-/Änderungshistorie; die Admin-UI zeigt Status und Change Log.
+- Golden-Hash-Verification ist drift-blockierend: `scripts/verify_integrity.py` vergleicht die Golden-Files gegen `tests/fixtures/golden/hashes.json` und schlägt bei Abweichung fehl.
+- Integrity-Fingerprint ist vom Ruleset-Registry-Import entkoppelt; dadurch sind Integritäts-Tests isoliert lauffähig und vermeiden Import-Zyklen.
+- Ruleset-Auswahl bevorzugt deterministisch das Jahres-Standardruleset (`DE-YYYY-v1.0`) und ignoriert Draft-Custom-Rulesets bei automatischer Datumsauflösung.
 - Lot-Aging ist UI-ready: offene FIFO-Lots zeigen Menge, Anschaffungszeitpunkt, Haltedauer, Tage bis Steuerfreiheit, Fortschritt und Asset-Zusammenfassung.
 - `GET /api/v1/process/options` liefert validierte Steuerlauf-Optionen fuer den Wizard.
 - `POST /api/v1/process/preflight` prueft Importdaten, Ruleset, offene High-Issues, unmatched Transfers und Bewertungsabdeckung vor dem Lauf.
@@ -158,6 +161,7 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 
 ### 4.3 Golden Case Drift & CI-Härtung
 - Golden-Case-Pipeline erzwingen als `required check` für alle Kernmodule.
+- Stand: `Golden Hash Verification` ist in CI vorhanden und vergleicht gegen explizite Referenz-Hashes.
 - CI-Gates auf Zielwerte anheben, sobald ausreichend stabil:
   - FIFO/Kern ≥95
   - API ≥80

@@ -109,6 +109,11 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Core-Tests für `tax_domains` ergänzt, damit §22-/EÜR-/Data-Credit-/Derivate-Summen regressionssicher geprüft werden.
   - Core-Tests für `reconciliation` ergänzt, damit Transfer-Erkennung, Time-Window-Matching und Fee-Toleranz abgesichert sind.
   - API-Coverage-Tests für Rulesets, Export, Integrity/Snapshots, Compliance-Klassifikation und Review-Gates ergänzt.
+- Golden-Hash-Härtung:
+  - `tests/fixtures/golden/hashes.json` als explizite Referenz für `DE-2024`, `DE-2025`, `DE-2026` ergänzt.
+  - `scripts/verify_integrity.py` schlägt jetzt bei Golden-Hash-Drift fehl, statt nur Hashes auszugeben.
+  - Integrity-Fingerprint vom Ruleset-Registry-Import entkoppelt, damit Integritäts-Tests ohne Import-Zyklus laufen.
+  - Ruleset-Auswahl bevorzugt deterministisch das Jahres-Standardruleset (`DE-YYYY-v1.0`) und lässt Draft-Custom-Rulesets nicht die automatische Auswahl kippen.
 - API-Refactoring:
   - Report-/Export-Helfer für JSON/CSV/PDF und 100-Seiten-PDF-Splitting aus `api/app.py` in `api/reporting.py` ausgelagert.
   - Bestehende interne `_build_*`-Imports bleiben kompatibel, damit Endpunkte und Tests ohne API-Vertragsbruch weiterlaufen.
