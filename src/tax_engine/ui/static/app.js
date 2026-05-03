@@ -2183,16 +2183,19 @@ function renderImportJobDetail(item) {
     return;
   }
   const sourceName = String(item.source_name || "");
-  const isBulk = sourceName.startsWith("bulk:");
-  host.className = `notice ${item.status === "completed" ? "notice-ok" : item.status === "duplicate" ? "notice-warn" : "notice-neutral"}`;
+  const action = String(item.retry_action || (sourceName.startsWith("bulk:") ? "retry-bulk" : "open-connector"));
+  const canRetry = !!item.can_retry;
+  host.className = `notice ${item.status === "completed" ? "notice-ok" : item.status === "duplicate" ? "notice-warn" : item.status === "partial" || item.status === "empty" ? "notice-warn" : "notice-neutral"}`;
   host.innerHTML = `
     <div><strong>${escapeHtml(item.connector || "unknown")}</strong> · ${escapeHtml(item.status || "")}</div>
+    <div>${escapeHtml(item.status_reason || "Kein Statusgrund vorhanden.")}</div>
     <div class="muted">Source-ID: ${escapeHtml(item.source_file_id || item.job_id || "-")}</div>
     <div class="muted">Quelle: ${escapeHtml(sourceName || "-")}</div>
+    ${(item.warnings || []).length ? `<div class="muted">Warnungen: ${(item.warnings || []).map((w) => escapeHtml(w.message || w.code || "")).join(" · ")}</div>` : ""}
     <div class="guided-actions">
       <button class="guided-action" type="button" data-import-detail-action="copy-id">Source-ID kopieren</button>
-      <button class="guided-action" type="button" data-import-detail-action="${isBulk ? "retry-bulk" : "open-connector"}">
-        ${isBulk ? "Bulk-Import erneut öffnen" : "Passende Integration öffnen"}
+      <button class="guided-action" type="button" data-import-detail-action="${escapeHtml(action)}">
+        ${canRetry ? "Wiederholen / Integration öffnen" : "Passende Integration öffnen"}
       </button>
     </div>
   `;

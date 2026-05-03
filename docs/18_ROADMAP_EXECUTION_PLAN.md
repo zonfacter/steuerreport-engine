@@ -45,6 +45,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Review-Merge/Split wird in der Steuer-Arbeitskopie angewendet: Merge annotiert Events mit gemeinsamer `economic_event_id`, Split ersetzt ein Rohereignis durch dokumentierte Teil-Events.
 - Frontend-Fehlerausgaben sind vereinheitlicht: API-/Netzwerkfehler zeigen Pfad, HTTP-Status und Trace-ID in einem Bedienpanel statt roher Parse-/JSON-Fehler.
 - Das Cockpit enthält eine Operations-Statusleiste für Solana-Backfill, Import-Aktivität und Steuerjobs inklusive RPC-Delay/Rate-Limit-Hinweis und direktem Sprung zur passenden Bedienseite.
+- Import-Jobs liefern Statusgrund, Severity und Retry-Hinweis; die Import-Detailansicht zeigt diese Angaben direkt für manuelle Wiederholung oder Quellenprüfung.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)

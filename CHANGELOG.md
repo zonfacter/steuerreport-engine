@@ -39,6 +39,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Das Steuer-Cockpit zeigt jetzt Solana-Backfill, Import-Aktivität und Steuerjobs als eigene Statuskarten.
   - Statuskarten zeigen laufende/offene Jobs, lokale Solana-Coverage, RPC-Delay und Rate-Limit-Zähler.
   - Klicks springen direkt zur passenden Bedienseite (`Services`, `Import-Aktivität`, `Steuerlauf`).
+- Import-Job-Erklärbarkeit erweitert:
+  - `GET /api/v1/import/jobs` liefert je Job jetzt `status_reason`, `severity`, `can_retry`, `retry_action` und konkrete Warnungen.
+  - Import-Detailansicht zeigt den Statusgrund und die Warnungen direkt an, damit `partial`, `duplicate` oder `empty` nicht mehr interpretiert werden müssen.
 - Integrationssteuerung ergänzt:
   - `GET /api/v1/portfolio/integrations` liefert jetzt pro Quelle den steuerlichen Modus `active`, `reference` oder `disabled`.
   - Neuer Endpoint `POST /api/v1/portfolio/integrations/mode` persistiert den Modus je Integration.

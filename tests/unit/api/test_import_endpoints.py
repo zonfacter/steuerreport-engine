@@ -129,3 +129,8 @@ def test_import_jobs_returns_persisted_import_headers_with_filters() -> None:
     assert row["rows"] == 1
     assert row["inserted_events"] == 1
     assert row["duplicates"] == 0
+    assert row["status_reason"] == "Alle Zeilen wurden verarbeitet."
+    assert row["severity"] == "ok"
+    assert row["can_retry"] is False
+    assert row["retry_action"] == "open_connector"
+    assert row["warnings"] == []

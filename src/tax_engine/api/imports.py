@@ -102,16 +102,29 @@ def build_import_job_rows(
         declared = int(row.get("declared_row_count") or 0)
         imported = int(row.get("imported_event_count") or 0)
         duplicates = max(declared - imported, 0)
+        warnings: list[dict[str, Any]] = []
         if declared == 0:
             row_status = "empty"
+            status_reason = "Die Quelle enthielt keine importierbaren Zeilen."
+            warnings.append({"code": "empty_import", "message": status_reason})
         elif imported == 0 and duplicates > 0:
             row_status = "duplicate"
+            status_reason = "Alle Zeilen waren bereits als Events vorhanden."
+            warnings.append({"code": "duplicate_import", "message": status_reason})
         elif imported < declared:
             row_status = "partial"
+            status_reason = f"{imported} von {declared} Zeilen wurden importiert; {duplicates} Zeilen waren Duplikate oder nicht steuerwirksam."
+            warnings.append({"code": "partial_import", "message": status_reason})
         else:
             row_status = "completed"
+            status_reason = "Alle Zeilen wurden verarbeitet."
 
-        connector = detect_connector_from_source_name(str(row.get("source_name") or ""))
+        source_name = str(row.get("source_name") or "")
+        connector = detect_connector_from_source_name(source_name)
+        is_bulk = source_name.startswith("bulk:")
+        can_retry = row_status in {"empty", "partial"} or is_bulk
+        retry_action = "retry_bulk" if is_bulk else "open_connector"
+        severity = "ok" if row_status == "completed" else "info" if row_status == "duplicate" else "warning"
         if wanted_status and row_status != wanted_status:
             continue
         if wanted_integration and connector != wanted_integration:
@@ -121,14 +134,18 @@ def build_import_job_rows(
                 "job_id": row.get("source_file_id"),
                 "source_file_id": row.get("source_file_id"),
                 "connector": connector,
-                "source_name": row.get("source_name"),
+                "source_name": source_name,
                 "started_at_utc": row.get("created_at_utc"),
                 "finished_at_utc": row.get("created_at_utc"),
                 "status": row_status,
+                "status_reason": status_reason,
+                "severity": severity,
                 "rows": declared,
                 "inserted_events": imported,
                 "duplicates": duplicates,
-                "warnings": [],
+                "can_retry": can_retry,
+                "retry_action": retry_action,
+                "warnings": warnings,
             }
         )
     return rows[offset : offset + limit]
