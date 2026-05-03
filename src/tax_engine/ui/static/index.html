@@ -1350,6 +1350,54 @@
             </table>
           </div>
 
+          <h4>Review-Aktionen (Zeitzone / Merge / Split)</h4>
+          <p class="muted">Diese Aktionen dokumentieren fachliche Korrekturen versioniert. Zeitzonen-Korrekturen werden beim nächsten Steuerlauf angewendet; Merge/Split dient aktuell als prüfungssichere Review-Entscheidung ohne RAW-Löschung.</p>
+          <div class="row">
+            <label class="grow">Source Event ID<input id="reviewActionEventId" placeholder="unique_event_id" /></label>
+            <label>Korrigierter UTC-Zeitpunkt<input id="reviewTimezoneValue" placeholder="2026-01-01T11:00:00Z" /></label>
+            <label>Grund
+              <select id="reviewActionReason">
+                <option value="timezone_wrong">Zeitzone falsch</option>
+                <option value="source_timezone_cet">Quelle war CET/CEST</option>
+                <option value="same_economic_event">Gleicher wirtschaftlicher Vorgang</option>
+                <option value="bundled_event_split">Gebündeltes Event aufteilen</option>
+                <option value="reference_match">Referenz bestätigt Primärdaten</option>
+              </select>
+            </label>
+          </div>
+          <div class="row">
+            <label class="grow">Notiz<input id="reviewActionNote" placeholder="Pflichtbegründung für Audit-Trail" /></label>
+            <button id="btnReviewTimezoneSave">Zeitzone speichern</button>
+            <button id="btnReviewActionsLoad">Review-Aktionen laden</button>
+          </div>
+          <details class="raw-box">
+            <summary>Merge/Split Expertenmodus</summary>
+            <p class="muted">Merge erwartet mehrere Event IDs getrennt durch Komma/Zeilenumbruch. Split erwartet JSON-Teilzeilen. Die Rohdaten bleiben unverändert.</p>
+            <div class="row">
+              <label class="grow">Merge Event IDs<textarea id="reviewMergeEventIds" rows="3" placeholder="event_id_1&#10;event_id_2"></textarea></label>
+              <button id="btnReviewMergeSave">Merge dokumentieren</button>
+            </div>
+            <div class="row">
+              <label class="grow">Split Event ID<input id="reviewSplitEventId" placeholder="unique_event_id" /></label>
+              <label class="grow">Split JSON<textarea id="reviewSplitRows" rows="3" placeholder='[{"asset":"SOL","quantity":"0.5"}]'></textarea></label>
+              <button id="btnReviewSplitSave">Split dokumentieren</button>
+            </div>
+          </details>
+          <div class="table-wrap">
+            <table id="reviewActionTable">
+              <thead>
+                <tr>
+                  <th>Typ</th>
+                  <th>Event(s)</th>
+                  <th>Grund</th>
+                  <th>Notiz</th>
+                  <th>Aktualisiert</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
           <h3>Tax Lines</h3>
           <div class="row">
             <label>Asset Filter<input id="taxFilterAsset" placeholder="z.B. BTC" /></label>

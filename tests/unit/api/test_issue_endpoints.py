@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from tax_engine.api.app import (
     IssueStatusUpdateRequest,
+    ReviewMergeRequest,
+    ReviewSplitRequest,
+    ReviewTimezoneCorrectRequest,
     import_confirm,
     issues_inbox,
     issues_update_status,
     process_run,
     process_worker_run_next,
+    review_actions,
     review_gates,
     review_integration_conflicts,
+    review_merge,
+    review_split,
+    review_timezone_correct,
 )
 from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
@@ -182,3 +189,100 @@ def test_integration_conflicts_compare_reference_and_primary_sources() -> None:
 
     inbox = issues_inbox()
     assert any(str(item.get("type")) == "integration_conflict" for item in inbox.data.get("issues", []))
+
+
+def test_review_timezone_correction_closes_timezone_issue_and_is_applied() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="timezone.csv",
+            rows=[
+                {
+                    "timestamp": "2026-01-01T12:00:00",
+                    "asset": "BTC",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "amount": "0.1",
+                    "price_eur": "100",
+                }
+            ],
+        )
+    )
+    inbox = issues_inbox()
+    issue = next(item for item in inbox.data.get("issues", []) if item.get("type") == "timezone_conflict")
+    event_id = str(issue["source_event_id"])
+
+    corrected = review_timezone_correct(
+        ReviewTimezoneCorrectRequest(
+            source_event_id=event_id,
+            corrected_timestamp_utc="2026-01-01T11:00:00Z",
+            reason_code="source_timezone_cet",
+            note="Importquelle war CET, nicht UTC.",
+        )
+    )
+    assert corrected.status == "success"
+
+    inbox_after = issues_inbox()
+    assert not any(
+        str(item.get("type")) == "timezone_conflict" and str(item.get("source_event_id")) == event_id
+        for item in inbox_after.data.get("issues", [])
+    )
+
+    from tax_engine.queue import apply_review_actions
+
+    adjusted, summary = apply_review_actions(STORE.list_raw_events())
+    assert summary["timezone_correction_count"] == 1
+    assert adjusted[0]["payload"]["timestamp_utc"] == "2026-01-01T11:00:00+00:00"
+    assert adjusted[0]["payload"]["review_action"] == "timezone_correct"
+
+
+def test_review_merge_and_split_actions_are_persisted_without_raw_delete() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="merge_split.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2026-01-01T12:00:00Z",
+                    "asset": "SOL",
+                    "event_type": "swap_out_aggregated",
+                    "side": "sell",
+                    "amount": "1",
+                    "price_eur": "10",
+                },
+                {
+                    "timestamp_utc": "2026-01-01T12:00:01Z",
+                    "asset": "USDC",
+                    "event_type": "swap_in_aggregated",
+                    "side": "buy",
+                    "amount": "10",
+                    "price_eur": "1",
+                },
+            ],
+        )
+    )
+    event_ids = [str(item["unique_event_id"]) for item in STORE.list_raw_events()]
+
+    merge = review_merge(
+        ReviewMergeRequest(
+            source_event_ids=event_ids,
+            reason_code="same_economic_event",
+            note="Jupiter Multi-Hop als ein wirtschaftlicher Swap.",
+        )
+    )
+    assert merge.status == "success"
+
+    split = review_split(
+        ReviewSplitRequest(
+            source_event_id=event_ids[0],
+            split_rows=[{"asset": "SOL", "quantity": "0.5"}, {"asset": "SOL", "quantity": "0.5"}],
+            reason_code="bundled_event_split",
+            note="Teilvorgaenge fuer Review dokumentiert.",
+        )
+    )
+    assert split.status == "success"
+    assert len(STORE.list_raw_events()) == 2
+
+    actions = review_actions()
+    action_types = {str(item.get("action_type")) for item in actions.data.get("rows", [])}
+    assert {"merge", "split"}.issubset(action_types)

@@ -62,6 +62,26 @@ class ReviewCommentRequest(BaseModel):
     reason_code: str | None = Field(default=None, min_length=3, max_length=80)
 
 
+class ReviewTimezoneCorrectRequest(BaseModel):
+    source_event_id: str = Field(min_length=8, max_length=200)
+    corrected_timestamp_utc: str = Field(min_length=10, max_length=40)
+    reason_code: str = Field(default="timezone_wrong", min_length=3, max_length=80)
+    note: str = Field(min_length=3, max_length=500)
+
+
+class ReviewMergeRequest(BaseModel):
+    source_event_ids: list[str] = Field(min_length=2, max_length=100)
+    reason_code: str = Field(default="same_economic_event", min_length=3, max_length=80)
+    note: str = Field(min_length=3, max_length=500)
+
+
+class ReviewSplitRequest(BaseModel):
+    source_event_id: str = Field(min_length=8, max_length=200)
+    split_rows: list[dict[str, Any]] = Field(min_length=1, max_length=50)
+    reason_code: str = Field(default="bundled_event_split", min_length=3, max_length=80)
+    note: str = Field(min_length=3, max_length=500)
+
+
 router = APIRouter()
 
 
@@ -71,6 +91,14 @@ EXCLUSION_REASON_CATALOG: dict[str, str] = {
     "spam_or_dust": "Spam-/Dust-Token ohne belastbaren wirtschaftlichen Vorgang",
     "reference_import_only": "Nur Referenzimport, Primärdaten sind bereits vorhanden",
     "not_tax_relevant": "Nach manueller Prüfung nicht steuerrelevant",
+}
+
+REVIEW_ACTION_REASON_CATALOG: dict[str, str] = {
+    "timezone_wrong": "Zeitzone/Zeitstempel manuell korrigiert",
+    "source_timezone_cet": "Quelle nutzt CET/CEST statt UTC",
+    "same_economic_event": "Mehrere Rohereignisse gehoeren zu einem wirtschaftlichen Vorgang",
+    "bundled_event_split": "Ein Rohereignis muss fachlich in mehrere Teilvorgaenge zerlegt werden",
+    "reference_match": "Referenzreport bestaetigt Primaerereignis",
 }
 
 
@@ -543,6 +571,153 @@ def review_comments(source_event_id: str | None = None) -> StandardResponse:
     )
 
 
+@router.get("/api/v1/review/actions", response_model=StandardResponse, tags=["review"])
+def review_actions(source_event_id: str | None = None) -> StandardResponse:
+    trace_id = str(uuid4())
+    event_id = str(source_event_id or "").strip()
+    actions = _load_review_actions()
+    timezone_rows = [
+        {"action_type": "timezone_correct", **payload}
+        for payload in actions.get("timezone_corrections", {}).values()
+        if not event_id or str(payload.get("source_event_id", "")) == event_id
+    ]
+    merge_rows = [
+        {"action_type": "merge", **payload}
+        for payload in actions.get("merges", {}).values()
+        if not event_id or event_id in {str(item) for item in payload.get("source_event_ids", [])}
+    ]
+    split_rows = [
+        {"action_type": "split", **payload}
+        for payload in actions.get("splits", {}).values()
+        if not event_id or str(payload.get("source_event_id", "")) == event_id
+    ]
+    rows = [*timezone_rows, *merge_rows, *split_rows]
+    rows.sort(key=lambda item: (str(item.get("updated_at_utc", "")), str(item.get("action_id", ""))))
+    write_audit(
+        trace_id=trace_id,
+        action="review.actions",
+        payload={"count": len(rows), "source_event_id": event_id},
+    )
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={"count": len(rows), "rows": rows, "reason_catalog": REVIEW_ACTION_REASON_CATALOG},
+        errors=[],
+        warnings=[],
+    )
+
+
+@router.post("/api/v1/review/timezone-correct", response_model=StandardResponse, tags=["review"])
+def review_timezone_correct(payload: ReviewTimezoneCorrectRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    event_id = payload.source_event_id.strip()
+    raw_event = STORE.get_raw_event(event_id)
+    if raw_event is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "source_event_not_found", "message": f"Event nicht gefunden: {event_id}"}],
+            warnings=[],
+        )
+    corrected = _normalize_review_timestamp(payload.corrected_timestamp_utc)
+    if corrected is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "invalid_corrected_timestamp", "message": "corrected_timestamp_utc muss ISO-8601 sein."}],
+            warnings=[],
+        )
+    actions = _load_review_actions()
+    entry = {
+        "action_id": f"timezone:{event_id}",
+        "source_event_id": event_id,
+        "corrected_timestamp_utc": corrected,
+        "reason_code": _normalize_review_reason(payload.reason_code, "timezone_wrong"),
+        "reason_label": REVIEW_ACTION_REASON_CATALOG.get(_normalize_review_reason(payload.reason_code, "timezone_wrong"), ""),
+        "note": payload.note.strip(),
+        "updated_at_utc": datetime.now(UTC).isoformat(),
+    }
+    actions["timezone_corrections"][event_id] = entry
+    _save_review_actions(actions)
+    write_audit(
+        trace_id=trace_id,
+        action="review.timezone_correct",
+        payload={"source_event_id": event_id, "corrected_timestamp_utc": corrected},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data={**entry, "saved": True}, errors=[], warnings=[])
+
+
+@router.post("/api/v1/review/merge", response_model=StandardResponse, tags=["review"])
+def review_merge(payload: ReviewMergeRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    event_ids = sorted({str(item).strip() for item in payload.source_event_ids if str(item).strip()})
+    if len(event_ids) < 2:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "merge_requires_two_events", "message": "Merge benoetigt mindestens zwei Event IDs."}],
+            warnings=[],
+        )
+    missing = [event_id for event_id in event_ids if STORE.get_raw_event(event_id) is None]
+    if missing:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={"missing_event_ids": missing},
+            errors=[{"code": "source_event_not_found", "message": "Mindestens ein Merge-Event wurde nicht gefunden."}],
+            warnings=[],
+        )
+    actions = _load_review_actions()
+    action_id = "merge:" + _stable_action_suffix(event_ids)
+    entry = {
+        "action_id": action_id,
+        "source_event_ids": event_ids,
+        "reason_code": _normalize_review_reason(payload.reason_code, "same_economic_event"),
+        "reason_label": REVIEW_ACTION_REASON_CATALOG.get(_normalize_review_reason(payload.reason_code, "same_economic_event"), ""),
+        "note": payload.note.strip(),
+        "updated_at_utc": datetime.now(UTC).isoformat(),
+    }
+    actions["merges"][action_id] = entry
+    _save_review_actions(actions)
+    write_audit(trace_id=trace_id, action="review.merge", payload={"action_id": action_id, "event_count": len(event_ids)})
+    return StandardResponse(trace_id=trace_id, status="success", data={**entry, "saved": True}, errors=[], warnings=[])
+
+
+@router.post("/api/v1/review/split", response_model=StandardResponse, tags=["review"])
+def review_split(payload: ReviewSplitRequest) -> StandardResponse:
+    trace_id = str(uuid4())
+    event_id = payload.source_event_id.strip()
+    if STORE.get_raw_event(event_id) is None:
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "source_event_not_found", "message": f"Event nicht gefunden: {event_id}"}],
+            warnings=[],
+        )
+    actions = _load_review_actions()
+    entry = {
+        "action_id": f"split:{event_id}",
+        "source_event_id": event_id,
+        "split_rows": payload.split_rows,
+        "reason_code": _normalize_review_reason(payload.reason_code, "bundled_event_split"),
+        "reason_label": REVIEW_ACTION_REASON_CATALOG.get(_normalize_review_reason(payload.reason_code, "bundled_event_split"), ""),
+        "note": payload.note.strip(),
+        "updated_at_utc": datetime.now(UTC).isoformat(),
+    }
+    actions["splits"][event_id] = entry
+    _save_review_actions(actions)
+    write_audit(
+        trace_id=trace_id,
+        action="review.split",
+        payload={"source_event_id": event_id, "split_row_count": len(payload.split_rows)},
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data={**entry, "saved": True}, errors=[], warnings=[])
+
+
 @router.get("/api/v1/review/integration-conflicts", response_model=StandardResponse, tags=["review"])
 def review_integration_conflicts(limit: int = 200) -> StandardResponse:
     trace_id = str(uuid4())
@@ -567,6 +742,8 @@ def review_integration_conflicts(limit: int = 200) -> StandardResponse:
 def _build_issue_inbox() -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     overrides = _load_issue_overrides()
+    review_actions_payload = _load_review_actions()
+    timezone_corrections = review_actions_payload.get("timezone_corrections", {})
     raw_events = STORE.list_raw_events()
 
     # 1) Missing price issues for trade-like events.
@@ -606,6 +783,8 @@ def _build_issue_inbox() -> list[dict[str, Any]]:
             continue
         ts_text = str(ts_raw)
         if "Z" in ts_text or "+" in ts_text or ts_text.endswith("UTC"):
+            continue
+        if event_id in timezone_corrections:
             continue
         issue_id = f"timezone_ambiguous:{event_id}"
         issues.append(
@@ -897,6 +1076,62 @@ def _load_event_comments() -> dict[str, dict[str, str]]:
             "updated_at_utc": str(payload.get("updated_at_utc", "")).strip(),
         }
     return result
+
+
+def _load_review_actions() -> dict[str, dict[str, Any]]:
+    row = STORE.get_setting("runtime.review_actions")
+    empty: dict[str, dict[str, Any]] = {"timezone_corrections": {}, "merges": {}, "splits": {}}
+    if row is None:
+        return empty
+    try:
+        raw = json.loads(str(row.get("value_json", "{}")))
+    except Exception:
+        return empty
+    if not isinstance(raw, dict):
+        return empty
+    result: dict[str, dict[str, Any]] = {"timezone_corrections": {}, "merges": {}, "splits": {}}
+    for section in result:
+        section_payload = raw.get(section, {})
+        if isinstance(section_payload, dict):
+            result[section] = section_payload
+    return result
+
+
+def _save_review_actions(actions: dict[str, dict[str, Any]]) -> None:
+    normalized = {
+        "timezone_corrections": actions.get("timezone_corrections", {}),
+        "merges": actions.get("merges", {}),
+        "splits": actions.get("splits", {}),
+    }
+    put_admin_setting("runtime.review_actions", normalized, is_secret=False)
+
+
+def _normalize_review_timestamp(value: str) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        normalized = raw.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
+
+
+def _normalize_review_reason(value: str, fallback: str) -> str:
+    reason = str(value or "").strip()
+    if reason in REVIEW_ACTION_REASON_CATALOG:
+        return reason
+    return fallback
+
+
+def _stable_action_suffix(values: list[str]) -> str:
+    import hashlib
+
+    joined = "|".join(values)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
 def _load_issue_overrides() -> dict[str, dict[str, str]]:

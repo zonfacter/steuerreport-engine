@@ -42,6 +42,10 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Side-by-Side Ruleset-Vergleiche nutzen dieselben steuerwirksamen Overrides wie reguläre Steuerläufe.
   - Roadmap-kompatible Review-Endpunkte `POST /api/v1/review/ignore`, `POST /api/v1/review/comment`, `GET /api/v1/review/comments` und `GET /api/v1/review/exclusion-reasons` ergänzt.
   - Transaktionssuche kann Events direkt in den Korrektur-/Ausschlussdialog übernehmen; Raw Events bleiben unverändert.
+  - Review-Actions ergänzt: `GET /api/v1/review/actions`, `POST /api/v1/review/timezone-correct`, `POST /api/v1/review/merge` und `POST /api/v1/review/split`.
+  - Zeitzonen-Korrekturen werden versioniert gespeichert, schließen das entsprechende Review-Issue und werden beim nächsten Steuerlauf auf die Arbeitskopie angewendet.
+  - Merge/Split-Entscheidungen werden auditierbar dokumentiert; RAW-Daten bleiben unverändert.
+  - UI ergänzt Review-Actions für Zeitzone, Merge und Split im Steuer-/Review-Bereich.
 - Helium-Legacy-Import ergänzt:
   - CoinTracking-/Fairspot-kompatible Helium-L1-Exports werden als `helium_legacy_cointracking` erkannt.
   - `HNT2` wird in `HNT` normalisiert; Mining-Rewards, Legacy-Transfers und Netzwerkgebühren werden getrennt klassifiziert.

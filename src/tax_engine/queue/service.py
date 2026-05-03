@@ -51,6 +51,61 @@ def _load_tax_event_overrides() -> dict[str, dict[str, str]]:
     return result
 
 
+def _load_review_actions() -> dict[str, dict[str, Any]]:
+    row = STORE.get_setting("runtime.review_actions")
+    empty: dict[str, dict[str, Any]] = {"timezone_corrections": {}, "merges": {}, "splits": {}}
+    if row is None:
+        return empty
+    try:
+        raw = json.loads(str(row.get("value_json", "{}")))
+    except Exception:
+        return empty
+    if not isinstance(raw, dict):
+        return empty
+    result: dict[str, dict[str, Any]] = {"timezone_corrections": {}, "merges": {}, "splits": {}}
+    for section in result:
+        value = raw.get(section, {})
+        if isinstance(value, dict):
+            result[section] = value
+    return result
+
+
+def apply_review_actions(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    actions = _load_review_actions()
+    timezone_corrections = actions.get("timezone_corrections", {})
+    if not timezone_corrections:
+        return raw_events, {"timezone_correction_count": 0}
+
+    transformed: list[dict[str, Any]] = []
+    applied_timezone = 0
+    for event in raw_events:
+        event_id = str(event.get("unique_event_id", "")).strip()
+        correction = timezone_corrections.get(event_id)
+        if not isinstance(correction, dict):
+            transformed.append(event)
+            continue
+        corrected_timestamp = str(correction.get("corrected_timestamp_utc", "")).strip()
+        if not corrected_timestamp:
+            transformed.append(event)
+            continue
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        payload_copy = dict(payload)
+        payload_copy["original_timestamp_utc"] = payload_copy.get("timestamp_utc", "")
+        payload_copy["timestamp_utc"] = corrected_timestamp
+        payload_copy["review_action"] = "timezone_correct"
+        payload_copy["review_action_note"] = str(correction.get("note", "")).strip()
+        payload_copy["review_action_updated_at_utc"] = str(correction.get("updated_at_utc", "")).strip()
+        event_copy = dict(event)
+        event_copy["payload"] = payload_copy
+        transformed.append(event_copy)
+        applied_timezone += 1
+
+    return transformed, {"timezone_correction_count": applied_timezone}
+
+
 def apply_tax_event_overrides(raw_events: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
     overrides = _load_tax_event_overrides()
     if not overrides:
@@ -134,7 +189,8 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         )
         job_config = claimed.get("config", {}) if isinstance(claimed.get("config"), dict) else {}
         raw_events, integration_filter_summary = filter_events_for_processing(STORE.list_raw_events(), job_config)
-        effective_events, override_count = apply_tax_event_overrides(raw_events)
+        adjusted_events, review_action_summary = apply_review_actions(raw_events)
+        effective_events, override_count = apply_tax_event_overrides(adjusted_events)
         fx_config = resolve_effective_runtime_config()
         runtime_fx = fx_config.get("runtime", {}).get("fx", {})
         fallback_rate = runtime_fx.get("usd_to_eur", 1.0)
@@ -206,6 +262,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         processing_result["derivatives"] = derivative_result
         processing_result["tax_domain_summary"] = tax_domain_summary
         processing_result["tax_event_override_count"] = override_count
+        processing_result["review_actions"] = review_action_summary
         processing_result["fx_enrichment"] = fx_summary
         processing_result["ruleset_id"] = ruleset_id
         processing_result["ruleset_version"] = ruleset.ruleset_version

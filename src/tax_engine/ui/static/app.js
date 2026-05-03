@@ -23,6 +23,7 @@ const state = {
   processingJobsAutoRefreshSec: "",
   processingJobsCount: 0,
   taxEventOverrides: [],
+  reviewActions: [],
   integrationRows: [],
   integrationConflicts: [],
   importSources: [],
@@ -989,6 +990,39 @@ function renderTaxEventOverrideTable(rows) {
   if (!(rows || []).length) {
     const tr = document.createElement("tr");
     tr.innerHTML = '<td colspan="5">Keine Tax-Overrides vorhanden.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderReviewActionTable(rows) {
+  const tbody = el("reviewActionTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  (rows || []).forEach((item) => {
+    const eventIds = item.source_event_ids || (item.source_event_id ? [item.source_event_id] : []);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.action_type || "")}</td>
+      <td>${escapeHtml(eventIds.join(", "))}</td>
+      <td>${escapeHtml(item.reason_label || item.reason_code || "")}</td>
+      <td>${escapeHtml(item.note || "")}</td>
+      <td>${escapeHtml(item.updated_at_utc || "")}</td>
+    `;
+    tr.addEventListener("click", () => {
+      const firstEvent = eventIds[0] || "";
+      if (el("reviewActionEventId")) el("reviewActionEventId").value = firstEvent;
+      if (el("taxOverrideEventId")) el("taxOverrideEventId").value = firstEvent;
+      if (el("reviewActionReason")) el("reviewActionReason").value = item.reason_code || "timezone_wrong";
+      if (el("reviewActionNote")) el("reviewActionNote").value = item.note || "";
+      if (item.corrected_timestamp_utc && el("reviewTimezoneValue")) {
+        el("reviewTimezoneValue").value = item.corrected_timestamp_utc;
+      }
+    });
+    tbody.appendChild(tr);
+  });
+  if (!(rows || []).length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="5">Keine Review-Aktionen vorhanden.</td>';
     tbody.appendChild(tr);
   }
 }
@@ -2644,6 +2678,8 @@ function prepareTaxOverrideFromTransaction(index, mode = "classify") {
     return;
   }
   if (el("taxOverrideEventId")) el("taxOverrideEventId").value = eventId;
+  if (el("reviewActionEventId")) el("reviewActionEventId").value = eventId;
+  if (el("reviewSplitEventId")) el("reviewSplitEventId").value = eventId;
   if (el("taxOverrideCategory")) el("taxOverrideCategory").value = mode === "exclude" ? "EXCLUDED" : "PRIVATE_SO";
   if (el("taxOverrideReason")) el("taxOverrideReason").value = mode === "exclude" ? "wrong_assignment" : "";
   if (el("taxOverrideNote")) {
@@ -3756,6 +3792,90 @@ async function loadTaxEventOverrides(silent = true) {
   renderTaxEventOverrideTable(state.taxEventOverrides);
 }
 
+async function loadReviewActions(silent = true) {
+  const data = await callApi("/api/v1/review/actions", "GET", null, null, silent);
+  if (!data?.data) return;
+  state.reviewActions = data.data.rows || [];
+  renderReviewActionTable(state.reviewActions);
+}
+
+async function saveReviewTimezoneCorrection(trigger = null) {
+  const sourceEventId = (el("reviewActionEventId")?.value || el("taxOverrideEventId")?.value || "").trim();
+  const correctedTimestamp = (el("reviewTimezoneValue")?.value || "").trim();
+  const reasonCode = (el("reviewActionReason")?.value || "timezone_wrong").trim();
+  const note = (el("reviewActionNote")?.value || "").trim();
+  if (!sourceEventId || !correctedTimestamp || !note) {
+    showToast("Event ID, korrigierter UTC-Zeitpunkt und Notiz sind Pflicht.", "warn");
+    return;
+  }
+  const data = await callApi(
+    "/api/v1/review/timezone-correct",
+    "POST",
+    {
+      source_event_id: sourceEventId,
+      corrected_timestamp_utc: correctedTimestamp,
+      reason_code: reasonCode,
+      note,
+    },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  await loadReviewActions(true);
+  const issuesData = await callApi("/api/v1/issues/inbox", "GET", null, null, true);
+  if (issuesData?.data) {
+    state.issues = issuesData.data.issues ?? [];
+    state.paging.issuePage = 1;
+    renderIssues(state.issues);
+  }
+  showToast("Zeitzonen-Korrektur gespeichert. Bitte Steuerlauf neu starten.", "ok");
+}
+
+async function saveReviewMerge(trigger = null) {
+  const raw = (el("reviewMergeEventIds")?.value || "").trim();
+  const sourceEventIds = raw.split(/[\n,;]/g).map((item) => item.trim()).filter((item) => item.length > 0);
+  const note = (el("reviewActionNote")?.value || "").trim();
+  const reasonCode = (el("reviewActionReason")?.value || "same_economic_event").trim();
+  if (sourceEventIds.length < 2 || !note) {
+    showToast("Merge benötigt mindestens zwei Event IDs und eine Notiz.", "warn");
+    return;
+  }
+  const data = await callApi(
+    "/api/v1/review/merge",
+    "POST",
+    { source_event_ids: sourceEventIds, reason_code: reasonCode, note },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  await loadReviewActions(true);
+  showToast("Merge-Entscheidung dokumentiert.", "ok");
+}
+
+async function saveReviewSplit(trigger = null) {
+  const sourceEventId = (el("reviewSplitEventId")?.value || el("reviewActionEventId")?.value || "").trim();
+  const note = (el("reviewActionNote")?.value || "").trim();
+  const reasonCode = (el("reviewActionReason")?.value || "bundled_event_split").trim();
+  let splitRows = [];
+  try {
+    splitRows = JSON.parse(el("reviewSplitRows")?.value || "[]");
+  } catch (error) {
+    showToast(`Split JSON ist ungültig: ${error.message}`, "error");
+    return;
+  }
+  if (!sourceEventId || !Array.isArray(splitRows) || !splitRows.length || !note) {
+    showToast("Split benötigt Event ID, JSON-Teilzeilen und eine Notiz.", "warn");
+    return;
+  }
+  const data = await callApi(
+    "/api/v1/review/split",
+    "POST",
+    { source_event_id: sourceEventId, split_rows: splitRows, reason_code: reasonCode, note },
+    trigger
+  );
+  if (data?.status !== "success") return;
+  await loadReviewActions(true);
+  showToast("Split-Entscheidung dokumentiert.", "ok");
+}
+
 async function loadLatestProcessJob(silent = true) {
   const data = await callApi("/api/v1/process/latest", "GET", null, null, silent);
   const job = data?.data?.job;
@@ -3866,6 +3986,7 @@ function init() {
   loadIntegrationOverview();
   loadImportSourcesSummary();
   loadTaxEventOverrides(true);
+  loadReviewActions(true);
   loadLatestProcessJob(true);
 
   $$(".step").forEach((btn) => {
@@ -4892,6 +5013,19 @@ async function loadUnmatched() {
   el("btnTaxOverrideLoad")?.addEventListener("click", async () => {
     await loadTaxEventOverrides(false);
     showToast("Tax-Overrides geladen.", "ok");
+  });
+  el("btnReviewActionsLoad")?.addEventListener("click", async () => {
+    await loadReviewActions(false);
+    showToast("Review-Aktionen geladen.", "ok");
+  });
+  el("btnReviewTimezoneSave")?.addEventListener("click", async (e) => {
+    await saveReviewTimezoneCorrection(e.currentTarget);
+  });
+  el("btnReviewMergeSave")?.addEventListener("click", async (e) => {
+    await saveReviewMerge(e.currentTarget);
+  });
+  el("btnReviewSplitSave")?.addEventListener("click", async (e) => {
+    await saveReviewSplit(e.currentTarget);
   });
 
   el("btnTaxOverrideSave")?.addEventListener("click", async (e) => {

@@ -27,6 +27,7 @@ Diese Roadmap operationalisiert den bisherigen Dossier-Stand in konkrete Umsetzu
 - Das Integrations-Konfliktcenter gruppiert starke Überschneidungen zwischen aktiven Primärquellen und Referenzimporten und schreibt diese zusätzlich als Review-Issues.
 - Review-Ignore und Review-Kommentare sind als auditierbare Endpunkte umgesetzt; Ausschlüsse verlangen Pflichtgrund und Notiz, Raw Events werden nicht gelöscht.
 - Die Transaktionssuche kann Events direkt in den Korrektur-/Ausschlussdialog übernehmen.
+- Versionierte Review-Actions sind umgesetzt: Zeitzonen-Korrekturen werden beim Steuerlauf angewendet; Merge/Split-Entscheidungen werden ohne RAW-Löschung auditierbar dokumentiert.
 - Nach Änderungen validiert: Ruff, Mypy für `src/tax_engine/api/app.py`, gezielte API-Regressionen und `node --check` für `app.js`.
 
 ## Sprint-1: Compliance- & API-Lücke schließen (Pflicht vor weiteren Features)
@@ -171,5 +172,5 @@ Ziel: Steuer-/Prüfungssicherheit auf Produktionsniveau.
 ## Nächste konkrete Arbeitspakete (Backlog)
 1. Lot-Nachvollzug im Export um `transfer_chain_id` erweitern.
 2. Snapshot-Wiederherstellungsvorschau in der UI ergänzen.
-3. Review-Merge/Split und Zeitzonen-Korrektur als versionierte Overrides modellieren.
+3. Review-Merge/Split fachlich auf die Steuer-Arbeitskopie anwenden, sobald die genaue Split-Semantik je Connector definiert ist.
 4. Integrations-Konfliktcenter um manuelle Massenentscheidung erweitern: Referenzgruppe bestätigen, Quelle deaktivieren oder Einzelereignisse mit Pflichtgrund ausschließen.
