@@ -278,6 +278,9 @@ Alle relevanten Änderungen an Architektur, Regeln, Integrität und Workflows we
   - Performance-Tab zeigt Jahreschart mit Skalierung `Bewegungsvolumen EUR/USD`, `Trading/Swap-Volumen EUR/USD`, `Menge normalisiert (log10)` oder `Transaktionen`
   - Jahres-Tabelle hilft bei großen Mengenunterschieden wie IOT/MOBILE vs. SOL/HNT, ohne die Y-Achse unlesbar zu machen
   - Klarstellung: Die Jahresanalyse ist keine Portfolio-Wertentwicklung; echte Wertentwicklung basiert auf Snapshots bzw. historischem Price-Backfill
+- Review-Konfliktcenter stabilisiert:
+  - Integrations-Modi werden beim Konfliktaufbau nur noch einmal pro Request geladen statt pro Event
+  - reduziert SQLite-Last bei großen Importständen und vermeidet unnötige DB-Open-Spitzen im Review-Gate
 - Historischer Crypto-Preis-Backfill vorbereitet:
   - `configs/crypto_price_sources.example.json` mappt SOL/HNT/IOT/MOBILE/JUP auf CoinGecko-IDs und lokale Cache-Keys
   - `scripts/crypto_price_backfill_usd.py` füllt historische `ASSET/USD`-Preise in `fx_cache`

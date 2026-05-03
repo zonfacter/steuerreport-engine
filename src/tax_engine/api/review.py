@@ -16,6 +16,7 @@ from tax_engine.ingestion.store import STORE
 from tax_engine.integrations import (
     effective_integration_mode,
     integration_source_from_event,
+    load_integration_mode_overrides,
     upsert_integration_mode,
 )
 from tax_engine.queue import get_processing_job
@@ -1045,11 +1046,12 @@ def _build_integration_conflicts(limit: int = 200) -> list[dict[str, Any]]:
     buckets: dict[tuple[str, str, str, str], dict[str, list[dict[str, Any]]]] = defaultdict(
         lambda: {"primary": [], "reference": []}
     )
+    mode_overrides = load_integration_mode_overrides()
     for event in STORE.list_raw_events():
         payload = event.get("payload", {})
         if not isinstance(payload, dict):
             continue
-        mode = effective_integration_mode(integration_source_from_event(event))
+        mode = effective_integration_mode(integration_source_from_event(event), mode_overrides)
         if mode not in {"active", "reference"}:
             continue
         key = _reference_conflict_key(payload)
