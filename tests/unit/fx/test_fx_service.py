@@ -102,3 +102,72 @@ def test_enrich_events_uses_fallback_rate_when_api_unavailable(monkeypatch) -> N
     assert summary["unresolved_count"] == 0
     assert payload["price_eur"] == "92.00"
     assert payload["fx_rate_usd_eur"] == "0.92"
+
+
+def test_enrich_events_infers_usd_quote_from_pionex_raw_symbol(monkeypatch) -> None:
+    _reset_store()
+
+    def _fake_rate(self: FallbackFxResolver, rate_date: str) -> FxResolveResult | None:
+        return FxResolveResult(
+            rate_date=rate_date,
+            source_rate_date=rate_date,
+            rate=Decimal("0.9"),
+            source="test",
+            from_cache=False,
+        )
+
+    monkeypatch.setattr(FallbackFxResolver, "get_usd_to_eur_rate", _fake_rate)
+    resolver = FallbackFxResolver()
+    events = [
+        {
+            "unique_event_id": "pionex-hnt-buy",
+            "payload": {
+                "timestamp_utc": "2022-09-20T00:01:52+00:00",
+                "source": "pionex",
+                "asset": "HNT",
+                "event_type": "trade",
+                "side": "in",
+                "quantity": "150.272",
+                "price": "4.91690625",
+                "raw_row": {"symbol": "HNT_USDT", "price": "4.91690625"},
+            },
+        }
+    ]
+
+    enriched, summary = resolver.enrich_events_with_fx(events)
+    payload = enriched[0]["payload"]
+    assert summary["converted_event_count"] == 1
+    assert payload["price_eur"] == "4.425215625"
+
+
+def test_enrich_events_converts_raw_value_usd_sum(monkeypatch) -> None:
+    _reset_store()
+
+    def _fake_rate(self: FallbackFxResolver, rate_date: str) -> FxResolveResult | None:
+        return FxResolveResult(
+            rate_date=rate_date,
+            source_rate_date=rate_date,
+            rate=Decimal("0.9"),
+            source="test",
+            from_cache=False,
+        )
+
+    monkeypatch.setattr(FallbackFxResolver, "get_usd_to_eur_rate", _fake_rate)
+    resolver = FallbackFxResolver()
+    events = [
+        {
+            "unique_event_id": "evt-solscan-value-sum",
+            "payload": {
+                "timestamp_utc": "2023-07-30T06:59:13+00:00",
+                "asset": "MOBILE",
+                "side": "in",
+                "quantity": "64729.546356",
+                "raw_row": {"value_usd_sum": "22.000764"},
+            },
+        }
+    ]
+
+    enriched, summary = resolver.enrich_events_with_fx(events)
+    payload = enriched[0]["payload"]
+    assert summary["converted_event_count"] == 1
+    assert payload["value_eur"] == "19.8006876"

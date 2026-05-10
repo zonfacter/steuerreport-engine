@@ -28,6 +28,7 @@
         <nav class="rail-nav">
           <button class="rail-link" data-rail-step="4" data-rail-review="performance"><span class="rail-icon">PV</span><span class="rail-label">Performance</span></button>
           <button class="rail-link" data-rail-step="4" data-rail-review="transfers"><span class="rail-icon">TF</span><span class="rail-label">Transfers</span></button>
+          <button class="rail-link" data-rail-step="4" data-rail-review="platforms"><span class="rail-icon">PL</span><span class="rail-label">Plattform-Ledger</span></button>
           <button class="rail-link" data-rail-step="4" data-rail-review="tax"><span class="rail-icon">SO</span><span class="rail-label">Steuerwerte</span></button>
         </nav>
       </aside>
@@ -723,11 +724,13 @@
         </div>
         <nav class="review-tabs">
           <button class="review-tab active" data-review-tab="cockpit">Cockpit</button>
+          <button class="review-tab" data-review-tab="aiqueue">KI-Queue</button>
           <button class="review-tab" data-review-tab="performance">Performance</button>
           <button class="review-tab" data-review-tab="holdings">Bestände</button>
           <button class="review-tab" data-review-tab="mining">Mining</button>
           <button class="review-tab" data-review-tab="trading">Trading</button>
           <button class="review-tab" data-review-tab="transfers">Transfers</button>
+          <button class="review-tab" data-review-tab="platforms">Plattform-Ledger</button>
           <button class="review-tab" data-review-tab="tax">Steuer</button>
         </nav>
 
@@ -758,6 +761,39 @@
             </div>
             <div id="cockpitOpsGrid" class="ops-grid"></div>
           </div>
+          <div class="card compact-card">
+            <div class="section-head">
+              <div>
+                <h4>Lokale KI-Auftragsqueue</h4>
+                <p class="muted">Read-only DB-Analysen auf CT203, persistente Ergebnisse für spätere Validierung.</p>
+              </div>
+              <div class="row compact-row">
+                <span id="aiQueueServiceBadge" class="status-badge status-default">unbekannt</span>
+                <button id="btnAiQueueRefresh" type="button">KI-Queue aktualisieren</button>
+              </div>
+            </div>
+            <div class="metrics">
+              <div class="metric"><span>Pending</span><strong id="aiQueuePending">-</strong></div>
+              <div class="metric"><span>Running</span><strong id="aiQueueRunning">-</strong></div>
+              <div class="metric"><span>Done</span><strong id="aiQueueDone">-</strong></div>
+              <div class="metric"><span>Failed</span><strong id="aiQueueFailed">-</strong></div>
+            </div>
+            <div id="aiQueueCurrent" class="notice notice-neutral">Noch nicht geladen.</div>
+            <div class="table-wrap">
+              <table id="aiQueueResultsTable">
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th>Status</th>
+                    <th>Dauer</th>
+                    <th>Queries</th>
+                    <th>Ergebnis</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
           <div class="grid">
             <div>
               <h4>Portfolio vs Steuerblöcke</h4>
@@ -785,6 +821,57 @@
               <button id="btnCockpitOpenIssues">Review öffnen</button>
             </div>
             <div id="cockpitIssuePile" class="issue-pile"></div>
+          </div>
+        </section>
+
+        <section class="review-panel hidden" data-review-panel="aiqueue">
+          <h3>Lokale KI-Auftragsqueue</h3>
+          <p class="muted">Read-only DB-Analysen auf CT203. Ergebnisse werden gespeichert und danach validiert.</p>
+          <div class="row compact-row">
+            <span id="aiQueueServiceBadgeTab" class="status-badge status-default">unbekannt</span>
+            <button id="btnAiQueueRefreshTab" type="button" class="btn-primary">Status aktualisieren</button>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span>Pending</span><strong id="aiQueuePendingTab">-</strong></div>
+            <div class="metric"><span>Running</span><strong id="aiQueueRunningTab">-</strong></div>
+            <div class="metric"><span>Done</span><strong id="aiQueueDoneTab">-</strong></div>
+            <div class="metric"><span>Failed</span><strong id="aiQueueFailedTab">-</strong></div>
+          </div>
+          <div id="aiQueueCurrentTab" class="notice notice-neutral">Noch nicht geladen.</div>
+          <div class="grid">
+            <div>
+              <h4>Letzte Ergebnisse</h4>
+              <div class="table-wrap">
+                <table id="aiQueueResultsTableTab">
+                  <thead>
+                    <tr>
+                      <th>Task</th>
+                      <th>Status</th>
+                      <th>Dauer</th>
+                      <th>Queries</th>
+                      <th>Ergebnis</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h4>Aktive / Wartende Aufträge</h4>
+              <div class="table-wrap">
+                <table id="aiQueueTaskTable">
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Task</th>
+                      <th>Erstellt</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <pre id="aiQueueLogTail" class="log-box">Noch kein Log geladen.</pre>
+            </div>
           </div>
         </section>
 
@@ -818,8 +905,58 @@
           <div class="card quick-card">
             <h4>Portfolio-Wertentwicklung</h4>
             <p class="muted">Geschätzter Monatswert aus rekonstruierten Beständen und lokalem historischen Preis-Cache. Das ist getrennt von Trading-Umsatz.</p>
+            <div class="row compact-row">
+              <label>Zeitraum
+                <select id="portfolioRange">
+                  <option value="all">Alle Daten</option>
+                  <option value="3650">10 Jahre</option>
+                  <option value="1825">5 Jahre</option>
+                  <option value="1095">3 Jahre</option>
+                  <option value="365">1 Jahr</option>
+                  <option value="180">6 Monate</option>
+                  <option value="90">90 Tage</option>
+                  <option value="30">30 Tage</option>
+                </select>
+              </label>
+              <label>Auflösung
+                <select id="portfolioInterval">
+                  <option value="auto">Auto</option>
+                  <option value="day">Tag</option>
+                  <option value="week">Woche</option>
+                  <option value="month">Monat</option>
+                  <option value="quarter">Quartal</option>
+                  <option value="event">Eventtage</option>
+                </select>
+              </label>
+              <button id="btnPortfolioRefresh">Aktualisieren</button>
+            </div>
             <div class="chart-box">
               <canvas id="chartPortfolioValueHistory" height="170"></canvas>
+            </div>
+          </div>
+          <div class="card quick-card">
+            <div class="section-head">
+              <div>
+                <h4>Negativbestand-Prüfung</h4>
+                <p id="negativeBalanceSummary" class="muted">Lade Stichtagsprüfung.</p>
+              </div>
+              <button id="btnNegativeBalancesLoad">Aktualisieren</button>
+            </div>
+            <div class="table-wrap">
+              <table id="negativeBalanceTable">
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Asset</th>
+                    <th>Status</th>
+                    <th>Severity</th>
+                    <th class="num">Saldo</th>
+                    <th class="num">USD-Wert</th>
+                    <th>Letztes Event</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
             </div>
           </div>
           <div class="card quick-card">
@@ -1096,6 +1233,13 @@
           <h4>Lot Aging (Haltefrist je Menge)</h4>
           <div class="row">
             <label>Asset-Filter<input id="dashLotAsset" placeholder="z. B. SOL" /></label>
+            <label>Bereich
+              <select id="dashLotDomain">
+                <option value="private">Privat</option>
+                <option value="business">Betriebsvermögen</option>
+                <option value="">Alle</option>
+              </select>
+            </label>
             <label>As-Of UTC<input id="dashLotAsOf" placeholder="2026-12-31T23:59:59Z" /></label>
             <button id="btnLoadLotAging">Lot Aging laden</button>
           </div>
@@ -1120,6 +1264,7 @@
               <thead>
                 <tr>
                   <th>Asset</th>
+                  <th>Bereich</th>
                   <th class="num">Menge</th>
                   <th>Kaufzeitpunkt</th>
                   <th class="num">Haltedauer (Tage)</th>
@@ -1317,6 +1462,10 @@
             <label class="grow">Notiz<input id="issueNote" placeholder="Begründung/Kommentar" /></label>
             <button id="btnIssueUpdate">Status speichern</button>
           </div>
+          <div id="issueContextPanel" class="tax-run-preview">
+            <h4>Issue-Kontext</h4>
+            <p class="muted">Wähle ein Issue und lade den Kontext, um betroffene Steuerzeilen oder Entscheidungsmöglichkeiten direkt zu prüfen.</p>
+          </div>
           <div class="table-wrap">
             <table id="issuesTable">
               <thead>
@@ -1324,9 +1473,125 @@
                   <th>Issue</th>
                   <th>Status</th>
                   <th>Severity</th>
+                  <th>Scope</th>
                   <th>Typ</th>
                   <th>Asset</th>
                   <th>Detail</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="review-panel hidden" data-review-panel="platforms">
+          <h3>Plattform-Ledger</h3>
+          <p class="muted">Chronologische Plattform-Simulation aus aktiven Primärquellen. Referenzquellen wie Blockpit bleiben getrennt und dienen nur zum Abgleich.</p>
+          <div class="metrics" id="platformLedgerKpis">
+            <div class="metric"><span>Ledger-Zeilen</span><strong id="platformLedgerRows">-</strong></div>
+            <div class="metric"><span>Transfergruppen</span><strong id="platformTransferGroups">-</strong></div>
+            <div class="metric"><span>Unmatched Transfers</span><strong id="platformUnmatchedTransfers">-</strong></div>
+            <div class="metric"><span>Transfer-Kandidaten</span><strong id="platformTransferCandidates">-</strong></div>
+            <div class="metric"><span>Negative Plattformkonten</span><strong id="platformNegativeAccounts">-</strong></div>
+            <div class="metric"><span>Aktive Blocker</span><strong id="platformActiveBlockers">-</strong></div>
+            <div class="metric"><span>Dokumentierte Reste</span><strong id="platformDocumentedResiduals">-</strong></div>
+          </div>
+          <div class="row compact-row">
+            <button id="btnPlatformLedgerRefresh" class="btn-primary">Plattform-Ledger laden</button>
+            <span id="platformLedgerStatus" class="muted">Noch nicht geladen.</span>
+          </div>
+          <div class="grid">
+            <div>
+              <h4>Negative Plattform-Salden</h4>
+              <div class="table-wrap">
+                <table id="platformBalanceTable">
+                  <thead>
+                    <tr>
+                      <th>Plattform</th>
+                      <th>Asset</th>
+                      <th class="num">Final</th>
+                      <th class="num">Worst</th>
+                      <th>Erster Bruch</th>
+                      <th>Quelle</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h4>KI-Hypothesen</h4>
+              <div id="platformAiBox" class="tax-run-preview">
+                <p class="muted">KI-Auswertung ist optional. Sie liefert nur Hypothesen, keine Belege.</p>
+              </div>
+            </div>
+          </div>
+          <h4>Priorisierte Bruchstellen</h4>
+          <div class="table-wrap">
+            <table id="platformResolutionTable">
+              <thead>
+                <tr>
+                  <th>Priorität</th>
+                  <th>Status</th>
+                  <th>Plattform</th>
+                  <th>Asset</th>
+                  <th class="num">Final</th>
+                  <th class="num">Worst</th>
+                  <th>Kandidaten</th>
+                  <th>Aktion</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h4>Dokumentierte Plattformreste</h4>
+          <div class="table-wrap">
+            <table id="platformResidualTable">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Plattform</th>
+                  <th>Asset</th>
+                  <th class="num">Final</th>
+                  <th class="num">Worst</th>
+                  <th>Bewertung</th>
+                  <th>Report</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h4>Transfer-Kandidaten</h4>
+          <div class="table-wrap">
+            <table id="platformCandidateTable">
+              <thead>
+                <tr>
+                  <th>Confidence</th>
+                  <th>Asset</th>
+                  <th class="num">Menge</th>
+                  <th>Von</th>
+                  <th>An</th>
+                  <th class="num">Diff</th>
+                  <th class="num">Zeit</th>
+                  <th>Tx</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h4>Unmatched Transfer-Kandidaten</h4>
+          <div class="table-wrap">
+            <table id="platformUnmatchedTable">
+              <thead>
+                <tr>
+                  <th>Zeit</th>
+                  <th>Plattform</th>
+                  <th>Asset</th>
+                  <th class="num">Menge</th>
+                  <th>Typ</th>
+                  <th>Gegenpartei</th>
+                  <th>Tx</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -1351,6 +1616,23 @@
             <p id="gateSummary" class="muted">Prüfung noch nicht ausgeführt.</p>
             <ul id="gateBlockers" class="gate-list"></ul>
             <ul id="gateWarnings" class="gate-list muted"></ul>
+            <div id="gateActionPanel" class="source-grid"></div>
+            <div id="gateDecisionPreview" class="tax-run-preview hidden"></div>
+            <div class="table-wrap compact-table">
+              <table id="gateBalanceCandidateTable">
+                <thead>
+                  <tr>
+                    <th>Kandidat</th>
+                    <th>Plattform</th>
+                    <th>Asset</th>
+                    <th class="num">Menge</th>
+                    <th>Status</th>
+                    <th>Entscheidung</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
           </div>
 
           <div class="gate-card">

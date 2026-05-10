@@ -245,7 +245,7 @@ class FallbackFxResolver:
             return False
 
         lookup = _normalize_lookup_table(payload)
-        quote_asset = _lookup_field_str(lookup, ("quote_asset", "quote", "quotecurrency", "tradequote", "basequote", "market"))
+        quote_asset = _quote_asset_from_lookup(lookup)
         price_usd = _to_decimal(_lookup_field(lookup, ("price_usd", "priceusd", "usd_price", "usdprice", "execution_price_usd")))
         if price_usd <= 0:
             if quote_asset in USD_STABLE_QUOTES:
@@ -294,6 +294,7 @@ class FallbackFxResolver:
                 *field_pairs,
                 ("raw_amount_usd", "amount_eur"),
                 ("raw_value_usd", "value_eur"),
+                ("value_usd_sum", "value_eur"),
                 ("raw_income_usd", "income_eur"),
                 ("raw_proceeds_usd", "proceeds_eur"),
                 ("raw_pnl_usd", "pnl_eur"),
@@ -315,7 +316,7 @@ class FallbackFxResolver:
     @staticmethod
     def _requires_usd_to_eur(payload: dict[str, Any]) -> bool:
         lookup = _normalize_lookup_table(payload)
-        quote_asset = _lookup_field_str(lookup, ("quote_asset", "quote", "quotecurrency", "basequote"))
+        quote_asset = _quote_asset_from_lookup(lookup)
 
         if _to_decimal(payload.get("price_eur")) <= 0:
             if _to_decimal(_lookup_field(lookup, ("price_usd", "priceusd", "usd_price", "usdprice", "execution_price_usd"))) > 0:
@@ -340,6 +341,7 @@ class FallbackFxResolver:
             "commission_usd",
             "raw_amount_usd",
             "raw_value_usd",
+            "value_usd_sum",
             "raw_income_usd",
             "raw_proceeds_usd",
             "raw_pnl_usd",
@@ -422,3 +424,21 @@ def _lookup_field_str(lookup: dict[str, Any], aliases: tuple[str, ...]) -> str:
         if val is not None and str(val).strip():
             return str(val).strip().upper()
     return ""
+
+
+def _quote_asset_from_lookup(lookup: dict[str, Any]) -> str:
+    explicit = _lookup_field_str(
+        lookup,
+        ("quote_asset", "quote", "quotecurrency", "tradequote", "basequote", "market"),
+    )
+    if explicit in USD_STABLE_QUOTES:
+        return explicit
+    for alias in ("symbol", "market", "pair", "trading_pair"):
+        raw = _lookup_field_str(lookup, (alias,))
+        if not raw:
+            continue
+        normalized = raw.replace("-", "_").replace("/", "_")
+        for quote in sorted(USD_STABLE_QUOTES, key=len, reverse=True):
+            if normalized.endswith(f"_{quote}") or normalized.endswith(quote):
+                return quote
+    return explicit

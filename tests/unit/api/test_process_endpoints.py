@@ -5,6 +5,7 @@ import asyncio
 from tax_engine.api.app import (
     ProcessCompareRulesetsRequest,
     ProcessPreflightRequest,
+    ReviewTimezoneCorrectRequest,
     TaxEventOverrideUpsertRequest,
     audit_tax_line,
     import_confirm,
@@ -20,11 +21,20 @@ from tax_engine.api.app import (
     process_worker_run_next,
     report_export,
     report_files,
+    review_timezone_correct,
     tax_event_override_upsert,
 )
 from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
 from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
+from tax_engine.queue.service import (
+    attach_cached_usd_prices_to_reward_events,
+    attach_cached_usd_prices_to_swap_in_events,
+    attach_reference_usd_value_anchors,
+    drop_exact_pionex_duplicate_events,
+    drop_solscan_duplicates_when_solana_rpc_is_active,
+    label_helium_solana_claim_events,
+)
 
 
 def _reset_store() -> None:
@@ -54,6 +64,552 @@ def test_process_run_creates_queued_job() -> None:
     assert response.data["progress"] == 0
     assert response.data["tax_year"] == 2026
     assert response.data["ruleset_id"] == "DE-2026-v1.0"
+
+
+def test_attach_reference_usd_value_anchors_from_solscan_to_solana_rpc() -> None:
+    active_events = [
+        {
+            "unique_event_id": "solana-rpc-in",
+            "payload": {
+                "timestamp_utc": "2024-12-09T08:21:44+00:00",
+                "source": "solana_rpc",
+                "asset": "JUP",
+                "side": "in",
+                "event_type": "swap_in_aggregated",
+                "quantity": "3701.700000",
+                "tx_id": "same-signature",
+            },
+        }
+    ]
+    all_events = [
+        *active_events,
+        {
+            "unique_event_id": "solscan-reference-in",
+            "payload": {
+                "timestamp_utc": "2024-12-09T08:21:44+00:00",
+                "source": "solscan_wallet_discovery",
+                "asset": "JUP",
+                "side": "in",
+                "event_type": "swap_in_aggregated",
+                "quantity": "3701.7",
+                "tx_id": "same-signature",
+                "raw_row": {"value_usd_sum": "4682.284012091743"},
+            },
+        },
+    ]
+
+    enriched, summary = attach_reference_usd_value_anchors(active_events, all_events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_anchor_count"] == 1
+    assert payload["value_usd_sum"] == "4682.284012091743"
+    assert payload["valuation_reference_source"] == "solscan_wallet_discovery"
+    assert payload["valuation_reference_source_event_id"] == "solscan-reference-in"
+
+
+def test_attach_reference_usd_value_anchors_from_solscan_stable_counterflow() -> None:
+    _reset_store()
+    STORE.upsert_solscan_transaction(
+        signature="same-signature",
+        wallet_address="wallet-1",
+        endpoint="https://pro-api.solscan.io/v2.0/transaction/detail",
+        http_status=200,
+        success=True,
+        block_time_utc="2024-12-09T08:21:44+00:00",
+        slot=1,
+        raw_json=(
+            '{"success": true, "data": {"token_bal_change": ['
+            '{"owner": "wallet-1", "token_address": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", '
+            '"change_amount": "1547517296", "decimals": 6},'
+            '{"owner": "pool-1", "token_address": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", '
+            '"change_amount": "1781426316", "decimals": 6}'
+            ']}}'
+        ),
+        summary_json="{}",
+    )
+    active_events = [
+        {
+            "unique_event_id": "solana-rpc-in",
+            "payload": {
+                "timestamp_utc": "2024-12-09T08:21:44+00:00",
+                "source": "solana_rpc",
+                "asset": "JUPYIWRYJFSKUPIHA7HKER8VUTAEFOSYBKEDZNSDVCN",
+                "side": "in",
+                "event_type": "token_transfer",
+                "quantity": "1547.517296",
+                "tx_id": "same-signature",
+                "wallet_address": "wallet-1",
+            },
+        }
+    ]
+
+    enriched, summary = attach_reference_usd_value_anchors(active_events, active_events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_anchor_count"] == 1
+    assert summary["solscan_counterflow_attached_count"] == 1
+    assert payload["value_usd_sum"] == "1781.426316"
+    assert payload["valuation_reference_source"] == "solscan_transaction_counterflow"
+    assert payload["valuation_reference_tx_id"] == "same-signature"
+
+
+def test_attach_reference_usd_value_anchors_from_solscan_wsol_counterflow() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-09-18", "SOL", "USD", "150", "test", "2024-09-18")
+    STORE.upsert_solscan_transaction(
+        signature="same-signature",
+        wallet_address="wallet-1",
+        endpoint="https://pro-api.solscan.io/v2.0/transaction/detail",
+        http_status=200,
+        success=True,
+        block_time_utc="2024-09-18T08:21:44+00:00",
+        slot=1,
+        raw_json=(
+            '{"success": true, "data": {"token_bal_change": ['
+            '{"owner": "wallet-1", "token_address": "ZEUS1aR7aX8DFFJf5QjWj2ftDDdNTroMNGo8YoQm3Gq", '
+            '"change_amount": "1815225707", "decimals": 6},'
+            '{"owner": "pool-1", "token_address": "So11111111111111111111111111111111111111112", '
+            '"change_amount": "3966000000", "decimals": 9}'
+            ']}}'
+        ),
+        summary_json="{}",
+    )
+    active_events = [
+        {
+            "unique_event_id": "solana-rpc-in",
+            "payload": {
+                "timestamp_utc": "2024-09-18T08:21:44+00:00",
+                "source": "solana_rpc",
+                "asset": "ZEUS1AR7AX8DFFJF5QJWJ2FTDDDNTROMNGO8YOQM3GQ",
+                "side": "in",
+                "event_type": "token_transfer",
+                "quantity": "1815.225707",
+                "tx_id": "same-signature",
+                "wallet_address": "wallet-1",
+            },
+        }
+    ]
+
+    enriched, summary = attach_reference_usd_value_anchors(active_events, active_events)
+
+    payload = enriched[0]["payload"]
+    assert summary["solscan_counterflow_attached_count"] == 1
+    assert payload["value_usd_sum"] == "594.900"
+    assert payload["valuation_reference_source"] == "solscan_transaction_counterflow"
+
+
+def test_attach_reference_usd_value_anchors_from_raw_stable_counterflow() -> None:
+    active_events = [
+        {
+            "unique_event_id": "iot-swap-out",
+            "payload": {
+                "timestamp_utc": "2024-02-23T21:01:15+00:00",
+                "source": "solana_rpc",
+                "asset": "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS",
+                "side": "out",
+                "event_type": "swap_out_aggregated",
+                "quantity": "421245.10905",
+                "tx_id": "same-signature",
+                "raw_row": {
+                    "from_asset": "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS",
+                    "from_quantity": "421245.10905",
+                    "to_asset": "ES9VMFRZACERMJFRF4H2FYD4KCONKY11MCCE8BENWNYB",
+                    "to_quantity": "902.309402",
+                },
+            },
+        }
+    ]
+
+    enriched, summary = attach_reference_usd_value_anchors(active_events, active_events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_anchor_count"] == 1
+    assert summary["raw_stable_counterflow_attached_count"] == 1
+    assert payload["value_usd_sum"] == "902.309402"
+    assert payload["valuation_reference_source"] == "raw_stable_counterflow"
+    assert payload["valuation_reference_tx_id"] == "same-signature"
+
+
+def test_attach_cached_usd_prices_to_reward_events() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-03-01", "IOT", "USD", "0.002", "test", "2024-03-01")
+    events = [
+        {
+            "unique_event_id": "iot-reward",
+            "payload": {
+                "timestamp_utc": "2024-03-01T00:00:00+00:00",
+                "source": "heliumgeek",
+                "asset": "IOT",
+                "side": "in",
+                "event_type": "mining_reward",
+                "quantity": "100",
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_reward_events(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_price_count"] == 1
+    assert payload["price_usd"] == "0.002"
+    assert payload["valuation_reference_source"] == "fx_cache_asset_usd_reward"
+    assert payload["valuation_reference_asset"] == "IOT"
+    assert payload["valuation_reference_rate_date"] == "2024-03-01"
+
+
+def test_attach_cached_usd_prices_to_claim_label_events() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2023-06-24", "IOT", "USD", "0.0006", "test", "2023-06-24")
+    events = [
+        {
+            "unique_event_id": "iot-claim",
+            "payload": {
+                "timestamp_utc": "2023-06-24T04:20:16+00:00",
+                "source": "solana_rpc",
+                "asset": "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS",
+                "side": "in",
+                "event_type": "token_transfer",
+                "defi_label": "claim",
+                "quantity": "23617.275455",
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_reward_events(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_price_count"] == 1
+    assert payload["price_usd"] == "0.0006"
+    assert payload["valuation_reference_source"] == "fx_cache_asset_usd_reward"
+
+
+def test_label_helium_solana_claim_events_from_distribution_program() -> None:
+    events = [
+        {
+            "unique_event_id": "iot-distribution",
+            "payload": {
+                "timestamp_utc": "2023-04-20T17:56:12+00:00",
+                "source": "solana_rpc",
+                "asset": "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS",
+                "side": "in",
+                "event_type": "token_transfer",
+                "defi_label": "unknown",
+                "quantity": "40591.287485",
+                "raw_row": {
+                    "transaction": {
+                        "message": {
+                            "accountKeys": [
+                                {"pubkey": "1atrmQs3eq1N2FEYWu6tyTXbCjP4uQwExpjtnhXtS8h"}
+                            ]
+                        }
+                    }
+                },
+            },
+        }
+    ]
+
+    enriched, summary = label_helium_solana_claim_events(events)
+
+    assert summary["labelled_count"] == 1
+    assert enriched[0]["payload"]["defi_label"] == "claim"
+    assert enriched[0]["payload"]["valuation_reference_source"] == "helium_solana_distribution_label"
+
+
+def test_attach_cached_usd_prices_to_interest_events() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2025-01-20", "JUP", "USD", "0.97078", "test", "2025-01-20")
+    events = [
+        {
+            "unique_event_id": "jup-interest",
+            "payload": {
+                "timestamp_utc": "2025-01-20T23:59:59+00:00",
+                "source": "binance_api",
+                "asset": "JUP",
+                "side": "in",
+                "event_type": "interest",
+                "quantity": "0.12031391",
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_reward_events(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_price_count"] == 1
+    assert payload["price_usd"] == "0.97078"
+    assert payload["valuation_reference_source"] == "fx_cache_asset_usd_reward"
+
+
+def test_attach_cached_usd_prices_skips_plain_transfers() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-03-01", "IOT", "USD", "0.002", "test", "2024-03-01")
+    events = [
+        {
+            "unique_event_id": "iot-transfer",
+            "payload": {
+                "timestamp_utc": "2024-03-01T00:00:00+00:00",
+                "source": "solana_rpc",
+                "asset": "IOT",
+                "side": "in",
+                "event_type": "token_transfer",
+                "quantity": "100",
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_reward_events(events)
+
+    assert summary["attached_price_count"] == 0
+    assert "price_usd" not in enriched[0]["payload"]
+    assert "valuation_reference_source" not in enriched[0]["payload"]
+
+
+def test_attach_cached_usd_prices_to_swap_in_events() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-08-23", "JUP", "USD", "0.84", "test", "2024-08-23")
+    events = [
+        {
+            "unique_event_id": "jup-swap-in",
+            "payload": {
+                "timestamp_utc": "2024-08-23T20:13:31+00:00",
+                "source": "solana_rpc",
+                "asset": "JUPYIWRYJFSKUPIHA7HKER8VUTAEFOSYBKEDZNSDVCN",
+                "side": "in",
+                "event_type": "swap_in_aggregated",
+                "quantity": "750",
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_swap_in_events(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_price_count"] == 1
+    assert payload["price_usd"] == "0.84"
+    assert payload["valuation_reference_source"] == "fx_cache_asset_usd_swap_in"
+    assert payload["valuation_reference_asset"] == "JUP"
+
+
+def test_attach_cached_usd_prices_to_swap_in_events_skips_transfers() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-08-23", "JUP", "USD", "0.84", "test", "2024-08-23")
+    events = [
+        {
+            "unique_event_id": "jup-transfer-in",
+            "payload": {
+                "timestamp_utc": "2024-08-23T20:13:31+00:00",
+                "source": "solana_rpc",
+                "asset": "JUP",
+                "side": "in",
+                "event_type": "token_transfer",
+                "quantity": "750",
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_swap_in_events(events)
+
+    assert summary["attached_price_count"] == 0
+    assert "price_usd" not in enriched[0]["payload"]
+
+
+def test_attach_cached_usd_prices_to_swap_token_transfer_events() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-08-29", "IOT", "USD", "0.0012571", "test", "2024-08-29")
+    events = [
+        {
+            "unique_event_id": "iot-swap-transfer-in",
+            "payload": {
+                "timestamp_utc": "2024-08-29T11:23:49+00:00",
+                "source": "solana_rpc",
+                "asset": "IOT",
+                "side": "in",
+                "event_type": "token_transfer",
+                "defi_label": "swap",
+                "quantity": "554625.934520",
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_swap_in_events(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_price_count"] == 1
+    assert payload["price_usd"] == "0.0012571"
+    assert payload["valuation_reference_source"] == "fx_cache_asset_usd_swap_in"
+    assert payload["valuation_reference_asset"] == "IOT"
+
+
+def test_attach_cached_usd_prices_to_swap_in_events_uses_priced_counterflow() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-03-11", "MOBILE", "USD", "0.00411878", "test", "2024-03-11")
+    events = [
+        {
+            "unique_event_id": "unknown-swap-in",
+            "payload": {
+                "timestamp_utc": "2024-03-11T19:40:08+00:00",
+                "source": "solana_rpc",
+                "tx_id": "same-signature",
+                "asset": "CBDC",
+                "side": "in",
+                "event_type": "swap_in_aggregated",
+                "quantity": "18902619.55",
+            },
+        },
+        {
+            "unique_event_id": "mobile-swap-out",
+            "payload": {
+                "timestamp_utc": "2024-03-11T19:40:08+00:00",
+                "source": "solana_rpc",
+                "tx_id": "same-signature",
+                "asset": "MOBILE",
+                "side": "out",
+                "event_type": "swap_out_aggregated",
+                "quantity": "23700",
+            },
+        },
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_swap_in_events(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_price_count"] == 1
+    assert summary["same_tx_priced_counterflow_attached_count"] == 1
+    assert payload["value_usd_sum"] == "97.61508600"
+    assert payload["valuation_reference_source"] == "same_tx_priced_counterflow"
+    assert payload["valuation_reference_asset"] == "MOBILE"
+
+
+def test_attach_cached_usd_prices_to_swap_in_events_uses_raw_route_counterflow() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-04-28", "JUP", "USD", "1.011", "test", "2024-04-28")
+    events = [
+        {
+            "unique_event_id": "unknown-route-swap-in",
+            "payload": {
+                "timestamp_utc": "2024-04-28T19:08:19+00:00",
+                "source": "solana_rpc",
+                "tx_id": "route-signature",
+                "asset": "25HAYB3GUHCVJDGKIFHGUSKFQOZSNFF46CACVT2WLMTDJ",
+                "side": "in",
+                "event_type": "token_transfer",
+                "defi_label": "swap",
+                "quantity": "7445.66318",
+                "raw_row": {
+                    "inner_instructions": [
+                        {
+                            "instructions": [
+                                {
+                                    "parsed": {
+                                        "info": {
+                                            "mint": "JUP",
+                                            "tokenAmount": {"uiAmountString": "100"},
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_swap_in_events(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_price_count"] == 1
+    assert summary["raw_priced_route_counterflow_attached_count"] == 1
+    assert payload["value_usd_sum"] == "101.100"
+    assert payload["valuation_reference_source"] == "raw_priced_route_counterflow"
+    assert payload["valuation_reference_asset"] == "JUP"
+
+
+def test_drop_solscan_duplicate_when_solana_rpc_is_active() -> None:
+    events = [
+        {
+            "unique_event_id": "solana-rpc-out",
+            "payload": {
+                "source": "solana_rpc",
+                "asset": "USDC",
+                "side": "out",
+                "quantity": "1303.122096",
+                "tx_id": "same-signature",
+            },
+        },
+        {
+            "unique_event_id": "solscan-out",
+            "payload": {
+                "source": "solscan_wallet_discovery",
+                "asset": "USDC",
+                "side": "out",
+                "quantity": "1303.122096",
+                "tx_id": "same-signature",
+            },
+        },
+        {
+            "unique_event_id": "solscan-missing-primary",
+            "payload": {
+                "source": "solscan_wallet_discovery",
+                "asset": "JUP",
+                "side": "in",
+                "quantity": "10",
+                "tx_id": "other-signature",
+            },
+        },
+    ]
+
+    filtered, summary = drop_solscan_duplicates_when_solana_rpc_is_active(events)
+
+    assert [event["unique_event_id"] for event in filtered] == ["solana-rpc-out", "solscan-missing-primary"]
+    assert summary["dropped_solscan_duplicate_count"] == 1
+
+
+def test_drop_exact_pionex_duplicate_events_keeps_first_copy() -> None:
+    events = [
+        {
+            "unique_event_id": "pionex-a",
+            "payload": {
+                "source": "pionex",
+                "timestamp_utc": "2022-01-19T12:45:42+00:00",
+                "event_type": "trade",
+                "side": "out",
+                "asset": "USDT",
+                "quantity": "479.99307717000000000000",
+                "fee": "0",
+                "fee_asset": "",
+            },
+        },
+        {
+            "unique_event_id": "pionex-b",
+            "payload": {
+                "source": "pionex",
+                "timestamp_utc": "2022-01-19T12:45:42+00:00",
+                "event_type": "trade",
+                "side": "out",
+                "asset": "USDT",
+                "quantity": "479.99307717000000000000",
+                "fee": "0",
+                "fee_asset": "",
+            },
+        },
+        {
+            "unique_event_id": "binance-same-shape",
+            "payload": {
+                "source": "binance",
+                "timestamp_utc": "2022-01-19T12:45:42+00:00",
+                "event_type": "trade",
+                "side": "out",
+                "asset": "USDT",
+                "quantity": "479.99307717000000000000",
+            },
+        },
+    ]
+
+    filtered, summary = drop_exact_pionex_duplicate_events(events)
+
+    assert [event["unique_event_id"] for event in filtered] == ["pionex-a", "binance-same-shape"]
+    assert summary["dropped_pionex_duplicate_count"] == 1
 
 
 def test_process_run_normalizes_de_alias_and_version_from_ui() -> None:
@@ -126,6 +682,190 @@ def test_process_preflight_allows_clean_year_with_priced_trade() -> None:
     assert response.data["allow_run"] is True
     assert response.data["counts"]["tax_year_events"] == 1
     assert response.data["blockers"] == []
+
+
+def test_process_preflight_treats_binance_api_eur_quote_as_priced() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="binance-api-eur-quote.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2025-10-13T12:45:07.878000+00:00",
+                    "source": "binance_api",
+                    "asset": "ADAEUR",
+                    "base_asset": "ADA",
+                    "quote_asset": "EUR",
+                    "event_type": "trade",
+                    "side": "buy",
+                    "quantity": "126.5",
+                    "price": "0.6167",
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2025, ruleset_id="DE-2025-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["allow_run"] is True
+    assert response.data["counts"]["unresolved_valuation_events"] == 0
+    assert response.data["blockers"] == []
+
+
+def test_process_preflight_applies_review_timestamp_corrections() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2023-04-20", "IOT", "USD", "0.0006", "test", "2023-04-20")
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="preflight-review-correction.csv",
+            rows=[
+                {
+                    "timestamp": "2023-04-01T00:00:00Z",
+                    "asset": "IOT",
+                    "side": "in",
+                    "amount": "1000",
+                    "event_type": "mining_reward",
+                    "source": "heliumgeek",
+                }
+            ],
+        )
+    )
+    event_id = STORE.list_raw_events()[0]["unique_event_id"]
+    review_timezone_correct(
+        ReviewTimezoneCorrectRequest(
+            source_event_id=str(event_id),
+            corrected_timestamp_utc="2023-04-20T00:00:00Z",
+            reason_code="source_period_start",
+            note="Periodenstart auf ersten bepreisten Markttag korrigiert.",
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2023, ruleset_id="DE-2023-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["counts"]["tax_year_events"] == 1
+    assert response.data["counts"]["unresolved_valuation_events"] == 0
+    assert response.data["review_action_summary"]["timezone_correction_count"] == 1
+
+
+def test_worker_applies_review_timestamp_corrections_before_reward_pricing() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2023-04-20", "IOT", "USD", "0.0006", "test", "2023-04-20")
+    STORE.upsert_fx_rate("2023-04-20", "USD", "EUR", "0.9", "test", "2023-04-20")
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="worker-review-correction.csv",
+            rows=[
+                {
+                    "timestamp": "2023-04-01T00:00:00Z",
+                    "asset": "IOT",
+                    "side": "in",
+                    "amount": "1000",
+                    "event_type": "mining_reward",
+                    "source": "heliumgeek",
+                },
+                {
+                    "timestamp": "2023-04-26T12:00:00Z",
+                    "asset": "IOT",
+                    "side": "out",
+                    "amount": "1000",
+                    "event_type": "swap_out_aggregated",
+                    "source": "solana_rpc",
+                    "price_eur": "0.002",
+                },
+            ],
+        )
+    )
+    reward_event_id = STORE.list_raw_events()[0]["unique_event_id"]
+    review_timezone_correct(
+        ReviewTimezoneCorrectRequest(
+            source_event_id=str(reward_event_id),
+            corrected_timestamp_utc="2023-04-20T00:00:00Z",
+            reason_code="source_period_start",
+            note="Periodenstart auf ersten bepreisten Markttag korrigiert.",
+        )
+    )
+
+    created = process_run(ProcessRunRequest(tax_year=2023, ruleset_id="DE-2023-v1.0", config={}, dry_run=False))
+    job_id = created.data["job_id"]
+    result = process_worker_run_next(WorkerRunNextRequest(simulate_fail=False))
+
+    tax_lines = STORE.get_tax_lines(job_id)
+    assert result.status == "success"
+    assert result.data["result_summary"]["review_actions"]["timezone_correction_count"] == 1
+    assert result.data["result_summary"]["reward_price_summary"]["attached_price_count"] == 1
+    assert tax_lines[0]["buy_timestamp_utc"] == "2023-04-20T00:00:00+00:00"
+    assert tax_lines[0]["cost_basis_eur"] == "0.54000"
+
+
+def test_process_preflight_ignores_zero_quantity_reward_without_value() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="preflight-zero-reward.csv",
+            rows=[
+                {
+                    "timestamp": "2022-09-22T21:17:59Z",
+                    "asset": "HNT",
+                    "side": "in",
+                    "amount": "0",
+                    "event_type": "mining_reward",
+                    "source": "helium_legacy_cointracking",
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2022, ruleset_id="DE-2022-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["counts"]["tax_year_events"] == 1
+    assert response.data["counts"]["unresolved_valuation_events"] == 0
+
+
+def test_process_preflight_classifies_binance_wallet_deposit_shape() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="binance_deposit_shape.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2025-06-15T09:47:02+00:00",
+                    "source": "binance",
+                    "asset": "SOL",
+                    "quantity": "7.0700475",
+                    "side": "in",
+                    "event_type": "",
+                    "tx_id": "sol-deposit-tx",
+                    "network": "SOL",
+                    "address": "EnbD7GwdYtWgPv5ReEKgCVpExuZsFxiYqjeEM4SgEvhn",
+                    "raw_row": {
+                        "Address": "EnbD7GwdYtWgPv5ReEKgCVpExuZsFxiYqjeEM4SgEvhn",
+                        "Amount": "7.0700475",
+                        "Coin": "SOL",
+                        "Network": "SOL",
+                        "Status": "Completed",
+                        "TXID": "sol-deposit-tx",
+                    },
+                }
+            ],
+        )
+    )
+
+    response = process_preflight(
+        ProcessPreflightRequest(tax_year=2025, ruleset_id="DE-2025-v1.0", config={})
+    )
+
+    assert response.status == "success"
+    assert response.data["counts"]["unclassified_events"] == 0
+    assert response.data["warnings"] == []
 
 
 def test_process_preflight_ignores_reference_integrations_by_default() -> None:
@@ -290,6 +1030,7 @@ def test_worker_run_next_completes_queued_job() -> None:
     assert ("all", "json") in file_scopes
     assert ("all", "csv") in file_scopes
     assert ("all", "pdf") in file_scopes
+    assert ("tax", "wiso") in file_scopes
     assert ("tax", "json") in file_scopes
     assert ("derivatives", "csv") in file_scopes
     pdf_response = report_export(job_id=job_id, scope="all", fmt="pdf")
@@ -350,8 +1091,9 @@ def test_tax_domain_summary_endpoint_returns_split_blocks() -> None:
     response = process_tax_domain_summary(job_id)
     assert response.status == "success"
     summary = response.data["tax_domain_summary"]
-    assert summary["anlage_so"]["leistungen_income_eur"] == "5.0"
+    assert summary["anlage_so"]["leistungen_income_eur"] == "0"
     assert summary["anlage_so"]["private_veraeusserung_net_taxable_eur"] == "20"
+    assert summary["euer"]["betriebseinnahmen_mining_staking_eur"] == "5.0"
     assert summary["euer"]["betriebsausgaben_data_credits_eur"] == "3"
 
 
@@ -397,7 +1139,7 @@ def test_process_compare_rulesets_post_matches_api_contract() -> None:
     assert response.data["comparison"]["ruleset_id"] == "DE-2026-v1.0"
 
 
-def test_tax_event_override_changes_domain_assignment() -> None:
+def test_tax_event_override_keeps_business_domain_assignment_auditable() -> None:
     _reset_store()
     import_confirm(
         ConfirmImportRequest(
@@ -418,8 +1160,8 @@ def test_tax_event_override_changes_domain_assignment() -> None:
     first_job_id = first_job.data["job_id"]
     process_worker_run_next(WorkerRunNextRequest(simulate_fail=False))
     first_summary = process_tax_domain_summary(first_job_id).data["tax_domain_summary"]
-    assert first_summary["anlage_so"]["leistungen_income_eur"] == "5.0"
-    assert first_summary["euer"]["betriebseinnahmen_mining_staking_eur"] == "0"
+    assert first_summary["anlage_so"]["leistungen_income_eur"] == "0"
+    assert first_summary["euer"]["betriebseinnahmen_mining_staking_eur"] == "5.0"
 
     event_id = STORE.list_raw_events()[0]["unique_event_id"]
     upsert_response = tax_event_override_upsert(
@@ -513,3 +1255,37 @@ def test_portfolio_lot_aging_shows_split_lots() -> None:
     assert assets[0]["lot_count"] == 3
     assert assets[0]["qty_exempt"] == "7"
     assert assets[0]["qty_taxable"] == "8"
+
+
+def test_portfolio_lot_aging_uses_known_solana_mint_symbols() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="solana-mint-lots.csv",
+            rows=[
+                {
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "asset": "2KFZCKFXJ1US8YRQZA5VKTSXY3GPZFZVVHWJ91N8FV2J",
+                    "side": "buy",
+                    "amount": "4202343.53",
+                    "price_eur": "0",
+                },
+                {
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "asset": "SHARKSYJJQANYXVFRPNBN9PJGKHWDHATNMYICWPNR1S",
+                    "side": "buy",
+                    "amount": "963.536668",
+                    "price_eur": "0",
+                },
+            ],
+        )
+    )
+
+    resp = portfolio_lot_aging(as_of_utc="2026-05-01T00:00:00Z")
+
+    assert resp.status == "success"
+    assets = {row["asset"]: row["total_qty"] for row in resp.data.get("assets", [])}
+    assert assets["CBDC"] == "4202343.53"
+    assert assets["SHARK"] == "963.536668"
+    assert "2KFZCK...FV2J" not in assets
+    assert "SHARKS...NR1S" not in assets

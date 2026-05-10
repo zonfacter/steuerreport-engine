@@ -7,6 +7,8 @@ from tax_engine.connectors.service import (
     build_binance_signature,
     build_bitget_signature,
     build_coinbase_signature,
+    build_pionex_signature,
+    fetch_cex_balance_preview,
     fetch_cex_transactions_preview,
     mask_api_key,
 )
@@ -44,6 +46,16 @@ def test_build_coinbase_signature_is_deterministic() -> None:
         secret_base64="MDEyMzQ1Njc4OWFiY2RlZg==",
     )
     assert sig == "ZlOfu0gXk6iGbZw972kqUDBNnxxSFZlJ9eomAg0HZ/g="
+
+
+def test_build_pionex_signature_is_deterministic() -> None:
+    sig = build_pionex_signature(
+        method="GET",
+        path="/api/v1/account/balances",
+        params={"timestamp": "1700000000000"},
+        secret="pionex-secret",
+    )
+    assert sig == "bd1b592d42d492a8920edc04fb92c6edb7a8d223c93acb17f50acbb9712555c1"
 
 
 def test_fetch_cex_transactions_preview_binance_maps_deposit_and_withdrawal(monkeypatch) -> None:
@@ -170,6 +182,54 @@ def test_fetch_cex_transactions_preview_binance_includes_trade_and_dividend_rows
     assert "trade" in event_types
 
 
+def test_fetch_cex_balance_preview_binance_includes_simple_earn_positions(monkeypatch) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "tax_engine.connectors.service._binance_account_payload",
+        lambda *args, **kwargs: {"balances": [{"asset": "SOL", "free": "1.0", "locked": "0"}]},
+    )
+
+    def _fake_signed_get(**kwargs):
+        calls.append(kwargs["path"])
+        if kwargs["path"] == "/sapi/v1/simple-earn/flexible/position":
+            return {"total": 0, "rows": []}
+        if kwargs["path"] == "/sapi/v1/simple-earn/locked/position":
+            return {
+                "total": 1,
+                "rows": [
+                    {
+                        "positionId": 123,
+                        "projectId": "Sol*120",
+                        "asset": "SOL",
+                        "amount": "9.84095708",
+                        "rewardAsset": "SOL",
+                        "rewardAmt": "0.14855608",
+                    }
+                ],
+            }
+        return {"total": 0, "rows": []}
+
+    monkeypatch.setattr("tax_engine.connectors.service._binance_signed_get", _fake_signed_get)
+
+    result = fetch_cex_balance_preview(
+        connector_id="binance",
+        api_key="key",
+        api_secret="secret",
+        passphrase=None,
+        timeout_seconds=10,
+        max_rows=10,
+    )
+
+    rows = result["rows"]
+    assert [row["quantity"] for row in rows if row["asset"] == "SOL"] == ["1.0", "9.84095708", "0.14855608"]
+    assert rows[0]["account_type"] == "spot"
+    assert rows[1]["account_type"] == "simple_earn_locked"
+    assert rows[1]["event_type"] == "balance_snapshot"
+    assert rows[2]["event_type"] == "earn_accrued_reward_snapshot"
+    assert "/sapi/v1/simple-earn/locked/position" in calls
+
+
 def test_fetch_cex_transactions_preview_unsupported_connector_raises() -> None:
     try:
         fetch_cex_transactions_preview(
@@ -189,12 +249,51 @@ def test_fetch_cex_transactions_preview_unsupported_connector_raises() -> None:
 
 
 def test_fetch_cex_transactions_preview_bitget_maps_data(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
     def _fake_bitget_signed_get(**kwargs):
+        calls.append(kwargs)
         if kwargs["path"].endswith("deposit-records"):
             return {"code": "00000", "data": [{"coin": "USDT", "size": "50", "orderId": "dep-1", "cTime": "1704067200000"}]}
         if kwargs["path"].endswith("withdrawal-records"):
             return {"code": "00000", "data": [{"coin": "BTC", "amount": "0.01", "fee": "0.0001", "orderId": "wd-1", "cTime": "1704153600000"}]}
-        return {"code": "00000", "data": [{"symbol": "BTCUSDT", "side": "Buy", "price": "40000", "size": "0.001", "tradeId": "tr-1", "cTime": "1704240000000"}]}
+        if kwargs["path"].endswith("spot-record"):
+            return {"code": "00000", "data": [{"coin": "USDT", "spotTaxType": "Strategy Transfer In", "amount": "12.5", "fee": "0", "id": "tax-1", "ts": "1704157200000"}]}
+        if kwargs["path"].endswith("spot/account/bills"):
+            group_type = kwargs["params"]["groupType"]
+            if group_type == "transfer":
+                return {
+                    "code": "00000",
+                    "data": [
+                        {
+                            "coin": "USDT",
+                            "groupType": "transfer",
+                            "businessType": "TRANSFER_IN",
+                            "size": "100",
+                            "fees": "0",
+                            "balance": "100",
+                            "billId": "spot-bill-1",
+                            "cTime": "1704159000000",
+                        }
+                    ],
+                }
+            return {"code": "00000", "data": []}
+        if kwargs["path"].endswith("account/bill"):
+            return {"code": "00000", "data": {"bills": [{"billId": "bill-1", "coin": "USDT", "businessType": "contract_settle_fee", "amount": "-0.25", "fee": "0", "cTime": "1704160800000"}]}}
+        return {
+            "code": "00000",
+            "data": [
+                {
+                    "symbol": "BTCUSDT",
+                    "side": "Buy",
+                    "price": "40000",
+                    "size": "0.001",
+                    "feeDetail": {"feeCoin": "BTC", "totalFee": "-0.0000007"},
+                    "tradeId": "tr-1",
+                    "cTime": "1704240000000",
+                }
+            ],
+        }
 
     monkeypatch.setattr("tax_engine.connectors.service._bitget_signed_get", _fake_bitget_signed_get)
 
@@ -208,10 +307,28 @@ def test_fetch_cex_transactions_preview_bitget_maps_data(monkeypatch) -> None:
         start_time_ms=None,
         end_time_ms=None,
     )
-    assert result["count"] == 3
+    assert result["count"] >= 7
     assert any(row["event_type"] == "deposit" for row in result["rows"])
     assert any(row["event_type"] == "withdrawal" for row in result["rows"])
     assert any(row["event_type"] == "trade" for row in result["rows"])
+    assert any(row["event_type"] == "strategy" for row in result["rows"])
+    assert any(row["source"] == "bitget_account_bills_api" and row["event_type"] == "transfer" for row in result["rows"])
+    assert any(row["event_type"] == "derivative fee" for row in result["rows"])
+    fills_call = next(call for call in calls if str(call["path"]).endswith("spot/trade/fills"))
+    assert fills_call["params"]["limit"] == "100"
+    futures_calls = [call for call in calls if str(call["path"]).endswith("mix/account/bill")]
+    assert {call["params"]["productType"] for call in futures_calls} == {
+        "USDT-FUTURES",
+        "COIN-FUTURES",
+        "USDC-FUTURES",
+    }
+    assert {call["params"]["limit"] for call in futures_calls} == {"100"}
+    account_bill_calls = [call for call in calls if str(call["path"]).endswith("spot/account/bills")]
+    assert {call["params"]["groupType"] for call in account_bill_calls} >= {"transfer", "strategy", "convert"}
+    assert {call["params"]["limit"] for call in account_bill_calls} == {"100"}
+    spot_trade = next(row for row in result["rows"] if row["source"] == "bitget_api" and row["event_type"] == "trade")
+    assert spot_trade["fee"] == "-700E-9"
+    assert spot_trade["fee_asset"] == "BTC"
 
 
 def test_fetch_cex_transactions_preview_coinbase_maps_data(monkeypatch) -> None:
@@ -239,6 +356,54 @@ def test_fetch_cex_transactions_preview_coinbase_maps_data(monkeypatch) -> None:
     )
     assert result["count"] == 2
     assert any(row["event_type"] == "transfer" for row in result["rows"])
+
+
+def test_fetch_cex_transactions_preview_pionex_maps_fills(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "tax_engine.connectors.service._pionex_account_payload",
+        lambda **kwargs: {"result": True, "data": {"balances": [{"coin": "HNT", "free": "1", "frozen": "0"}]}},
+    )
+
+    def _fake_pionex_signed_get(**kwargs):
+        if kwargs["path"] == "/api/v1/trade/fills":
+            return {
+                "result": True,
+                "data": {
+                    "fills": [
+                        {
+                            "fillId": "fill-1",
+                            "symbol": "HNT_USDT",
+                            "side": "BUY",
+                            "size": "2",
+                            "price": "3",
+                            "amount": "6",
+                            "fee": "0.01",
+                            "feeCoin": "HNT",
+                            "timestamp": 1704067200000,
+                        }
+                    ]
+                },
+            }
+        return {"result": True, "data": {}}
+
+    monkeypatch.setattr("tax_engine.connectors.service._pionex_signed_get", _fake_pionex_signed_get)
+
+    result = fetch_cex_transactions_preview(
+        connector_id="pionex",
+        api_key="key",
+        api_secret="secret",
+        passphrase=None,
+        timeout_seconds=10,
+        max_rows=100,
+        start_time_ms=None,
+        end_time_ms=None,
+    )
+
+    assert result["connector_id"] == "pionex"
+    assert any(row["asset"] == "USDT" and row["side"] == "out" for row in result["rows"])
+    assert any(row["asset"] == "HNT" and row["side"] == "in" for row in result["rows"])
+    assert any(row["event_type"] == "fee" and row["asset"] == "HNT" for row in result["rows"])
+    assert any(warning["code"] == "pionex_history_limit" for warning in result["warnings"])
     assert any(row["event_type"] == "trade" for row in result["rows"])
 
 

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import uuid4
 
 from tax_engine.admin.service import resolve_effective_runtime_config
+from tax_engine.connectors.token_metadata import resolve_token_metadata
 from tax_engine.core.derivatives import process_derivatives_for_year
 from tax_engine.core.processor import process_events_for_year
 from tax_engine.core.tax_domains import build_tax_domain_summary
@@ -22,6 +24,801 @@ from tax_engine.reconciliation.chains import build_transfer_chain_index
 from tax_engine.rulesets import build_default_registry
 
 from .models import ProcessRunRequest
+
+STABLE_ASSETS = {"USD", "USDT", "USDC", "BUSD", "FDUSD", "DAI", "TUSD", "USDP"}
+SOLSCAN_STABLE_MINTS = {
+    "EPJFWDDAUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTD1V": "USDC",
+    "ES9VMFRZACERMJFRF4H2FYD4KCONKY11MCCE8BENWNYB": "USDT",
+}
+SOLSCAN_WSOL_MINT = "SO11111111111111111111111111111111111111112"
+HELIUM_SOLANA_DISTRIBUTOR_PROGRAM_IDS = {
+    "1ATRMQS3EQ1N2FEYWU6TYTXBCJP4UQWEXPJTNHXTS8H",
+}
+
+
+def _safe_decimal(value: Any) -> Decimal:
+    try:
+        return Decimal(str(value).strip().replace(",", ""))
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+
+
+def _load_token_alias_symbols() -> dict[str, str]:
+    row = STORE.get_setting("runtime.token_aliases")
+    if row is None:
+        return {}
+    try:
+        raw = json.loads(str(row.get("value_json", "{}")))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    aliases: dict[str, str] = {}
+    for mint_raw, payload in raw.items():
+        if not isinstance(payload, dict):
+            continue
+        mint = str(mint_raw or "").upper().strip()
+        symbol = str(payload.get("symbol") or "").upper().strip()
+        if mint and symbol:
+            aliases[mint] = symbol
+    return aliases
+
+
+def _asset_price_symbol(asset: Any, aliases: dict[str, str]) -> str:
+    normalized = str(asset or "").upper().strip()
+    if not normalized:
+        return ""
+    if normalized in aliases:
+        return aliases[normalized]
+    metadata = resolve_token_metadata(normalized)
+    symbol = str(metadata.get("symbol") or normalized).upper().strip()
+    return symbol if symbol else normalized
+
+
+def _event_date(payload: dict[str, Any]) -> str:
+    return str(payload.get("timestamp_utc") or payload.get("timestamp") or "")[:10]
+
+
+def _event_quantity(payload: dict[str, Any]) -> Decimal:
+    heliumgeek_qty = _heliumgeek_display_quantity(payload)
+    if heliumgeek_qty > Decimal("0"):
+        return heliumgeek_qty
+    for key in ("quantity", "qty", "amount", "size"):
+        value = _safe_decimal(payload.get(key))
+        if value != Decimal("0"):
+            return abs(value)
+    return Decimal("0")
+
+
+def _event_side(payload: dict[str, Any]) -> str:
+    return str(payload.get("side") or "").lower().strip()
+
+
+def _event_tx_id(payload: dict[str, Any]) -> str:
+    return str(payload.get("tx_id") or payload.get("transaction_hash") or payload.get("signature") or "").strip()
+
+
+def _valuation_anchor_key(payload: dict[str, Any], aliases: dict[str, str]) -> tuple[str, str, str, str] | None:
+    tx_id = _event_tx_id(payload)
+    side = _event_side(payload)
+    asset = _asset_price_symbol(payload.get("asset"), aliases)
+    quantity = _event_quantity(payload)
+    if not tx_id or side not in {"in", "out"} or not asset or quantity <= Decimal("0"):
+        return None
+    return (tx_id, side, asset, quantity.normalize().to_eng_string())
+
+
+def _payload_value_usd_sum(payload: dict[str, Any]) -> Decimal:
+    value = _safe_decimal(payload.get("value_usd_sum"))
+    if value > Decimal("0"):
+        return value
+    raw_row = payload.get("raw_row")
+    if isinstance(raw_row, dict):
+        value = _safe_decimal(raw_row.get("value_usd_sum"))
+        if value > Decimal("0"):
+            return value
+    return Decimal("0")
+
+
+def _normalized_mint(value: Any) -> str:
+    return str(value or "").upper().strip()
+
+
+def _solscan_token_change_amount(item: dict[str, Any]) -> Decimal:
+    amount = _safe_decimal(item.get("change_amount") or item.get("changeAmount"))
+    decimals_raw = item.get("decimals")
+    try:
+        decimals = int(str(decimals_raw))
+    except (TypeError, ValueError):
+        decimals = int(str(item.get("token_decimals") or 0))
+    if decimals > 0:
+        amount = amount / (Decimal(10) ** decimals)
+    return amount
+
+
+def _token_balance_changes_from_solscan_transaction(signature: str) -> list[dict[str, Any]]:
+    if not signature:
+        return []
+    row = STORE.get_solscan_transaction(signature)
+    if row is None:
+        return []
+    raw = row.get("raw")
+    if isinstance(raw, dict):
+        body = raw
+    else:
+        try:
+            body = json.loads(str(row.get("raw_json") or "{}"))
+        except json.JSONDecodeError:
+            return []
+    data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
+    if not isinstance(data, dict):
+        return []
+    changes = data.get("token_bal_change")
+    return changes if isinstance(changes, list) else []
+
+
+def _solscan_stable_counterflow_value_usd(
+    *,
+    payload: dict[str, Any],
+    aliases: dict[str, str],
+    tx_cache: dict[str, list[dict[str, Any]]],
+    sol_usd_cache: dict[str, Decimal],
+) -> Decimal:
+    tx_id = _event_tx_id(payload)
+    wallet_address = str(payload.get("wallet_address") or "").strip()
+    asset = _normalized_mint(payload.get("asset"))
+    quantity = _event_quantity(payload)
+    side = _event_side(payload)
+    if not tx_id or not wallet_address or not asset or quantity <= Decimal("0") or side not in {"in", "out"}:
+        return Decimal("0")
+    changes = tx_cache.get(tx_id)
+    if changes is None:
+        changes = _token_balance_changes_from_solscan_transaction(tx_id)
+        tx_cache[tx_id] = changes
+    if not changes:
+        return Decimal("0")
+
+    matched_wallet_change = False
+    for item in changes:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("owner") or "").strip() != wallet_address:
+            continue
+        if _normalized_mint(item.get("token_address")) != asset:
+            continue
+        amount = _solscan_token_change_amount(item)
+        if side == "in" and amount <= Decimal("0"):
+            continue
+        if side == "out" and amount >= Decimal("0"):
+            continue
+        if abs(amount - quantity) <= Decimal("0.000001"):
+            matched_wallet_change = True
+            break
+    if not matched_wallet_change:
+        return Decimal("0")
+
+    stable_values: list[Decimal] = []
+    wsol_positive = Decimal("0")
+    wsol_negative = Decimal("0")
+    for item in changes:
+        if not isinstance(item, dict):
+            continue
+        token_address = _normalized_mint(item.get("token_address"))
+        symbol = SOLSCAN_STABLE_MINTS.get(token_address) or aliases.get(token_address, "")
+        amount = _solscan_token_change_amount(item)
+        if symbol.upper().strip() not in STABLE_ASSETS:
+            if token_address == SOLSCAN_WSOL_MINT:
+                if amount > Decimal("0"):
+                    wsol_positive += amount
+                elif amount < Decimal("0"):
+                    wsol_negative += abs(amount)
+            continue
+        abs_amount = abs(amount)
+        if abs_amount > Decimal("0"):
+            stable_values.append(abs_amount)
+    stable_value = max(stable_values, default=Decimal("0"))
+    if stable_value > Decimal("0"):
+        return stable_value
+
+    rate_date = _event_date(payload)
+    sol_usd = sol_usd_cache.get(rate_date)
+    if sol_usd is None:
+        row = STORE.get_fx_rate(rate_date=rate_date, base_ccy="SOL", quote_ccy="USD") if rate_date else None
+        if row is None and rate_date:
+            row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy="SOL", quote_ccy="USD")
+        sol_usd = _safe_decimal(row.get("rate")) if isinstance(row, dict) else Decimal("0")
+        sol_usd_cache[rate_date] = sol_usd
+    wsol_counterflow = wsol_positive if side == "in" else wsol_negative
+    if wsol_counterflow > Decimal("0") and sol_usd > Decimal("0"):
+        return wsol_counterflow * sol_usd
+    return Decimal("0")
+
+
+def _raw_stable_counterflow_value_usd(payload: dict[str, Any], aliases: dict[str, str]) -> Decimal:
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return Decimal("0")
+    side = _event_side(payload)
+    if side == "in":
+        stable_asset = _asset_price_symbol(raw_row.get("from_asset"), aliases)
+        stable_quantity = _safe_decimal(raw_row.get("from_quantity"))
+    elif side == "out":
+        stable_asset = _asset_price_symbol(raw_row.get("to_asset"), aliases)
+        stable_quantity = _safe_decimal(raw_row.get("to_quantity"))
+    else:
+        return Decimal("0")
+    if stable_asset.upper().strip() not in STABLE_ASSETS or stable_quantity <= Decimal("0"):
+        return Decimal("0")
+    return stable_quantity
+
+
+def attach_reference_usd_value_anchors(
+    active_events: list[dict[str, Any]],
+    all_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    anchors: dict[tuple[str, str, str, str], tuple[str, Decimal]] = {}
+    solscan_tx_cache: dict[str, list[dict[str, Any]]] = {}
+    sol_usd_cache: dict[str, Decimal] = {}
+    counterflow_available = 0
+    raw_counterflow_available = 0
+    for event in all_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        if source != "solscan_wallet_discovery":
+            continue
+        value_usd_sum = _payload_value_usd_sum(payload)
+        if value_usd_sum <= Decimal("0"):
+            continue
+        key = _valuation_anchor_key(payload, aliases)
+        if key is None:
+            continue
+        anchors.setdefault(key, (str(event.get("unique_event_id") or ""), value_usd_sum))
+
+    transformed: list[dict[str, Any]] = []
+    attached = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        if source != "solana_rpc" or _payload_value_usd_sum(payload) > Decimal("0"):
+            transformed.append(event)
+            continue
+        key = _valuation_anchor_key(payload, aliases)
+        anchor = anchors.get(key) if key is not None else None
+        if anchor is None:
+            raw_counterflow_value = _raw_stable_counterflow_value_usd(payload, aliases)
+            stable_counterflow_value = raw_counterflow_value
+            reference_source = "raw_stable_counterflow"
+            from_raw_counterflow = stable_counterflow_value > Decimal("0")
+            if stable_counterflow_value <= Decimal("0"):
+                stable_counterflow_value = _solscan_stable_counterflow_value_usd(
+                    payload=payload,
+                    aliases=aliases,
+                    tx_cache=solscan_tx_cache,
+                    sol_usd_cache=sol_usd_cache,
+                )
+                reference_source = "solscan_transaction_counterflow"
+            if stable_counterflow_value <= Decimal("0"):
+                transformed.append(event)
+                continue
+            updated_payload = dict(payload)
+            updated_payload["value_usd_sum"] = stable_counterflow_value.to_eng_string()
+            updated_payload["valuation_reference_source"] = reference_source
+            updated_payload["valuation_reference_tx_id"] = _event_tx_id(payload)
+            updated_event = dict(event)
+            updated_event["payload"] = updated_payload
+            transformed.append(updated_event)
+            attached += 1
+            if from_raw_counterflow:
+                raw_counterflow_available += 1
+            else:
+                counterflow_available += 1
+            continue
+        reference_event_id, value_usd_sum = anchor
+        updated_payload = dict(payload)
+        updated_payload["value_usd_sum"] = value_usd_sum.to_eng_string()
+        updated_payload["valuation_reference_source"] = "solscan_wallet_discovery"
+        updated_payload["valuation_reference_source_event_id"] = reference_event_id
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        attached += 1
+
+    return transformed, {
+        "valuation_anchor_source": "solscan_wallet_discovery",
+        "available_anchor_count": len(anchors),
+        "attached_anchor_count": attached,
+        "solscan_counterflow_attached_count": counterflow_available,
+        "raw_stable_counterflow_attached_count": raw_counterflow_available,
+    }
+
+
+def drop_solscan_duplicates_when_solana_rpc_is_active(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    solana_rpc_keys: set[tuple[str, str, str, str]] = set()
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        if str(payload.get("source") or "").lower().strip() != "solana_rpc":
+            continue
+        key = _valuation_anchor_key(payload, aliases)
+        if key is not None:
+            solana_rpc_keys.add(key)
+
+    transformed: list[dict[str, Any]] = []
+    dropped = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        if str(payload.get("source") or "").lower().strip() != "solscan_wallet_discovery":
+            transformed.append(event)
+            continue
+        key = _valuation_anchor_key(payload, aliases)
+        if key is not None and key in solana_rpc_keys:
+            dropped += 1
+            continue
+        transformed.append(event)
+
+    return transformed, {
+        "dedupe_rule": "drop_solscan_wallet_discovery_when_matching_solana_rpc_active",
+        "solana_rpc_key_count": len(solana_rpc_keys),
+        "dropped_solscan_duplicate_count": dropped,
+    }
+
+
+def drop_exact_pionex_duplicate_events(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    seen: set[tuple[str, str, str, str, str, str, str]] = set()
+    transformed: list[dict[str, Any]] = []
+    dropped = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        if str(payload.get("source") or "").lower().strip() != "pionex":
+            transformed.append(event)
+            continue
+        key = (
+            str(payload.get("timestamp_utc") or payload.get("timestamp") or "").strip(),
+            str(payload.get("event_type") or "").lower().strip(),
+            str(payload.get("side") or "").lower().strip(),
+            _asset_price_symbol(payload.get("asset"), {}),
+            _event_quantity(payload).normalize().to_eng_string(),
+            _safe_decimal(payload.get("fee")).normalize().to_eng_string(),
+            str(payload.get("fee_asset") or "").upper().strip(),
+        )
+        if key in seen:
+            dropped += 1
+            continue
+        seen.add(key)
+        transformed.append(event)
+
+    return transformed, {
+        "dedupe_rule": "drop_exact_pionex_duplicate_events",
+        "pionex_key_count": len(seen),
+        "dropped_pionex_duplicate_count": dropped,
+    }
+
+
+def attach_cached_usd_prices_to_reward_events(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    price_cache: dict[tuple[str, str], Decimal] = {}
+    transformed: list[dict[str, Any]] = []
+    attached = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        if _safe_decimal(payload.get("price_eur")) > Decimal("0") or _safe_decimal(payload.get("price_usd")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        if _payload_value_usd_sum(payload) > Decimal("0") or _safe_decimal(payload.get("value_eur")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        side = _event_side(payload)
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        defi_label = str(payload.get("defi_label") or "").lower().strip()
+        is_reward_like = (
+            "reward" in event_type
+            or "mining" in event_type
+            or "interest" in event_type
+            or defi_label in {"claim", "staking"}
+        )
+        if side != "in" or not is_reward_like:
+            transformed.append(event)
+            continue
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        if not asset or asset in STABLE_ASSETS:
+            transformed.append(event)
+            continue
+        rate_date = _event_date(payload)
+        cache_key = (asset, rate_date)
+        price_usd = price_cache.get(cache_key)
+        if price_usd is None:
+            row = STORE.get_fx_rate(rate_date=rate_date, base_ccy=asset, quote_ccy="USD") if rate_date else None
+            if row is None and rate_date:
+                row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy=asset, quote_ccy="USD")
+            price_usd = _safe_decimal(row.get("rate")) if isinstance(row, dict) else Decimal("0")
+            price_cache[cache_key] = price_usd
+        if price_usd <= Decimal("0"):
+            transformed.append(event)
+            continue
+        updated_payload = dict(payload)
+        updated_payload["price_usd"] = price_usd.to_eng_string()
+        updated_payload["valuation_reference_source"] = "fx_cache_asset_usd_reward"
+        updated_payload["valuation_reference_asset"] = asset
+        updated_payload["valuation_reference_rate_date"] = rate_date
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        attached += 1
+    return transformed, {
+        "valuation_anchor_source": "fx_cache_asset_usd_reward",
+        "attached_price_count": attached,
+        "price_cache_key_count": len(price_cache),
+    }
+
+
+def label_helium_solana_claim_events(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    transformed: list[dict[str, Any]] = []
+    labelled = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        if not _is_helium_solana_claim_payload(payload, aliases):
+            transformed.append(event)
+            continue
+        updated_payload = dict(payload)
+        updated_payload["defi_label"] = "claim"
+        updated_payload["valuation_reference_source"] = "helium_solana_distribution_label"
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        labelled += 1
+    return transformed, {
+        "label_source": "helium_solana_distribution_label",
+        "labelled_count": labelled,
+    }
+
+
+def _is_helium_solana_claim_payload(payload: dict[str, Any], aliases: dict[str, str]) -> bool:
+    if str(payload.get("source") or "").lower().strip() != "solana_rpc":
+        return False
+    if str(payload.get("event_type") or "").lower().strip() != "token_transfer":
+        return False
+    if _event_side(payload) != "in":
+        return False
+    defi_label = str(payload.get("defi_label") or "").lower().strip()
+    if defi_label not in {"", "unknown"}:
+        return False
+    asset = _asset_price_symbol(payload.get("asset"), aliases)
+    if asset not in {"HNT", "IOT", "MOBILE"}:
+        return False
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return False
+    raw_text = json.dumps(raw_row, ensure_ascii=False).upper()
+    return any(program_id in raw_text for program_id in HELIUM_SOLANA_DISTRIBUTOR_PROGRAM_IDS)
+
+
+def attach_cached_usd_prices_to_swap_in_events(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    price_cache: dict[tuple[str, str], Decimal] = {}
+    events_by_tx: dict[str, list[dict[str, Any]]] = {}
+    for candidate_event in active_events:
+        candidate_payload = candidate_event.get("payload", {})
+        if not isinstance(candidate_payload, dict):
+            continue
+        tx_id = _event_tx_id(candidate_payload)
+        if tx_id:
+            events_by_tx.setdefault(tx_id, []).append(candidate_payload)
+    transformed: list[dict[str, Any]] = []
+    attached = 0
+    counterflow_attached = 0
+    raw_route_attached = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        if _safe_decimal(payload.get("price_eur")) > Decimal("0") or _safe_decimal(payload.get("price_usd")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        if _payload_value_usd_sum(payload) > Decimal("0") or _safe_decimal(payload.get("value_eur")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        if str(payload.get("source") or "").lower().strip() != "solana_rpc":
+            transformed.append(event)
+            continue
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        defi_label = str(payload.get("defi_label") or "").lower().strip()
+        is_swap_in = event_type == "swap_in_aggregated" or (event_type == "token_transfer" and defi_label == "swap")
+        if _event_side(payload) != "in" or not is_swap_in:
+            transformed.append(event)
+            continue
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        if not asset or asset in STABLE_ASSETS:
+            transformed.append(event)
+            continue
+        rate_date = _event_date(payload)
+        cache_key = (asset, rate_date)
+        price_usd = price_cache.get(cache_key)
+        if price_usd is None:
+            row = STORE.get_fx_rate(rate_date=rate_date, base_ccy=asset, quote_ccy="USD") if rate_date else None
+            if row is None and rate_date:
+                row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy=asset, quote_ccy="USD")
+            price_usd = _safe_decimal(row.get("rate")) if isinstance(row, dict) else Decimal("0")
+            price_cache[cache_key] = price_usd
+        if price_usd <= Decimal("0"):
+            counterflow_value_usd, counterflow_asset, counterflow_rate_date = _same_tx_priced_counterflow_value_usd(
+                payload=payload,
+                aliases=aliases,
+                events_by_tx=events_by_tx,
+                price_cache=price_cache,
+            )
+            if counterflow_value_usd <= Decimal("0"):
+                counterflow_value_usd, counterflow_asset, counterflow_rate_date = _raw_priced_route_counterflow_value_usd(
+                    payload=payload,
+                    aliases=aliases,
+                    price_cache=price_cache,
+                )
+                if counterflow_value_usd <= Decimal("0"):
+                    transformed.append(event)
+                    continue
+                reference_source = "raw_priced_route_counterflow"
+                raw_route_attached += 1
+            else:
+                reference_source = "same_tx_priced_counterflow"
+            updated_payload = dict(payload)
+            updated_payload["value_usd_sum"] = counterflow_value_usd.to_eng_string()
+            updated_payload["valuation_reference_source"] = reference_source
+            updated_payload["valuation_reference_asset"] = counterflow_asset
+            updated_payload["valuation_reference_rate_date"] = counterflow_rate_date
+            updated_payload["valuation_reference_tx_id"] = _event_tx_id(payload)
+            updated_event = dict(event)
+            updated_event["payload"] = updated_payload
+            transformed.append(updated_event)
+            attached += 1
+            if reference_source == "same_tx_priced_counterflow":
+                counterflow_attached += 1
+            continue
+        updated_payload = dict(payload)
+        updated_payload["price_usd"] = price_usd.to_eng_string()
+        updated_payload["valuation_reference_source"] = "fx_cache_asset_usd_swap_in"
+        updated_payload["valuation_reference_asset"] = asset
+        updated_payload["valuation_reference_rate_date"] = rate_date
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        attached += 1
+    return transformed, {
+        "valuation_anchor_source": "fx_cache_asset_usd_swap_in",
+        "attached_price_count": attached,
+        "same_tx_priced_counterflow_attached_count": counterflow_attached,
+        "raw_priced_route_counterflow_attached_count": raw_route_attached,
+        "price_cache_key_count": len(price_cache),
+    }
+
+
+def _same_tx_priced_counterflow_value_usd(
+    *,
+    payload: dict[str, Any],
+    aliases: dict[str, str],
+    events_by_tx: dict[str, list[dict[str, Any]]],
+    price_cache: dict[tuple[str, str], Decimal],
+) -> tuple[Decimal, str, str]:
+    tx_id = _event_tx_id(payload)
+    target_asset = _asset_price_symbol(payload.get("asset"), aliases)
+    rate_date = _event_date(payload)
+    if not tx_id or not target_asset or not rate_date:
+        return Decimal("0"), "", ""
+
+    total_value_usd = Decimal("0")
+    reference_assets: list[str] = []
+    for candidate in events_by_tx.get(tx_id, []):
+        if candidate is payload:
+            continue
+        if str(candidate.get("source") or "").lower().strip() != "solana_rpc":
+            continue
+        if _event_side(candidate) != "out":
+            continue
+        quantity = _event_quantity(candidate)
+        if quantity <= Decimal("0"):
+            continue
+        candidate_asset = _asset_price_symbol(candidate.get("asset"), aliases)
+        if not candidate_asset or candidate_asset == target_asset:
+            continue
+        if candidate_asset in STABLE_ASSETS:
+            value_usd = quantity
+        else:
+            cache_key = (candidate_asset, rate_date)
+            price_usd = price_cache.get(cache_key)
+            if price_usd is None:
+                row = STORE.get_fx_rate(rate_date=rate_date, base_ccy=candidate_asset, quote_ccy="USD")
+                if row is None:
+                    row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy=candidate_asset, quote_ccy="USD")
+                price_usd = _safe_decimal(row.get("rate")) if isinstance(row, dict) else Decimal("0")
+                price_cache[cache_key] = price_usd
+            if price_usd <= Decimal("0"):
+                continue
+            value_usd = quantity * price_usd
+        if value_usd <= Decimal("0"):
+            continue
+        total_value_usd += value_usd
+        reference_assets.append(candidate_asset)
+
+    if total_value_usd <= Decimal("0"):
+        return Decimal("0"), "", ""
+    return total_value_usd, "+".join(sorted(set(reference_assets))), rate_date
+
+
+def _raw_priced_route_counterflow_value_usd(
+    *,
+    payload: dict[str, Any],
+    aliases: dict[str, str],
+    price_cache: dict[tuple[str, str], Decimal],
+) -> tuple[Decimal, str, str]:
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return Decimal("0"), "", ""
+    target_asset = _asset_price_symbol(payload.get("asset"), aliases)
+    rate_date = _event_date(payload)
+    if not target_asset or not rate_date:
+        return Decimal("0"), "", ""
+
+    best_value_usd = Decimal("0")
+    best_asset = ""
+    for transfer in _iter_raw_token_amounts(raw_row):
+        asset = _asset_price_symbol(transfer.get("mint"), aliases)
+        quantity = _safe_decimal(transfer.get("quantity"))
+        if not asset or asset == target_asset or quantity <= Decimal("0"):
+            continue
+        if asset in STABLE_ASSETS:
+            value_usd = quantity
+        else:
+            cache_key = (asset, rate_date)
+            price_usd = price_cache.get(cache_key)
+            if price_usd is None:
+                row = STORE.get_fx_rate(rate_date=rate_date, base_ccy=asset, quote_ccy="USD")
+                if row is None:
+                    row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy=asset, quote_ccy="USD")
+                price_usd = _safe_decimal(row.get("rate")) if isinstance(row, dict) else Decimal("0")
+                price_cache[cache_key] = price_usd
+            if price_usd <= Decimal("0"):
+                continue
+            value_usd = quantity * price_usd
+        if value_usd > best_value_usd:
+            best_value_usd = value_usd
+            best_asset = asset
+
+    if best_value_usd <= Decimal("0"):
+        return Decimal("0"), "", ""
+    return best_value_usd, best_asset, rate_date
+
+
+def _iter_raw_token_amounts(value: Any) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            parsed = node.get("parsed")
+            if isinstance(parsed, dict):
+                info = parsed.get("info")
+                if isinstance(info, dict):
+                    token_amount = info.get("tokenAmount") or info.get("token_amount")
+                    mint = str(info.get("mint") or "").strip()
+                    if isinstance(token_amount, dict) and mint:
+                        quantity = str(token_amount.get("uiAmountString") or token_amount.get("ui_amount_string") or "").strip()
+                        if not quantity:
+                            quantity = str(token_amount.get("uiAmount") or token_amount.get("ui_amount") or "").strip()
+                        if quantity:
+                            out.append({"mint": mint, "quantity": quantity})
+                    amount = str(info.get("amount") or "").strip()
+                    if mint and amount and "decimals" in info:
+                        decimals = int(_safe_decimal(info.get("decimals")))
+                        quantity_decimal = _safe_decimal(amount) / (Decimal(10) ** decimals)
+                        out.append({"mint": mint, "quantity": quantity_decimal.to_eng_string()})
+            for child in node.values():
+                visit(child)
+        elif isinstance(node, list):
+            for child in node:
+                visit(child)
+
+    visit(value)
+    return out
+
+
+def _heliumgeek_display_quantity(payload: dict[str, Any]) -> Decimal:
+    if str(payload.get("source", "")).lower().strip() != "heliumgeek":
+        return Decimal("0")
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return Decimal("0")
+    asset = str(payload.get("asset") or "").upper().strip()
+    for token_field, amount_field in (
+        ("HNT Token", "HNT Tokens"),
+        ("IOT Token", "IOT Tokens"),
+        ("MOBILE Token", "MOBILE Tokens"),
+    ):
+        if str(raw_row.get(token_field, "")).upper().strip() != asset:
+            continue
+        value = _safe_decimal(raw_row.get(amount_field))
+        if value != Decimal("0"):
+            return abs(value)
+    return Decimal("0")
+
+
+def _usd_to_eur_rate(payload: dict[str, Any], rate_date: str) -> Decimal:
+    direct = _safe_decimal(payload.get("fx_rate_usd_eur"))
+    if direct > Decimal("0"):
+        return direct
+    row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy="USD", quote_ccy="EUR") if rate_date else None
+    if isinstance(row, dict):
+        rate = _safe_decimal(row.get("rate"))
+        if rate > Decimal("0"):
+            return rate
+    fallback = resolve_effective_runtime_config().get("runtime", {}).get("fx", {}).get("usd_to_eur", 1)
+    return _safe_decimal(fallback)
+
+
+def build_tax_domain_value_resolver() -> Any:
+    aliases = _load_token_alias_symbols()
+    price_cache: dict[tuple[str, str], Decimal] = {}
+    fx_cache: dict[str, Decimal] = {}
+
+    def resolve(payload: dict[str, Any]) -> Decimal:
+        rate_date = _event_date(payload)
+        fx_rate = fx_cache.get(rate_date)
+        if fx_rate is None:
+            fx_rate = _usd_to_eur_rate(payload, rate_date)
+            fx_cache[rate_date] = fx_rate
+
+        for key in ("value_usd", "amount_usd", "income_usd", "proceeds_usd", "raw_value_usd", "raw_amount_usd"):
+            usd_value = _safe_decimal(payload.get(key))
+            if usd_value > Decimal("0") and fx_rate > Decimal("0"):
+                return usd_value * fx_rate
+
+        qty = _event_quantity(payload)
+        if qty <= Decimal("0"):
+            return Decimal("0")
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        if asset in STABLE_ASSETS and fx_rate > Decimal("0"):
+            return qty * fx_rate
+        cache_key = (asset, rate_date)
+        price = price_cache.get(cache_key)
+        if price is None:
+            row = STORE.get_fx_rate(rate_date=rate_date, base_ccy=asset, quote_ccy="USD") if rate_date else None
+            if row is None and rate_date:
+                row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy=asset, quote_ccy="USD")
+            price = _safe_decimal(row.get("rate")) if isinstance(row, dict) else Decimal("0")
+            price_cache[cache_key] = price
+        if price > Decimal("0") and fx_rate > Decimal("0"):
+            return qty * price * fx_rate
+        return Decimal("0")
+
+    return resolve
 
 
 def _load_tax_event_overrides() -> dict[str, dict[str, str]]:
@@ -234,9 +1031,16 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             current_step="load_events",
         )
         job_config = claimed.get("config", {}) if isinstance(claimed.get("config"), dict) else {}
-        raw_events, integration_filter_summary = filter_events_for_processing(STORE.list_raw_events(), job_config)
-        adjusted_events, review_action_summary = apply_review_actions(raw_events)
-        effective_events, override_count = apply_tax_event_overrides(adjusted_events)
+        all_raw_events = STORE.list_raw_events()
+        raw_events, integration_filter_summary = filter_events_for_processing(all_raw_events, job_config)
+        raw_events, pionex_duplicate_summary = drop_exact_pionex_duplicate_events(raw_events)
+        raw_events, solscan_duplicate_summary = drop_solscan_duplicates_when_solana_rpc_is_active(raw_events)
+        raw_events, review_action_summary = apply_review_actions(raw_events)
+        raw_events, helium_solana_claim_summary = label_helium_solana_claim_events(raw_events)
+        raw_events, valuation_anchor_summary = attach_reference_usd_value_anchors(raw_events, all_raw_events)
+        raw_events, reward_price_summary = attach_cached_usd_prices_to_reward_events(raw_events)
+        raw_events, swap_in_price_summary = attach_cached_usd_prices_to_swap_in_events(raw_events)
+        effective_events, override_count = apply_tax_event_overrides(raw_events)
         fx_config = resolve_effective_runtime_config()
         runtime_fx = fx_config.get("runtime", {}).get("fx", {})
         fallback_rate = runtime_fx.get("usd_to_eur", 1.0)
@@ -264,8 +1068,15 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             tax_year=claimed["tax_year"],
             ruleset_id=ruleset_id,
             ruleset_version=ruleset_version,
+            transfer_matches=STORE.list_transfer_matches(),
         )
         processing_result["integration_filter_summary"] = integration_filter_summary
+        processing_result["pionex_duplicate_summary"] = pionex_duplicate_summary
+        processing_result["solscan_duplicate_summary"] = solscan_duplicate_summary
+        processing_result["helium_solana_claim_summary"] = helium_solana_claim_summary
+        processing_result["valuation_anchor_summary"] = valuation_anchor_summary
+        processing_result["reward_price_summary"] = reward_price_summary
+        processing_result["swap_in_price_summary"] = swap_in_price_summary
         tax_lines = processing_result.pop("tax_lines")
         tax_lines = _attach_transfer_trace(tax_lines)
         derivative_result = process_derivatives_for_year(raw_events=effective_events, tax_year=claimed["tax_year"])
@@ -276,6 +1087,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             derivative_lines=derivative_lines,
             tax_year=claimed["tax_year"],
             ruleset_id=ruleset_id,
+            value_resolver=build_tax_domain_value_resolver(),
         )
 
         registry = build_default_registry()

@@ -165,6 +165,13 @@ from tax_engine.api.processing import (
 from tax_engine.api.processing import (
     router as processing_router,
 )
+from tax_engine.api.product_positions import (
+    product_position_events,
+    product_position_summary,
+)
+from tax_engine.api.product_positions import (
+    router as product_positions_router,
+)
 from tax_engine.api.reporting import (
     build_csv_from_rows as _build_csv_from_rows,
 )
@@ -177,7 +184,13 @@ from tax_engine.api.reporting import (
 from tax_engine.api.reporting import (
     build_report_file_index as _build_report_file_index,
 )
+from tax_engine.api.reporting import build_wiso_tax_csv as _build_wiso_tax_csv
 from tax_engine.api.review import (
+    AiReviewAnalyzeRequest,
+    AiReviewApplySuggestionRequest,
+    BalanceAdjustmentCandidateDecisionRequest,
+    BalanceAdjustmentCandidateDeleteRequest,
+    BalanceAdjustmentCandidateUpsertRequest,
     IntegrationConflictResolveRequest,
     IssueStatusUpdateRequest,
     ReviewCommentRequest,
@@ -192,12 +205,22 @@ from tax_engine.api.review import (
     _load_issue_overrides,
     _load_tax_event_overrides,
     _load_unresolved_fx_issues,
+    ai_review_analyze,
+    ai_review_apply_suggestion,
+    ai_review_suggestions,
     audit_transfer_chain,
+    balance_adjustment_candidate_decide,
+    balance_adjustment_candidate_decision_preview,
+    balance_adjustment_candidate_delete,
+    balance_adjustment_candidate_evidence_package,
+    balance_adjustment_candidate_upsert,
+    balance_adjustment_candidates_list,
     issues_inbox,
     issues_update_status,
     reconcile_auto_match,
     reconcile_ledger,
     reconcile_manual,
+    regulatory_dac8_carf_context,
     review_actions,
     review_comment,
     review_comments,
@@ -206,7 +229,9 @@ from tax_engine.api.review import (
     review_ignore,
     review_integration_conflicts,
     review_integration_conflicts_resolve,
+    review_issue_context,
     review_merge,
+    review_negative_balances,
     review_split,
     review_timezone_correct,
     review_unmatched,
@@ -253,6 +278,11 @@ from tax_engine.api.wallet_groups import (
 __all__ = [
     "AdminServiceActionRequest",
     "AdminSettingsPutRequest",
+    "AiReviewAnalyzeRequest",
+    "AiReviewApplySuggestionRequest",
+    "BalanceAdjustmentCandidateDecisionRequest",
+    "BalanceAdjustmentCandidateDeleteRequest",
+    "BalanceAdjustmentCandidateUpsertRequest",
     "BulkFolderImportRequest",
     "CexFullHistoryImportRequest",
     "CexCredentialsLoadRequest",
@@ -290,6 +320,7 @@ __all__ = [
     "_build_yearly_asset_activity",
     "_build_pdf_from_rows",
     "_build_report_file_index",
+    "_build_wiso_tax_csv",
     "_cached_asset_usd_price",
     "_cached_asset_usd_price_on_or_before",
     "_dashboard_economic_tx_key",
@@ -346,6 +377,9 @@ __all__ = [
     "admin_token_aliases_upsert",
     "audit_tax_line",
     "audit_transfer_chain",
+    "ai_review_analyze",
+    "ai_review_apply_suggestion",
+    "ai_review_suggestions",
     "compliance_classification",
     "connectors_cex_balances_preview",
     "connectors_cex_import_confirm",
@@ -398,6 +432,8 @@ __all__ = [
     "process_status",
     "process_tax_domain_summary",
     "process_tax_lines",
+    "product_position_events",
+    "product_position_summary",
     "process_worker_run_next",
     "reconcile_auto_match",
     "reconcile_ledger",
@@ -413,10 +449,19 @@ __all__ = [
     "review_exclusion_reasons",
     "review_integration_conflicts",
     "review_integration_conflicts_resolve",
+    "review_issue_context",
     "review_merge",
+    "review_negative_balances",
+    "regulatory_dac8_carf_context",
     "review_split",
     "review_timezone_correct",
     "review_unmatched",
+    "balance_adjustment_candidate_decide",
+    "balance_adjustment_candidate_decision_preview",
+    "balance_adjustment_candidate_evidence_package",
+    "balance_adjustment_candidate_delete",
+    "balance_adjustment_candidate_upsert",
+    "balance_adjustment_candidates_list",
     "ruleset_get",
     "ruleset_change_log",
     "ruleset_list",
@@ -448,6 +493,7 @@ app.include_router(connectors_router)
 app.include_router(dashboard_router)
 app.include_router(imports_router)
 app.include_router(processing_router)
+app.include_router(product_positions_router)
 app.include_router(review_router)
 app.include_router(rulesets_router)
 app.include_router(wallet_groups_router)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -45,11 +46,7 @@ def _value_eur(payload: dict[str, Any]) -> Decimal:
             if value != Decimal("0"):
                 return value
 
-    qty = Decimal("0")
-    for key in ("quantity", "qty", "amount", "size"):
-        if key in payload:
-            qty = abs(_parse_decimal(payload.get(key)))
-            break
+    qty = _event_quantity(payload)
     if qty == Decimal("0"):
         return Decimal("0")
 
@@ -59,6 +56,51 @@ def _value_eur(payload: dict[str, Any]) -> Decimal:
             if price != Decimal("0"):
                 return qty * price
     return Decimal("0")
+
+
+def _heliumgeek_display_quantity(payload: dict[str, Any]) -> Decimal:
+    if str(payload.get("source", "")).lower().strip() != "heliumgeek":
+        return Decimal("0")
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return Decimal("0")
+    asset = str(payload.get("asset") or "").upper().strip()
+    for token_field, amount_field in (
+        ("HNT Token", "HNT Tokens"),
+        ("IOT Token", "IOT Tokens"),
+        ("MOBILE Token", "MOBILE Tokens"),
+    ):
+        if str(raw_row.get(token_field, "")).upper().strip() != asset:
+            continue
+        value = abs(_parse_decimal(raw_row.get(amount_field)))
+        if value != Decimal("0"):
+            return value
+    return Decimal("0")
+
+
+def _event_quantity(payload: dict[str, Any]) -> Decimal:
+    heliumgeek_qty = _heliumgeek_display_quantity(payload)
+    if heliumgeek_qty != Decimal("0"):
+        return heliumgeek_qty
+    for key in ("quantity", "qty", "amount", "size"):
+        if key in payload:
+            return abs(_parse_decimal(payload.get(key)))
+    return Decimal("0")
+
+
+def _resolved_value_eur(
+    payload: dict[str, Any],
+    value_resolver: Callable[[dict[str, Any]], Decimal] | None = None,
+) -> Decimal:
+    value = _value_eur(payload)
+    if value != Decimal("0"):
+        return value
+    if value_resolver is None:
+        return Decimal("0")
+    try:
+        return value_resolver(payload)
+    except Exception:
+        return Decimal("0")
 
 
 def _fee_eur(payload: dict[str, Any]) -> Decimal:
@@ -73,6 +115,9 @@ def _fee_eur(payload: dict[str, Any]) -> Decimal:
 def _is_reward_like(payload: dict[str, Any]) -> bool:
     text = _to_text(payload)
     event_type = str(payload.get("event_type", "")).lower().strip()
+    side = str(payload.get("side", "")).lower().strip()
+    if side in {"out", "sell"} and event_type not in {"asset_dividend", "interest"}:
+        return False
     if event_type in {"mining_reward", "asset_dividend", "interest", "staking_reward", "reward_claim"}:
         return True
     return any(token in text for token in ("reward", "staking", "mining", "claim", "dividend", "interest"))
@@ -112,6 +157,7 @@ def build_tax_domain_summary(
     derivative_lines: list[dict[str, Any]],
     tax_year: int,
     ruleset_id: str,
+    value_resolver: Callable[[dict[str, Any]], Decimal] | None = None,
 ) -> dict[str, Any]:
     registry = build_default_registry()
     ruleset = registry.get(ruleset_id)
@@ -134,7 +180,7 @@ def build_tax_domain_summary(
 
         if _is_data_credit_usage(payload):
             data_credit_event_count += 1
-            value = _value_eur(payload)
+            value = _resolved_value_eur(payload, value_resolver)
             fee = _fee_eur(payload)
             expense = abs(value) if value != Decimal("0") else fee
             business_expenses += expense
@@ -147,11 +193,11 @@ def build_tax_domain_summary(
             is_mining = _is_mining_like(payload)
             if is_mining:
                 mining_event_count += 1
-            value = _value_eur(payload)
-            if value == Decimal("0"):
+            value = _resolved_value_eur(payload, value_resolver)
+            if value == Decimal("0") and _parse_decimal(payload.get("quantity") or payload.get("amount")) != Decimal("0"):
                 unresolved_valuation_events += 1
             is_business = _is_business_override(payload)
-            if not is_business and is_mining and ruleset.mining_tax_category == MiningTaxCategory.BUSINESS:
+            if not is_business and ruleset.mining_tax_category == MiningTaxCategory.BUSINESS:
                 is_business = True
             if is_business:
                 business_income += value
@@ -162,10 +208,24 @@ def build_tax_domain_summary(
     taxable_private_loss = Decimal("0")
     exempt_private_gain = Decimal("0")
     exempt_private_loss = Decimal("0")
+    business_disposal_proceeds = Decimal("0")
+    business_disposal_cost_basis = Decimal("0")
+    business_disposal_gain = Decimal("0")
+    business_disposal_loss = Decimal("0")
 
     for line in tax_lines:
         gain_loss = _parse_decimal(line.get("gain_loss_eur", "0"))
         status = str(line.get("tax_status", "")).lower().strip()
+        tax_domain = str(line.get("tax_domain", "")).lower().strip()
+        lot_domain = str(line.get("lot_domain", "")).lower().strip()
+        if tax_domain == "euer_business_disposal" or lot_domain == "business" or status == "business":
+            business_disposal_proceeds += _parse_decimal(line.get("proceeds_eur", "0"))
+            business_disposal_cost_basis += _parse_decimal(line.get("cost_basis_eur", "0"))
+            if gain_loss >= 0:
+                business_disposal_gain += gain_loss
+            else:
+                business_disposal_loss += gain_loss
+            continue
         if status == "exempt":
             if gain_loss >= 0:
                 exempt_private_gain += gain_loss
@@ -205,11 +265,15 @@ def build_tax_domain_summary(
         "euer": {
             "betriebseinnahmen_mining_staking_eur": business_income.to_eng_string(),
             "betriebsausgaben_data_credits_eur": business_expenses.to_eng_string(),
-            "betriebsergebnis_eur": (business_income - business_expenses).to_eng_string(),
+            "business_disposal_proceeds_eur": business_disposal_proceeds.to_eng_string(),
+            "business_disposal_cost_basis_eur": business_disposal_cost_basis.to_eng_string(),
+            "business_disposal_gain_eur": business_disposal_gain.to_eng_string(),
+            "business_disposal_loss_eur": business_disposal_loss.to_eng_string(),
+            "business_disposal_net_eur": (business_disposal_gain + business_disposal_loss).to_eng_string(),
+            "betriebsergebnis_eur": (business_income - business_expenses + business_disposal_gain + business_disposal_loss).to_eng_string(),
         },
         "termingeschaefte": {
             "netto_eur": derivative_net.to_eng_string(),
             "verlust_summe_abs_eur": derivative_loss_abs.to_eng_string(),
         },
     }
-

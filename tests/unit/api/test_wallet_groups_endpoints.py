@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 
 from tax_engine.api.app import (
     connectors_solana_balance_snapshot,
@@ -162,6 +163,39 @@ def test_wallet_snapshot_history_tracks_balance_requests(monkeypatch) -> None:
     assert snapshots.data["points"][-1]["entity_id"] == "11111111111111111111111111111111"
 
 
+def test_wallet_snapshot_history_can_filter_by_year() -> None:
+    _reset_store()
+    STORE.upsert_setting(
+        "runtime.dashboard.wallet_snapshots",
+        json.dumps(
+            [
+                {
+                    "scope": "wallet",
+                    "entity_id": "wallet-1",
+                    "timestamp_utc": "2025-12-31T12:00:00+00:00",
+                    "total_estimated_usd": "100",
+                    "sol_balance": "1",
+                },
+                {
+                    "scope": "wallet",
+                    "entity_id": "wallet-1",
+                    "timestamp_utc": "2026-01-01T12:00:00+00:00",
+                    "total_estimated_usd": "125",
+                    "sol_balance": "1.25",
+                },
+            ]
+        ),
+        False,
+    )
+
+    response = dashboard_wallet_snapshots(scope="wallet", entity_id="wallet-1", window_days=30, year=2025)
+
+    assert response.status == "success"
+    assert response.data["year"] == 2025
+    assert response.data["count"] == 1
+    assert response.data["points"][0]["timestamp_utc"].startswith("2025-")
+
+
 def test_portfolio_set_history_filters_by_group_sources() -> None:
     _reset_store()
     solana = [
@@ -204,6 +238,51 @@ def test_portfolio_set_history_filters_by_group_sources() -> None:
     assert response.data["event_count"] == 1
     assert response.data["source_filters"] == ["solana_rpc"]
     assert response.data["group"]["source_event_count"] == 1
+
+
+def test_portfolio_set_history_can_filter_points_by_year() -> None:
+    _reset_store()
+    import_confirm(
+        ConfirmImportRequest(
+            source_name="year_set.csv",
+            rows=[
+                {
+                    "timestamp_utc": "2025-06-15T00:00:00+00:00",
+                    "asset": "SOL",
+                    "quantity": "1",
+                    "side": "in",
+                    "event_type": "buy",
+                    "source": "solana_rpc",
+                    "value_usd": "100",
+                    "tx_id": "year-sol-2025",
+                },
+                {
+                    "timestamp_utc": "2026-01-15T00:00:00+00:00",
+                    "asset": "SOL",
+                    "quantity": "1",
+                    "side": "in",
+                    "event_type": "buy",
+                    "source": "solana_rpc",
+                    "value_usd": "150",
+                    "tx_id": "year-sol-2026",
+                },
+            ],
+        )
+    )
+    upsert = wallet_groups_upsert(
+        WalletGroupUpsertRequest(
+            name="Year Set",
+            wallet_addresses=["wallet-1"],
+            source_filters=["solana_rpc"],
+        )
+    )
+
+    response = dashboard_portfolio_set_history(group_id=upsert.data["group_id"], window_days=30, year=2025)
+
+    assert response.status == "success"
+    assert response.data["year"] == 2025
+    assert response.data["points"]
+    assert {point["year"] for point in response.data["points"]} == {2025}
 
 
 def test_portfolio_set_history_empty_sources_means_all_sources() -> None:

@@ -9,8 +9,15 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from tax_engine.api.dashboard import (
+    _dashboard_event_quantity,
+    _estimate_event_values,
+    _load_fx_lookup,
+    _runtime_usd_to_eur_rate,
+)
 from tax_engine.api.reporting import (
     _PDF_ROWS_PER_FILE,
+    _tax_domain_summary_row_count,
 )
 from tax_engine.api.reporting import (
     build_csv_from_rows as _build_csv_from_rows,
@@ -24,7 +31,8 @@ from tax_engine.api.reporting import (
 from tax_engine.api.reporting import (
     build_report_file_index as _build_report_file_index,
 )
-from tax_engine.api.review import _build_issue_inbox
+from tax_engine.api.reporting import build_wiso_tax_csv as _build_wiso_tax_csv
+from tax_engine.api.review import _build_issue_inbox, _load_balance_adjustment_candidates
 from tax_engine.core.derivatives import process_derivatives_for_year
 from tax_engine.core.processor import process_events_for_year
 from tax_engine.core.tax_domains import build_tax_domain_summary
@@ -34,7 +42,9 @@ from tax_engine.integrations import filter_events_for_processing
 from tax_engine.queue import (
     ProcessRunRequest,
     WorkerRunNextRequest,
+    apply_review_actions,
     apply_tax_event_overrides,
+    build_tax_domain_value_resolver,
     create_processing_job,
     get_processing_job,
     run_next_queued_job,
@@ -108,11 +118,28 @@ def _safe_json_object(value: Any) -> dict[str, Any]:
 
 
 def _preflight_needs_valuation(payload: dict[str, Any]) -> bool:
-    event_type = str(payload.get("event_type") or "").lower()
+    event_type = _preflight_event_type(payload)
     side = str(payload.get("side") or "").lower()
     if any(token in event_type for token in ("transfer", "deposit", "withdraw", "fee")):
         return False
     if side not in {"buy", "sell", "in", "out"}:
+        return False
+    if _dashboard_event_quantity(payload) <= 0 and not any(
+        _safe_decimal(payload.get(key)) > 0
+        for key in (
+            "price",
+            "price_eur",
+            "price_usd",
+            "value_eur",
+            "value_usd",
+            "amount_eur",
+            "amount_usd",
+            "income_eur",
+            "income_usd",
+            "proceeds_eur",
+            "proceeds_usd",
+        )
+    ):
         return False
     if any(token in event_type for token in ("reward", "mining", "staking", "income", "claim", "airdrop")):
         return True
@@ -121,7 +148,38 @@ def _preflight_needs_valuation(payload: dict[str, Any]) -> bool:
     return str(payload.get("price") or payload.get("price_eur") or payload.get("value_usd") or payload.get("value_eur") or "").strip() != ""
 
 
-def _preflight_has_valuation(payload: dict[str, Any]) -> bool:
+def _preflight_event_type(payload: dict[str, Any]) -> str:
+    event_type = str(payload.get("event_type") or "").strip().lower()
+    if event_type and event_type != "unknown":
+        return event_type
+    if _looks_like_binance_wallet_transfer(payload):
+        side = str(payload.get("side") or "").strip().lower()
+        return "withdrawal" if side == "out" else "deposit"
+    return event_type
+
+
+def _looks_like_binance_wallet_transfer(payload: dict[str, Any]) -> bool:
+    if str(payload.get("source") or "").strip().lower() != "binance":
+        return False
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return False
+    lookup = {str(key).lower().replace(" ", "_"): value for key, value in raw_row.items()}
+    tx_id = str(payload.get("tx_id") or lookup.get("txid") or lookup.get("transaction_id") or "").strip()
+    address = str(payload.get("address") or lookup.get("address") or lookup.get("wallet_address") or "").strip()
+    network = str(payload.get("network") or lookup.get("network") or lookup.get("chain") or "").strip()
+    status = str(lookup.get("status") or "").strip().lower()
+    return bool(tx_id and address and network and (not status or "complete" in status))
+
+
+def _preflight_has_valuation(
+    payload: dict[str, Any],
+    *,
+    runtime_fx: Decimal | None = None,
+    fx_rate_cache: dict[str, Decimal] | None = None,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: dict[tuple[str, str], list[tuple[str, Decimal]]] | None = None,
+) -> bool:
     for key in ("price_eur", "value_eur", "amount_eur", "income_eur", "proceeds_eur", "cost_basis_eur"):
         if _safe_decimal(payload.get(key)) > 0:
             return True
@@ -130,9 +188,21 @@ def _preflight_has_valuation(payload: dict[str, Any]) -> bool:
     if _safe_decimal(payload.get("price_usd")) > 0:
         return True
     quote = str(payload.get("quote_asset") or payload.get("fee_asset") or "").upper()
+    if quote == "EUR" and _safe_decimal(payload.get("price")) > 0:
+        return True
     if quote in {"USDT", "USDC", "BUSD", "FDUSD", "DAI", "USD"} and _safe_decimal(payload.get("price")) > 0:
         return True
-    return False
+    asset = str(payload.get("asset") or "").upper().strip()
+    value = _estimate_event_values(
+        payload=payload,
+        asset=asset,
+        quantity=_dashboard_event_quantity(payload),
+        runtime_fx=runtime_fx or _runtime_usd_to_eur_rate(),
+        fx_rate_cache=fx_rate_cache,
+        asset_usd_price_cache=asset_usd_price_cache,
+        fx_lookup=fx_lookup,
+    )
+    return bool(value["priced"])
 
 
 def _preflight_action(
@@ -248,10 +318,15 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
         )
 
     raw_events_all = STORE.list_raw_events()
-    raw_events, integration_filter_summary = filter_events_for_processing(raw_events_all, payload.config)
+    filtered_raw_events, integration_filter_summary = filter_events_for_processing(raw_events_all, payload.config)
+    raw_events, review_action_summary = apply_review_actions(filtered_raw_events)
     year_events = []
     unresolved_valuation_events = 0
     unclassified_events = 0
+    runtime_fx = _runtime_usd_to_eur_rate()
+    fx_lookup = _load_fx_lookup()
+    fx_rate_cache: dict[str, Decimal] = {}
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] = {}
     for row in raw_events:
         item = row.get("payload", {})
         if not isinstance(item, dict):
@@ -260,10 +335,16 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
         if _extract_year(ts_raw) != payload.tax_year:
             continue
         year_events.append(row)
-        event_type = str(item.get("event_type") or "").strip().lower()
+        event_type = _preflight_event_type(item)
         if not event_type or event_type == "unknown":
             unclassified_events += 1
-        if _preflight_needs_valuation(item) and not _preflight_has_valuation(item):
+        if _preflight_needs_valuation(item) and not _preflight_has_valuation(
+            item,
+            runtime_fx=runtime_fx,
+            fx_rate_cache=fx_rate_cache,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        ):
             unresolved_valuation_events += 1
 
     if not raw_events_all:
@@ -384,6 +465,7 @@ def process_preflight(payload: ProcessPreflightRequest) -> StandardResponse:
         "blockers": blockers,
         "warnings": warnings,
         "integration_filter_summary": integration_filter_summary,
+        "review_action_summary": review_action_summary,
     }
     write_audit(
         trace_id=trace_id,
@@ -529,6 +611,45 @@ def process_jobs(status: str | None = None, limit: int = 50, offset: int = 0) ->
     )
 
 
+def _current_draft_notice() -> dict[str, Any] | None:
+    candidates = _load_balance_adjustment_candidates()
+    blocking_statuses = {"needs_evidence", "ready_for_explicit_review_decision"}
+    blocking = [
+        item
+        for item in candidates.values()
+        if str(item.get("status") or "") in blocking_statuses
+    ]
+    if not blocking:
+        return None
+    first = sorted(
+        blocking,
+        key=lambda row: (str(row.get("effective_timestamp_utc") or ""), str(row.get("candidate_id") or "")),
+    )[0]
+    reason_code = str(first.get("reason_code") or "")
+    required_evidence = [
+        "Pionex Account/Bot-Historie vor dem ersten negativen USDT-Bruch",
+        "Pionex Deposit-/Withdraw-Export mit Startbestand oder Bot-Startkapital",
+        "Alternativ externer Absenderbeleg fuer die fehlenden 197.8470311162 USDT",
+    ] if reason_code == "missing_pionex_bot_start_capital" else [
+        "Primaerbeleg fuer Herkunft und Zeitpunkt der Bestandsdifferenz",
+        "Nachvollziehbare Nicht-Steuerwirksamkeitsentscheidung im Review",
+    ]
+    return {
+        "code": "review_gate_blocked_balance_candidate",
+        "status": "not_final",
+        "message": (
+            "ENTWURF - nicht final: Review-Gate ist wegen offenem "
+            f"{first.get('platform')}/{first.get('asset')} Balance-Kandidat gesperrt."
+        ),
+        "candidate_id": str(first.get("candidate_id") or ""),
+        "platform": str(first.get("platform") or ""),
+        "asset": str(first.get("asset") or ""),
+        "candidate_status": str(first.get("status") or ""),
+        "quantity_delta": str(first.get("quantity_delta") or ""),
+        "required_evidence": required_evidence,
+    }
+
+
 @router.get("/api/v1/report/export", response_model=None)
 def report_export(
     job_id: str,
@@ -556,7 +677,7 @@ def report_export(
             warnings=[],
         )
 
-    if fmt_normalized not in {"json", "csv", "pdf"}:
+    if fmt_normalized not in {"json", "csv", "pdf", "wiso"}:
         write_audit(
             trace_id=trace_id,
             action="report.export",
@@ -566,7 +687,7 @@ def report_export(
             trace_id=trace_id,
             status="error",
             data={},
-            errors=[{"code": "invalid_format", "message": "fmt muss json|csv|pdf sein."}],
+            errors=[{"code": "invalid_format", "message": "fmt muss json|csv|pdf|wiso sein."}],
             warnings=[],
         )
 
@@ -588,12 +709,15 @@ def report_export(
     tax_lines = STORE.get_tax_lines(job_id) if include_tax else []
     derivative_lines = STORE.get_derivative_lines(job_id) if include_derivatives else []
     integrity = STORE.get_report_integrity(job_id)
+    draft_notice = _current_draft_notice()
     export_rows = _build_export_rows(
         job,
         tax_lines,
         derivative_lines,
         include_derivatives=include_derivatives,
+        include_summary=include_tax,
         integrity=integrity,
+        draft_notice=draft_notice,
     )
     total_parts = max(1, (len(export_rows) + _PDF_ROWS_PER_FILE - 1) // _PDF_ROWS_PER_FILE)
     safe_part = max(1, int(part))
@@ -615,12 +739,33 @@ def report_export(
             "part": safe_part,
             "tax_lines": len(tax_lines),
             "derivative_lines": len(derivative_lines),
+            "draft_notice": bool(draft_notice),
         },
     )
 
     if fmt_normalized == "csv":
         csv_content = _build_csv_from_rows(export_rows)
-        filename = f"steuerreport_{job_id}.csv"
+        filename = f"steuerreport_{job_id}{'_ENTWURF' if draft_notice else ''}.csv"
+        headers = {
+            "Content-Disposition": f'attachment; filename=\"{filename}\"',
+        }
+        return StreamingResponse(
+            iter([csv_content]),
+            media_type="text/csv; charset=utf-8",
+            headers=headers,
+        )
+
+    if fmt_normalized == "wiso":
+        if not include_tax:
+            return StandardResponse(
+                trace_id=trace_id,
+                status="error",
+                data={},
+                errors=[{"code": "invalid_wiso_scope", "message": "WISO-Export ist nur fuer scope all oder tax verfuegbar."}],
+                warnings=[],
+            )
+        csv_content = _build_wiso_tax_csv(job, tax_lines, draft_notice=draft_notice)
+        filename = f"wiso_steuer_csv_{job.get('tax_year')}_{job_id}{'_ENTWURF' if draft_notice else ''}.csv"
         headers = {
             "Content-Disposition": f'attachment; filename=\"{filename}\"',
         }
@@ -640,8 +785,9 @@ def report_export(
             scope=scope_normalized,
             part=safe_part,
             part_count=total_parts,
+            draft_notice=draft_notice,
         )
-        filename = f"steuerreport_{job_id}_{scope_normalized}_teil_{safe_part}_von_{total_parts}.pdf"
+        filename = f"steuerreport_{job_id}_{scope_normalized}{'_ENTWURF' if draft_notice else ''}_teil_{safe_part}_von_{total_parts}.pdf"
         headers = {
             "Content-Disposition": f'attachment; filename=\"{filename}\"',
         }
@@ -664,6 +810,7 @@ def report_export(
                 "ruleset_version": job.get("ruleset_version"),
             },
             "integrity": integrity,
+            "draft_notice": draft_notice,
             "rows": export_rows,
         },
         errors=[],
@@ -691,11 +838,18 @@ def report_files(run_id: str) -> StandardResponse:
 
     tax_lines = STORE.get_tax_lines(run_id)
     derivative_lines = STORE.get_derivative_lines(run_id)
+    summary_line_count = _tax_domain_summary_row_count(job)
     files = _build_report_file_index(
         job=job,
         tax_line_count=len(tax_lines),
         derivative_line_count=len(derivative_lines),
+        summary_line_count=summary_line_count,
     )
+    draft_notice = _current_draft_notice()
+    if draft_notice:
+        for item in files:
+            item["draft_notice"] = draft_notice
+            item["label"] = f"ENTWURF - {item.get('label', '')}"
     write_audit(
         trace_id=trace_id,
         action="report.files",
@@ -704,6 +858,8 @@ def report_files(run_id: str) -> StandardResponse:
             "file_count": len(files),
             "tax_line_count": len(tax_lines),
             "derivative_line_count": len(derivative_lines),
+            "summary_line_count": summary_line_count,
+            "draft_notice": bool(draft_notice),
         },
     )
     return StandardResponse(
@@ -717,6 +873,8 @@ def report_files(run_id: str) -> StandardResponse:
             "ruleset_version": job.get("ruleset_version"),
             "tax_line_count": len(tax_lines),
             "derivative_line_count": len(derivative_lines),
+            "summary_line_count": summary_line_count,
+            "draft_notice": draft_notice,
             "files": files,
         },
         errors=[],
@@ -1251,6 +1409,7 @@ def _process_compare_rulesets_impl(
             derivative_lines=derivative_result.get("lines", []),
             tax_year=tax_year,
             ruleset_id=compare_ruleset_id,
+            value_resolver=build_tax_domain_value_resolver(),
         )
     except Exception as exc:
         return StandardResponse(

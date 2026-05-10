@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from bisect import bisect_right
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -26,15 +28,25 @@ from tax_engine.api.wallet_groups import (
 from tax_engine.connectors import DashboardRoleOverrideRequest
 from tax_engine.connectors.token_metadata import resolve_token_metadata
 from tax_engine.core.processor import build_open_lot_aging_snapshot
+from tax_engine.fx.service import FallbackFxResolver
 from tax_engine.ingestion import write_audit
 from tax_engine.ingestion.store import STORE
 from tax_engine.integrations import (
     active_sources_from_integrations,
     effective_integration_mode,
+    filter_events_for_processing,
     infer_default_integration_mode,
     load_integration_mode_overrides,
     normalize_integration_mode,
     upsert_integration_mode,
+)
+from tax_engine.queue import apply_review_actions, apply_tax_event_overrides
+from tax_engine.queue.service import (
+    attach_cached_usd_prices_to_reward_events,
+    attach_cached_usd_prices_to_swap_in_events,
+    attach_reference_usd_value_anchors,
+    drop_exact_pionex_duplicate_events,
+    drop_solscan_duplicates_when_solana_rpc_is_active,
 )
 
 
@@ -54,8 +66,294 @@ class IntegrationModeUpdateRequest(BaseModel):
 
 router = APIRouter()
 
+ROOT_DIR = Path(__file__).resolve().parents[3]
+PLATFORM_LEDGER_DATE = "2026-05-09"
 _STABLE_ASSET_SYMBOLS = {"USD", "USDT", "USDC", "BUSD", "DAI", "TUSD", "FDUSD"}
 _FxLookup = dict[tuple[str, str], list[tuple[str, Decimal]]]
+AI_READONLY_QUEUE_DIR = ROOT_DIR / "var" / "ai_readonly_queue"
+
+
+def _list_effective_raw_events() -> list[dict[str, Any]]:
+    events, _summary = apply_review_actions(STORE.list_raw_events())
+    events, _override_count = apply_tax_event_overrides(events)
+    return events
+
+
+def _list_processing_effective_raw_events() -> list[dict[str, Any]]:
+    raw_events = STORE.list_raw_events()
+    events, _integration_filter_summary = filter_events_for_processing(raw_events, {"include_reference_sources": False})
+    events, _pionex_duplicate_summary = drop_exact_pionex_duplicate_events(events)
+    events, _solscan_duplicate_summary = drop_solscan_duplicates_when_solana_rpc_is_active(events)
+    events, _valuation_anchor_summary = attach_reference_usd_value_anchors(events, raw_events)
+    events, _reward_price_summary = attach_cached_usd_prices_to_reward_events(events)
+    events, _swap_price_summary = attach_cached_usd_prices_to_swap_in_events(events)
+    events, _review_action_summary = apply_review_actions(events)
+    events, _override_count = apply_tax_event_overrides(events)
+    events, _fx_summary = FallbackFxResolver(fallback_rate="1").enrich_events_with_fx(events)
+    return events
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _read_jsonl_tail(path: Path, limit: int) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return []
+    for line in lines[-max(limit, 0) :]:
+        try:
+            payload = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return rows
+
+
+def _tail_text(path: Path, max_lines: int) -> list[str]:
+    if not path.exists():
+        return []
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()[-max(max_lines, 0) :]
+    except Exception:
+        return []
+
+
+def _count_json_files(path: Path) -> int:
+    try:
+        return len(list(path.glob("*.json")))
+    except Exception:
+        return 0
+
+
+def _list_queue_tasks(path: Path, limit: int = 20) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    try:
+        files = sorted(path.glob("*.json"), key=lambda item: item.name)
+    except Exception:
+        return rows
+    for item in files[:limit]:
+        payload = _read_json_file(item)
+        rows.append(
+            {
+                "task_id": payload.get("task_id") or item.stem,
+                "title": payload.get("title") or payload.get("task_id") or item.stem,
+                "path": str(item),
+                "created_at_utc": payload.get("created_at_utc", ""),
+                "last_error": payload.get("last_error", ""),
+            }
+        )
+    return rows
+
+
+def _systemd_service_status(service_name: str) -> dict[str, Any]:
+    result: dict[str, Any] = {"service": service_name, "active_state": "unknown", "sub_state": "", "main_pid": ""}
+    try:
+        completed = subprocess.run(
+            ["systemctl", "show", service_name, "--property=ActiveState,SubState,MainPID,ExecMainStatus"],
+            text=True,
+            capture_output=True,
+            timeout=3,
+            check=False,
+        )
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+    if completed.returncode != 0:
+        result["error"] = (completed.stderr or completed.stdout or "").strip()[:500]
+        return result
+    for line in completed.stdout.splitlines():
+        key, _, value = line.partition("=")
+        if key == "ActiveState":
+            result["active_state"] = value
+        elif key == "SubState":
+            result["sub_state"] = value
+        elif key == "MainPID":
+            result["main_pid"] = value
+        elif key == "ExecMainStatus":
+            result["exec_main_status"] = value
+    return result
+
+
+@router.get("/api/v1/ai-readonly-queue/status", response_model=StandardResponse, tags=["dashboard"])
+def ai_readonly_queue_status() -> StandardResponse:
+    trace_id = str(uuid4())
+    status_path = AI_READONLY_QUEUE_DIR / "status.json"
+    results_path = AI_READONLY_QUEUE_DIR / "results.jsonl"
+    log_path = AI_READONLY_QUEUE_DIR / "runner.log"
+    systemd_log_path = AI_READONLY_QUEUE_DIR / "systemd.log"
+    status_file = _read_json_file(status_path)
+    counts = {
+        "pending": _count_json_files(AI_READONLY_QUEUE_DIR / "pending"),
+        "running": _count_json_files(AI_READONLY_QUEUE_DIR / "running"),
+        "done": _count_json_files(AI_READONLY_QUEUE_DIR / "done"),
+        "failed": _count_json_files(AI_READONLY_QUEUE_DIR / "failed"),
+    }
+    recent_results = _read_jsonl_tail(results_path, 10)
+    warnings: list[dict[str, str]] = []
+    if not AI_READONLY_QUEUE_DIR.exists():
+        warnings.append({"code": "ai_queue_missing", "message": "AI readonly queue directory does not exist."})
+    service = _systemd_service_status("steuerreport-ai-readonly-queue.service")
+    data = {
+        "queue_dir": str(AI_READONLY_QUEUE_DIR),
+        "status_path": str(status_path),
+        "results_jsonl": str(results_path),
+        "runner_log": str(log_path),
+        "systemd_log": str(systemd_log_path),
+        "service": service,
+        "status_file": status_file,
+        "counts": counts,
+        "current_task": status_file.get("current_task", ""),
+        "updated_at_utc": status_file.get("updated_at_utc", ""),
+        "started_at_utc": status_file.get("started_at_utc", ""),
+        "pending_tasks": _list_queue_tasks(AI_READONLY_QUEUE_DIR / "pending", 20),
+        "running_tasks": _list_queue_tasks(AI_READONLY_QUEUE_DIR / "running", 10),
+        "failed_tasks": _list_queue_tasks(AI_READONLY_QUEUE_DIR / "failed", 10),
+        "recent_results": recent_results,
+        "log_tail": _tail_text(log_path, 30),
+    }
+    return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=warnings)
+
+
+def _platform_residual_key(row: dict[str, Any]) -> tuple[str, str]:
+    return (str(row.get("platform") or "").lower(), str(row.get("asset") or "").upper())
+
+
+def _split_platform_resolution_rows(
+    rows: list[dict[str, Any]],
+    residual_review: dict[str, Any],
+) -> dict[str, Any]:
+    residuals = residual_review.get("residuals") or []
+    documented_index = {
+        _platform_residual_key(item): item
+        for item in residuals
+        if isinstance(item, dict)
+        and str(item.get("review_classification") or "").startswith("documented_")
+    }
+    active_rows: list[dict[str, Any]] = []
+    documented_rows: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        residual = documented_index.get(_platform_residual_key(row))
+        if residual:
+            merged = dict(row)
+            merged["review_classification"] = residual.get("review_classification", "")
+            merged["review_reason"] = residual.get("reason", "")
+            merged["review_recommendation"] = residual.get("recommendation", "")
+            merged["supporting_report"] = residual.get("supporting_report", "")
+            documented_rows.append(merged)
+        else:
+            active_rows.append(row)
+    return {
+        "active_rows": active_rows,
+        "documented_rows": documented_rows,
+        "active_count": len(active_rows),
+        "documented_count": len(documented_rows),
+    }
+
+
+@router.get("/api/v1/platform-ledger/status", response_model=StandardResponse, tags=["dashboard"])
+def platform_ledger_status() -> StandardResponse:
+    trace_id = str(uuid4())
+    summary = _read_json_file(ROOT_DIR / "var" / f"platform_ledger_summary_{PLATFORM_LEDGER_DATE}.json")
+    transfers = _read_json_file(ROOT_DIR / "var" / f"platform_transfer_groups_{PLATFORM_LEDGER_DATE}.json")
+    transfer_candidates = _read_json_file(ROOT_DIR / "var" / f"platform_transfer_candidates_{PLATFORM_LEDGER_DATE}.json")
+    break_resolution = _read_json_file(ROOT_DIR / "var" / f"platform_break_resolution_plan_{PLATFORM_LEDGER_DATE}.json")
+    simulation = _read_json_file(ROOT_DIR / "var" / f"platform_balance_simulation_{PLATFORM_LEDGER_DATE}.json")
+    ai_review = _read_json_file(ROOT_DIR / "var" / f"ai_platform_reconciliation_review_{PLATFORM_LEDGER_DATE}.json")
+    residual_review = _read_json_file(ROOT_DIR / "var" / f"platform_residual_review_audit_{PLATFORM_LEDGER_DATE}.json")
+    split_resolution = _split_platform_resolution_rows(break_resolution.get("rows") or [], residual_review)
+    files = {
+        "ledger_jsonl": str(ROOT_DIR / "var" / f"platform_ledger_{PLATFORM_LEDGER_DATE}.jsonl"),
+        "ledger_csv": str(ROOT_DIR / "var" / f"platform_ledger_{PLATFORM_LEDGER_DATE}.csv"),
+        "summary_doc": str(ROOT_DIR / "docs" / f"130_PLATFORM_LEDGER_EXPORT_{PLATFORM_LEDGER_DATE}.md"),
+        "transfers_doc": str(ROOT_DIR / "docs" / f"131_PLATFORM_TRANSFER_GROUPS_{PLATFORM_LEDGER_DATE}.md"),
+        "simulation_doc": str(ROOT_DIR / "docs" / f"132_PLATFORM_BALANCE_SIMULATION_{PLATFORM_LEDGER_DATE}.md"),
+        "ai_doc": str(ROOT_DIR / "docs" / f"133_AI_PLATFORM_RECONCILIATION_REVIEW_{PLATFORM_LEDGER_DATE}.md"),
+        "transfer_candidates_doc": str(ROOT_DIR / "docs" / f"134_PLATFORM_TRANSFER_CANDIDATES_{PLATFORM_LEDGER_DATE}.md"),
+        "break_resolution_doc": str(ROOT_DIR / "docs" / f"135_PLATFORM_BREAK_RESOLUTION_PLAN_{PLATFORM_LEDGER_DATE}.md"),
+        "residual_review_doc": str(ROOT_DIR / "docs" / f"166_PLATFORM_RESIDUAL_REVIEW_AUDIT_{PLATFORM_LEDGER_DATE}.md"),
+    }
+    warnings = []
+    if not summary:
+        warnings.append({"code": "platform_ledger_missing", "message": "Platform ledger summary not found. Run scripts/build_platform_ledger.py."})
+    if not simulation:
+        warnings.append({"code": "platform_simulation_missing", "message": "Platform balance simulation not found. Run scripts/simulate_platform_balances.py."})
+    return StandardResponse(
+        trace_id=trace_id,
+        status="success",
+        data={
+            "generated_for": PLATFORM_LEDGER_DATE,
+            "files": files,
+            "summary": summary,
+            "transfers": {
+                "generated_at_utc": transfers.get("generated_at_utc", ""),
+                "ledger_rows": transfers.get("ledger_rows", 0),
+                "transfer_group_count": transfers.get("transfer_group_count", 0),
+                "matched_ledger_row_count": transfers.get("matched_ledger_row_count", 0),
+                "unmatched_transfer_like_count": transfers.get("unmatched_transfer_like_count", 0),
+                "groups": (transfers.get("groups") or [])[:50],
+                "unmatched_transfer_like": (transfers.get("unmatched_transfer_like") or [])[:100],
+            },
+            "simulation": {
+                "generated_at_utc": simulation.get("generated_at_utc", ""),
+                "ledger_rows": simulation.get("ledger_rows", 0),
+                "platform_asset_count": simulation.get("platform_asset_count", 0),
+                "negative_platform_asset_count": simulation.get("negative_platform_asset_count", 0),
+                "negative_assets": (simulation.get("negative_assets") or [])[:80],
+                "first_timeline_breaks": (simulation.get("first_timeline_breaks") or [])[:120],
+            },
+            "transfer_candidates": {
+                "generated_at_utc": transfer_candidates.get("generated_at_utc", ""),
+                "transfer_like_rows": transfer_candidates.get("transfer_like_rows", 0),
+                "candidate_count": transfer_candidates.get("candidate_count", 0),
+                "confidence_counts": transfer_candidates.get("confidence_counts", {}),
+                "match_type_counts": transfer_candidates.get("match_type_counts", {}),
+                "break_link_count": transfer_candidates.get("break_link_count", 0),
+                "candidates": (transfer_candidates.get("candidates") or [])[:120],
+                "negative_break_links": (transfer_candidates.get("negative_break_links") or [])[:80],
+            },
+            "break_resolution": {
+                "generated_at_utc": break_resolution.get("generated_at_utc", ""),
+                "break_count": break_resolution.get("break_count", 0),
+                "status_counts": break_resolution.get("status_counts", {}),
+                "priority_counts": break_resolution.get("priority_counts", {}),
+                "active_blocker_count": split_resolution["active_count"],
+                "documented_residual_count": split_resolution["documented_count"],
+                "active_rows": split_resolution["active_rows"][:80],
+                "documented_rows": split_resolution["documented_rows"][:80],
+                "rows": (break_resolution.get("rows") or [])[:80],
+            },
+            "residual_review": {
+                "generated_at_utc": residual_review.get("generated_at_utc", ""),
+                "residual_count": residual_review.get("residual_count", 0),
+                "status_counts": residual_review.get("status_counts", {}),
+                "decision": residual_review.get("decision", {}),
+                "residuals": (residual_review.get("residuals") or [])[:80],
+            },
+            "ai_review": {
+                "generated_at_utc": ai_review.get("generated_at_utc", ""),
+                "status": ai_review.get("status", "missing" if not ai_review else ""),
+                "model": ai_review.get("model", ""),
+                "base_url": ai_review.get("base_url", ""),
+                "hypotheses": (ai_review.get("hypotheses") or [])[:30],
+                "error": ai_review.get("error", ""),
+            },
+        },
+        warnings=warnings,
+    )
 
 @router.post("/api/v1/dashboard/role-override", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_role_override(payload: DashboardRoleOverrideRequest) -> StandardResponse:
@@ -78,7 +376,7 @@ def dashboard_role_override(payload: DashboardRoleOverrideRequest) -> StandardRe
 @router.get("/api/v1/dashboard/overview", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_overview() -> StandardResponse:
     trace_id = str(uuid4())
-    events = STORE.list_raw_events()
+    events = _list_effective_raw_events()
 
     by_source: dict[str, int] = {}
     by_event_type: dict[str, int] = {}
@@ -98,6 +396,7 @@ def dashboard_overview() -> StandardResponse:
     mining_events = 0
     ignored_tokens = _load_ignored_tokens()
     ignored_mints = set(ignored_tokens.keys())
+    token_aliases = _load_token_aliases()
     for row in events:
         payload = row.get("payload", {})
         if not isinstance(payload, dict):
@@ -108,16 +407,20 @@ def dashboard_overview() -> StandardResponse:
         by_event_type[event_type] = by_event_type.get(event_type, 0) + 1
 
         ts_raw = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")
-        day = ts_raw[:10] if len(ts_raw) >= 10 else "unknown"
-        by_day[day] = by_day.get(day, 0) + 1
-        year = _extract_year(ts_raw)
-        if year is not None:
-            by_year[year] = by_year.get(year, 0) + 1
+        if _counts_dashboard_activity(payload):
+            day = ts_raw[:10] if len(ts_raw) >= 10 else "unknown"
+            by_day[day] = by_day.get(day, 0) + 1
+            year = _extract_year(ts_raw)
+            if year is not None:
+                by_year[year] = by_year.get(year, 0) + 1
+        else:
+            year = _extract_year(ts_raw)
 
         side = str(payload.get("side") or "").lower()
-        asset = str(payload.get("asset") or "").upper()
-        if _normalize_mint(asset) in ignored_mints:
+        raw_asset = str(payload.get("asset") or "").upper()
+        if _normalize_mint(raw_asset) in ignored_mints:
             continue
+        asset = _asset_canonical_symbol(raw_asset, token_aliases)
         qty = _dashboard_event_quantity(payload)
         if year is not None and asset:
             value = _estimate_event_values(
@@ -298,7 +601,7 @@ def dashboard_overview() -> StandardResponse:
 @router.get("/api/v1/dashboard/shell", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_shell() -> StandardResponse:
     trace_id = str(uuid4())
-    events = STORE.list_raw_events()
+    events = _list_effective_raw_events()
     by_source: dict[str, int] = {}
     by_event_type: dict[str, int] = {}
     by_day: dict[str, int] = {}
@@ -307,6 +610,7 @@ def dashboard_shell() -> StandardResponse:
     reward_events = 0
     mining_events = 0
     ignored_mints = set(_load_ignored_tokens().keys())
+    token_aliases = _load_token_aliases()
 
     for row in events:
         payload = row.get("payload", {})
@@ -317,13 +621,17 @@ def dashboard_shell() -> StandardResponse:
         by_source[source] = by_source.get(source, 0) + 1
         by_event_type[event_type] = by_event_type.get(event_type, 0) + 1
         ts_raw = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")
-        day = ts_raw[:10] if len(ts_raw) >= 10 else "unknown"
-        by_day[day] = by_day.get(day, 0) + 1
-        year = _extract_year(ts_raw)
-        if year is not None:
-            by_year[year] = by_year.get(year, 0) + 1
-        asset = str(payload.get("asset") or "").upper()
-        if asset and _normalize_mint(asset) not in ignored_mints:
+        if _counts_dashboard_activity(payload):
+            day = ts_raw[:10] if len(ts_raw) >= 10 else "unknown"
+            by_day[day] = by_day.get(day, 0) + 1
+            year = _extract_year(ts_raw)
+            if year is not None:
+                by_year[year] = by_year.get(year, 0) + 1
+        else:
+            year = _extract_year(ts_raw)
+        raw_asset = str(payload.get("asset") or "").upper()
+        asset = _asset_canonical_symbol(raw_asset, token_aliases)
+        if asset and _normalize_mint(raw_asset) not in ignored_mints:
             qty = _dashboard_event_quantity(payload)
             side = str(payload.get("side") or "").lower()
             sign = Decimal("1") if side == "in" else Decimal("-1") if side == "out" else Decimal("0")
@@ -395,7 +703,7 @@ def dashboard_shell() -> StandardResponse:
 @router.get("/api/v1/dashboard/yearly-activity", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_yearly_activity(year: int | None = None) -> StandardResponse:
     trace_id = str(uuid4())
-    events = STORE.list_raw_events()
+    events = _list_effective_raw_events()
     activity = _build_yearly_asset_activity(events, year=year)
     write_audit(
         trace_id=trace_id,
@@ -419,11 +727,29 @@ def dashboard_yearly_activity(year: int | None = None) -> StandardResponse:
 
 
 @router.get("/api/v1/dashboard/portfolio-history", response_model=StandardResponse, tags=["dashboard"])
-def dashboard_portfolio_history(window_days: int = 3650) -> StandardResponse:
+def dashboard_portfolio_history(
+    window_days: int = 3650,
+    year: int | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    interval: str = "auto",
+    max_points: int = 240,
+) -> StandardResponse:
     trace_id = str(uuid4())
-    events = STORE.list_raw_events()
+    events = _list_effective_raw_events()
     runtime_fx = _runtime_usd_to_eur_rate()
     ignored_mints = set(_load_ignored_tokens().keys())
+    safe_max_points = min(max(int(max_points), 20), 2000)
+    interval_normalized = _normalize_portfolio_history_interval(interval)
+    mark_from = f"{year}-01-01" if year is not None else None
+    mark_to = f"{year}-12-31" if year is not None else None
+    if window_days > 0:
+        cutoff = (datetime.now(UTC) - timedelta(days=window_days)).date().isoformat()
+        mark_from = max(mark_from, cutoff) if mark_from else cutoff
+    if from_date:
+        mark_from = max(mark_from, str(from_date)[:10]) if mark_from else str(from_date)[:10]
+    if to_date:
+        mark_to = min(mark_to, str(to_date)[:10]) if mark_to else str(to_date)[:10]
     points = _build_portfolio_value_history(
         events,
         ignored_mints,
@@ -431,13 +757,23 @@ def dashboard_portfolio_history(window_days: int = 3650) -> StandardResponse:
         fx_rate_cache={},
         asset_usd_price_cache={},
         fx_lookup=_load_fx_lookup(),
+        interval=interval_normalized,
+        max_points=safe_max_points,
+        mark_from=mark_from,
+        mark_to=mark_to,
     )
+    if year is not None:
+        points = [point for point in points if int(point.get("year") or 0) == year]
+    if from_date:
+        points = [point for point in points if str(point.get("date") or "") >= str(from_date)[:10]]
+    if to_date:
+        points = [point for point in points if str(point.get("date") or "") <= str(to_date)[:10]]
     if window_days > 0:
-        cutoff = datetime.now(UTC) - timedelta(days=window_days)
+        cutoff_ts = datetime.now(UTC) - timedelta(days=window_days)
         filtered_points: list[dict[str, Any]] = []
         for point in points:
             ts = _parse_iso_timestamp(f"{point.get('date', '')}T00:00:00+00:00")
-            if ts is None or ts < cutoff:
+            if ts is None or ts < cutoff_ts:
                 continue
             filtered_points.append(point)
         points = filtered_points
@@ -450,13 +786,27 @@ def dashboard_portfolio_history(window_days: int = 3650) -> StandardResponse:
     write_audit(
         trace_id=trace_id,
         action="dashboard.portfolio_history",
-        payload={"event_count": len(events), "window_days": window_days, "point_count": len(points)},
+        payload={
+            "event_count": len(events),
+            "window_days": window_days,
+            "year": year,
+            "from_date": from_date,
+            "to_date": to_date,
+            "interval": interval_normalized,
+            "max_points": safe_max_points,
+            "point_count": len(points),
+        },
     )
     return StandardResponse(
         trace_id=trace_id,
         status="success",
         data={
             "window_days": window_days,
+            "year": year,
+            "from_date": from_date,
+            "to_date": to_date,
+            "interval": interval_normalized,
+            "max_points": safe_max_points,
             "event_count": len(events),
             "portfolio_value_history": points,
             "summary": {
@@ -503,7 +853,7 @@ def dashboard_transaction_search(
     runtime_fx = _runtime_usd_to_eur_rate()
     rows: list[dict[str, Any]] = []
     safe_limit = min(max(int(limit), 1), 500)
-    for row in STORE.list_raw_events():
+    for row in _list_effective_raw_events():
         payload = row.get("payload", {})
         if not isinstance(payload, dict):
             continue
@@ -548,7 +898,7 @@ def dashboard_transaction_search(
 @router.get("/api/v1/portfolio/integrations", response_model=StandardResponse, tags=["dashboard"])
 def portfolio_integrations() -> StandardResponse:
     trace_id = str(uuid4())
-    events = STORE.list_raw_events()
+    events = _list_effective_raw_events()
     mode_overrides = load_integration_mode_overrides()
     buckets: dict[str, dict[str, Any]] = {}
     for row in events:
@@ -665,7 +1015,7 @@ def portfolio_integration_mode_update(payload: IntegrationModeUpdateRequest) -> 
 @router.get("/api/v1/portfolio/helium-legacy-transfers", response_model=StandardResponse, tags=["dashboard"])
 def portfolio_helium_legacy_transfers() -> StandardResponse:
     trace_id = str(uuid4())
-    overview = _build_helium_legacy_transfer_overview(STORE.list_raw_events())
+    overview = _build_helium_legacy_transfer_overview(_list_effective_raw_events())
     write_audit(
         trace_id=trace_id,
         action="portfolio.helium_legacy_transfers",
@@ -688,6 +1038,7 @@ def dashboard_wallet_snapshots(
     scope: str = "wallet",
     entity_id: str = "",
     window_days: int = 365,
+    year: int | None = None,
 ) -> StandardResponse:
     trace_id = str(uuid4())
     if scope not in {"wallet", "group"}:
@@ -699,7 +1050,13 @@ def dashboard_wallet_snapshots(
             warnings=[],
         )
     points = _filter_wallet_snapshots(scope=scope, entity_id=entity_id.strip())
-    if window_days > 0:
+    if year is not None:
+        points = [
+            point
+            for point in points
+            if _extract_year(str(point.get("timestamp_utc") or "")) == year
+        ]
+    elif window_days > 0:
         cutoff = datetime.now(UTC) - timedelta(days=window_days)
         filtered: list[dict[str, Any]] = []
         for point in points:
@@ -737,6 +1094,7 @@ def dashboard_wallet_snapshots(
             "scope": scope,
             "entity_id": entity_id.strip(),
             "window_days": window_days,
+            "year": year,
             "count": len(points),
             "points": points,
             "performance_points": perf_points,
@@ -756,6 +1114,7 @@ def dashboard_wallet_snapshots(
 def dashboard_portfolio_set_history(
     group_id: str,
     window_days: int = 365,
+    year: int | None = None,
 ) -> StandardResponse:
     trace_id = str(uuid4())
     group = next((item for item in _load_wallet_groups() if str(item.get("group_id")) == str(group_id)), None)
@@ -769,7 +1128,7 @@ def dashboard_portfolio_set_history(
         )
 
     source_filters = _normalize_source_filters([str(v) for v in group.get("source_filters", [])])
-    all_events = STORE.list_raw_events()
+    all_events = _list_effective_raw_events()
     events: list[dict[str, Any]] = []
     if source_filters:
         wanted = set(source_filters)
@@ -793,11 +1152,13 @@ def dashboard_portfolio_set_history(
         asset_usd_price_cache={},
         fx_lookup=_load_fx_lookup(),
     )
-    if window_days > 0:
+    if year is not None:
+        points = [point for point in points if int(point.get("year") or 0) == year]
+    elif window_days > 0:
         cutoff = datetime.now(UTC) - timedelta(days=window_days)
         filtered_points: list[dict[str, Any]] = []
         for point in points:
-            ts = _parse_iso_timestamp(f"{point.get('month', '')}-01T00:00:00+00:00")
+            ts = _parse_iso_timestamp(f"{point.get('date', '')}T00:00:00+00:00")
             if ts is None or ts < cutoff:
                 continue
             filtered_points.append(point)
@@ -813,6 +1174,7 @@ def dashboard_portfolio_set_history(
         "source_filters": source_filters,
         "event_count": len(events),
         "window_days": window_days,
+        "year": year,
         "points": points,
         "summary": {
             "start_value_usd": start_value.normalize().to_eng_string() if start_value != 0 else "0",
@@ -824,7 +1186,7 @@ def dashboard_portfolio_set_history(
     write_audit(
         trace_id=trace_id,
         action="dashboard.portfolio_set_history",
-        payload={"group_id": group_id, "source_filter_count": len(source_filters), "event_count": len(events)},
+        payload={"group_id": group_id, "source_filter_count": len(source_filters), "event_count": len(events), "year": year},
     )
     return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
 
@@ -841,22 +1203,89 @@ def _source_counts_for_events(events: list[dict[str, Any]]) -> dict[str, int]:
 
 
 @router.get("/api/v1/portfolio/lot-aging", response_model=StandardResponse, tags=["dashboard"])
-def portfolio_lot_aging(as_of_utc: str | None = None, asset: str | None = None) -> StandardResponse:
+def portfolio_lot_aging(as_of_utc: str | None = None, asset: str | None = None, domain: str | None = None) -> StandardResponse:
     trace_id = str(uuid4())
     as_of = _parse_iso_timestamp(as_of_utc or "") or datetime.now(UTC)
-    snapshot = build_open_lot_aging_snapshot(raw_events=STORE.list_raw_events(), as_of=as_of)
+    snapshot = build_open_lot_aging_snapshot(
+        raw_events=_list_processing_effective_raw_events(),
+        as_of=as_of,
+        transfer_matches=STORE.list_transfer_matches(),
+    )
     asset_filter = str(asset or "").strip().upper()
+    domain_filter = str(domain or "").strip().lower()
     if asset_filter:
         snapshot["assets"] = [item for item in snapshot.get("assets", []) if str(item.get("asset", "")).upper() == asset_filter]
         snapshot["lot_rows"] = [item for item in snapshot.get("lot_rows", []) if str(item.get("asset", "")).upper() == asset_filter]
+        snapshot["private_assets"] = [item for item in snapshot.get("private_assets", []) if str(item.get("asset", "")).upper() == asset_filter]
+        snapshot["private_lot_rows"] = [
+            item for item in snapshot.get("private_lot_rows", []) if str(item.get("asset", "")).upper() == asset_filter
+        ]
+    if domain_filter in {"business", "private"}:
+        snapshot["lot_rows"] = [item for item in snapshot.get("lot_rows", []) if str(item.get("domain", "")).lower() == domain_filter]
+        snapshot["assets"] = _summarize_lot_aging_rows(snapshot["lot_rows"])
         snapshot["asset_count"] = len(snapshot["assets"])
         snapshot["lot_count"] = len(snapshot["lot_rows"])
+    snapshot["private_asset_count"] = len(snapshot.get("private_assets", []))
+    snapshot["private_lot_count"] = len(snapshot.get("private_lot_rows", []))
     write_audit(
         trace_id=trace_id,
         action="portfolio.lot_aging",
-        payload={"as_of_utc": as_of.isoformat(), "asset_filter": asset_filter, "lot_count": snapshot.get("lot_count", 0)},
+        payload={
+            "as_of_utc": as_of.isoformat(),
+            "asset_filter": asset_filter,
+            "domain_filter": domain_filter,
+            "lot_count": snapshot.get("lot_count", 0),
+        },
     )
     return StandardResponse(trace_id=trace_id, status="success", data=snapshot, errors=[], warnings=[])
+
+
+def _summarize_lot_aging_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        asset = str(row.get("asset") or "").upper().strip()
+        if not asset:
+            continue
+        item = grouped.setdefault(
+            asset,
+            {
+                "asset": asset,
+                "total_qty": Decimal("0"),
+                "qty_exempt": Decimal("0"),
+                "qty_taxable": Decimal("0"),
+                "lot_count": 0,
+                "oldest_hold_days": 0,
+                "qty_business": Decimal("0"),
+                "qty_private": Decimal("0"),
+            },
+        )
+        qty = _safe_decimal(row.get("qty"))
+        item["total_qty"] += qty
+        if str(row.get("tax_status") or "").lower() == "exempt":
+            item["qty_exempt"] += qty
+        else:
+            item["qty_taxable"] += qty
+        if str(row.get("domain") or "").lower() == "business":
+            item["qty_business"] += qty
+        else:
+            item["qty_private"] += qty
+        item["lot_count"] += 1
+        item["oldest_hold_days"] = max(int(item["oldest_hold_days"]), int(_safe_decimal(row.get("hold_days"))))
+    result = []
+    for item in grouped.values():
+        result.append(
+            {
+                "asset": item["asset"],
+                "total_qty": item["total_qty"].to_eng_string(),
+                "qty_exempt": item["qty_exempt"].to_eng_string(),
+                "qty_taxable": item["qty_taxable"].to_eng_string(),
+                "lot_count": item["lot_count"],
+                "oldest_hold_days": item["oldest_hold_days"],
+                "qty_business": item["qty_business"].to_eng_string(),
+                "qty_private": item["qty_private"].to_eng_string(),
+            }
+        )
+    return sorted(result, key=lambda item: str(item["asset"]))
 
 
 def _build_helium_legacy_transfer_overview(events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1111,10 +1540,47 @@ def _estimate_event_values(
         usd = price_usd * qty_abs
     asset_symbol = _asset_display_symbol(asset)
     quote_symbol = _asset_display_symbol(quote_asset) if quote_asset else quote_asset
+    if eur <= 0 and asset_symbol == "EUR":
+        eur = qty_abs
+    if eur <= 0 and quote_symbol == "EUR" and price > 0 and qty_abs > 0:
+        eur = price * qty_abs
     if usd <= 0 and _is_stable_asset_symbol(asset_symbol):
         usd = qty_abs
     if usd <= 0 and _is_stable_asset_symbol(quote_symbol) and price > 0 and qty_abs > 0:
         usd = price * qty_abs
+    if usd <= 0 and eur <= 0:
+        raw_usd, raw_eur = _raw_market_total_event_values(
+            payload=payload,
+            rate_date=event_date,
+            fx_rate=fx_rate,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        )
+        usd = raw_usd
+        eur = raw_eur
+    if usd <= 0 and eur <= 0:
+        raw_usd, raw_eur = _raw_blockpit_counterparty_event_values(
+            payload=payload,
+            asset=asset,
+            rate_date=event_date,
+            fx_rate=fx_rate,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        )
+        usd = raw_usd
+        eur = raw_eur
+    if usd <= 0 and eur <= 0:
+        raw_usd = _raw_indexed_transfer_usd_value(payload=payload)
+        if raw_usd > 0:
+            usd = raw_usd
+    if usd <= 0 and qty_abs > 0:
+        usd = _counterparty_swap_usd_value(
+            payload=payload,
+            asset=asset,
+            rate_date=event_date,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        )
     if usd <= 0 and qty_abs > 0:
         cached = _cached_asset_usd_price(
             asset=asset,
@@ -1141,6 +1607,213 @@ def _estimate_event_values(
         "eur_abs": abs(eur),
         "priced": usd > 0 or eur > 0,
     }
+
+
+def _raw_indexed_transfer_usd_value(*, payload: dict[str, Any]) -> Decimal:
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return Decimal("0")
+    for key in ("value_usd_sum", "value_usd", "amount_usd", "usd_value"):
+        value = _safe_decimal(raw_row.get(key))
+        if value > 0:
+            return value
+    raw_transfers = raw_row.get("raw_transfers")
+    if not isinstance(raw_transfers, list):
+        return Decimal("0")
+    asset_address = str(payload.get("asset_address") or raw_row.get("token_address") or "").strip().lower()
+    side = str(payload.get("side") or "").strip().lower()
+    best = Decimal("0")
+    for item in raw_transfers:
+        if not isinstance(item, dict):
+            continue
+        if side and str(item.get("flow") or "").strip().lower() != side:
+            continue
+        if asset_address and str(item.get("token_address") or "").strip().lower() != asset_address:
+            continue
+        value = _safe_decimal(item.get("value_usd"))
+        if value > best:
+            best = value
+    return best
+
+
+def _raw_market_total_event_values(
+    *,
+    payload: dict[str, Any],
+    rate_date: str,
+    fx_rate: Decimal,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> tuple[Decimal, Decimal]:
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return Decimal("0"), Decimal("0")
+    source = str(payload.get("source") or "").lower().strip()
+    if source not in {"binance", "binance_api"}:
+        return Decimal("0"), Decimal("0")
+    market = _raw_lookup(raw_row, "market")
+    quote_asset = _split_market_quote_asset(market)
+    total = _safe_decimal(_raw_lookup(raw_row, "total"))
+    if not quote_asset or total <= 0:
+        return Decimal("0"), Decimal("0")
+    if quote_asset == "EUR":
+        eur = total
+        usd = eur / fx_rate if fx_rate > 0 else Decimal("0")
+        return usd, eur
+    if _is_stable_asset_symbol(quote_asset):
+        return total, Decimal("0")
+    quote_price = _cached_asset_usd_price(
+        asset=quote_asset,
+        rate_date=rate_date,
+        asset_usd_price_cache=asset_usd_price_cache,
+        fx_lookup=fx_lookup,
+    )
+    if quote_price <= 0:
+        quote_price = _cached_asset_usd_price_on_or_before(
+            asset=quote_asset,
+            rate_date=rate_date,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        )
+    return (total * quote_price, Decimal("0")) if quote_price > 0 else (Decimal("0"), Decimal("0"))
+
+
+def _raw_blockpit_counterparty_event_values(
+    *,
+    payload: dict[str, Any],
+    asset: str,
+    rate_date: str,
+    fx_rate: Decimal,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> tuple[Decimal, Decimal]:
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return Decimal("0"), Decimal("0")
+    source = str(payload.get("source") or "").lower().strip()
+    if source != "blockpit":
+        return Decimal("0"), Decimal("0")
+    current_asset = _asset_display_symbol(asset)
+    incoming_asset = _asset_display_symbol(_raw_lookup(raw_row, "Incoming Asset"))
+    outgoing_asset = _asset_display_symbol(_raw_lookup(raw_row, "Outgoing Asset"))
+    incoming_amount = abs(_safe_decimal(_raw_lookup(raw_row, "Incoming Amount")))
+    outgoing_amount = abs(_safe_decimal(_raw_lookup(raw_row, "Outgoing Amount")))
+    fee_asset = _asset_display_symbol(_raw_lookup(raw_row, "Fee Asset"))
+    fee_amount = abs(_safe_decimal(_raw_lookup(raw_row, "Fee Amount")))
+
+    candidates: list[tuple[str, Decimal]] = []
+    if incoming_asset and incoming_amount > 0 and incoming_asset != current_asset:
+        candidates.append((incoming_asset, incoming_amount))
+    if outgoing_asset and outgoing_amount > 0 and outgoing_asset != current_asset:
+        candidates.append((outgoing_asset, outgoing_amount))
+    if fee_asset and fee_amount > 0 and fee_asset != current_asset:
+        candidates.append((fee_asset, fee_amount))
+
+    for counter_asset, counter_amount in candidates:
+        if counter_asset == "EUR":
+            eur = counter_amount
+            usd = eur / fx_rate if fx_rate > 0 else Decimal("0")
+            return usd, eur
+        if counter_asset == "USD" or _is_stable_asset_symbol(counter_asset):
+            return counter_amount, Decimal("0")
+
+    for counter_asset, counter_amount in candidates:
+        price = _cached_asset_usd_price(
+            asset=counter_asset,
+            rate_date=rate_date,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        )
+        if price <= 0:
+            price = _cached_asset_usd_price_on_or_before(
+                asset=counter_asset,
+                rate_date=rate_date,
+                asset_usd_price_cache=asset_usd_price_cache,
+                fx_lookup=fx_lookup,
+            )
+        if price > 0:
+            return counter_amount * price, Decimal("0")
+
+    return Decimal("0"), Decimal("0")
+
+
+def _raw_lookup(raw_row: dict[str, Any], key: str) -> Any:
+    normalized = key.lower().replace(" ", "_")
+    for raw_key, value in raw_row.items():
+        candidate = str(raw_key).lower().replace(" ", "_")
+        if candidate == normalized:
+            return value
+    return ""
+
+
+def _split_market_quote_asset(market: Any) -> str:
+    value = str(market or "").upper().strip().replace("-", "").replace("_", "").replace("/", "")
+    if not value:
+        return ""
+    for quote in (
+        "BUSD",
+        "USDT",
+        "USDC",
+        "FDUSD",
+        "TUSD",
+        "DAI",
+        "EUR",
+        "USD",
+        "BTC",
+        "ETH",
+        "BNB",
+    ):
+        if value.endswith(quote) and len(value) > len(quote):
+            return quote
+    return ""
+
+
+def _counterparty_swap_usd_value(
+    payload: dict[str, Any],
+    *,
+    asset: str,
+    rate_date: str,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> Decimal:
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return Decimal("0")
+    if not raw_row.get("jupiter_aggregated"):
+        return Decimal("0")
+    current_asset = str(asset or "").upper().strip()
+    from_asset = str(raw_row.get("from_asset") or "").upper().strip()
+    to_asset = str(raw_row.get("to_asset") or "").upper().strip()
+    from_qty = _safe_decimal(raw_row.get("from_quantity"))
+    to_qty = _safe_decimal(raw_row.get("to_quantity"))
+    if not current_asset or len(rate_date) < 10:
+        return Decimal("0")
+    counter_asset = ""
+    counter_qty = Decimal("0")
+    if current_asset == from_asset and to_asset and to_qty > 0:
+        counter_asset = to_asset
+        counter_qty = to_qty
+    elif current_asset == to_asset and from_asset and from_qty > 0:
+        counter_asset = from_asset
+        counter_qty = from_qty
+    if not counter_asset or counter_qty <= 0:
+        return Decimal("0")
+    counter_symbol = _asset_display_symbol(counter_asset)
+    if _is_stable_asset_symbol(counter_symbol) or _is_stable_asset_symbol(counter_asset):
+        return counter_qty
+    counter_price = _cached_asset_usd_price(
+        asset=counter_asset,
+        rate_date=rate_date,
+        asset_usd_price_cache=asset_usd_price_cache,
+        fx_lookup=fx_lookup,
+    )
+    if counter_price <= 0:
+        counter_price = _cached_asset_usd_price_on_or_before(
+            asset=counter_asset,
+            rate_date=rate_date,
+            asset_usd_price_cache=asset_usd_price_cache,
+            fx_lookup=fx_lookup,
+        )
+    return counter_qty * counter_price if counter_price > 0 else Decimal("0")
 
 
 def _usd_to_eur_rate_for_date(
@@ -1175,7 +1848,8 @@ def _dashboard_event_quantity(payload: dict[str, Any]) -> Decimal:
     normalized_helium_qty = _heliumgeek_display_quantity(payload)
     if normalized_helium_qty > 0:
         return normalized_helium_qty
-    return _safe_decimal(payload.get("quantity"))
+    qty = _safe_decimal(payload.get("quantity"))
+    return qty if qty > 0 else _safe_decimal(payload.get("amount"))
 
 
 def _heliumgeek_display_quantity(payload: dict[str, Any]) -> Decimal:
@@ -1186,6 +1860,7 @@ def _heliumgeek_display_quantity(payload: dict[str, Any]) -> Decimal:
     if not isinstance(raw_row, dict):
         return Decimal("0")
     token_fields = (
+        ("HNT Token", "HNT Tokens"),
         ("IOT Token", "IOT Tokens"),
         ("MOBILE Token", "MOBILE Tokens"),
     )
@@ -1279,8 +1954,13 @@ def _build_portfolio_value_history(
     fx_rate_cache: dict[str, Decimal] | None = None,
     asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
     fx_lookup: _FxLookup | None = None,
+    interval: str = "auto",
+    max_points: int = 240,
+    mark_from: str | None = None,
+    mark_to: str | None = None,
 ) -> list[dict[str, Any]]:
     timeline: list[tuple[str, dict[str, Any]]] = []
+    token_aliases = _load_token_aliases()
     for row in events:
         payload = row.get("payload", {})
         if not isinstance(payload, dict):
@@ -1288,27 +1968,32 @@ def _build_portfolio_value_history(
         ts_raw = str(payload.get("timestamp_utc") or payload.get("timestamp") or "")
         if len(ts_raw) < 10:
             continue
-        asset = str(payload.get("asset") or "").upper().strip()
-        if not asset or _normalize_mint(asset) in ignored_mints:
+        if not _portfolio_history_counts_event(payload):
+            continue
+        raw_asset = str(payload.get("asset") or "").upper().strip()
+        if not raw_asset or _normalize_mint(raw_asset) in ignored_mints:
             continue
         timeline.append((ts_raw, payload))
     timeline.sort(key=lambda item: item[0])
 
-    month_end_days: dict[str, str] = {}
-    for ts_raw, _payload in timeline:
-        day = ts_raw[:10]
-        month_end_days[day[:7]] = day
-
     points: list[dict[str, Any]] = []
     running_balances: dict[str, Decimal] = {}
-    month_marks = set(month_end_days.values())
     day_payloads: dict[str, list[dict[str, Any]]] = {}
     for ts_raw, payload in timeline:
         day_payloads.setdefault(ts_raw[:10], []).append(payload)
+    mark_days = _portfolio_history_mark_days(
+        sorted(day_payloads.keys()),
+        interval=interval,
+        max_points=max_points,
+        mark_from=mark_from,
+        mark_to=mark_to,
+    )
 
     for day, payloads in sorted(day_payloads.items(), key=lambda item: item[0]):
         for payload in payloads:
-            asset = str(payload.get("asset") or "").upper().strip()
+            if not _portfolio_history_counts_event(payload):
+                continue
+            asset = _asset_canonical_symbol(str(payload.get("asset") or "").upper().strip(), token_aliases)
             qty = _dashboard_event_quantity(payload)
             side = str(payload.get("side") or "").lower().strip()
             if side == "in":
@@ -1317,7 +2002,7 @@ def _build_portfolio_value_history(
                 running_balances[asset] = running_balances.get(asset, Decimal("0")) - abs(qty)
             else:
                 running_balances[asset] = running_balances.get(asset, Decimal("0")) + qty
-        if day not in month_marks:
+        if day not in mark_days:
             continue
         value_usd = Decimal("0")
         priced_assets = 0
@@ -1348,8 +2033,96 @@ def _build_portfolio_value_history(
                 "unpriced_assets": unpriced_assets,
             }
         )
-        month_marks.remove(day)
     return points
+
+
+def _normalize_portfolio_history_interval(value: str) -> str:
+    normalized = str(value or "auto").strip().lower()
+    if normalized in {"event", "events", "raw"}:
+        return "event"
+    if normalized in {"day", "daily", "1d"}:
+        return "day"
+    if normalized in {"week", "weekly", "1w"}:
+        return "week"
+    if normalized in {"month", "monthly", "1mo"}:
+        return "month"
+    if normalized in {"quarter", "quarterly", "3mo"}:
+        return "quarter"
+    return "auto"
+
+
+def _portfolio_history_mark_days(
+    days: list[str],
+    interval: str,
+    max_points: int,
+    mark_from: str | None = None,
+    mark_to: str | None = None,
+) -> set[str]:
+    if not days:
+        return set()
+    safe_max_points = min(max(int(max_points), 20), 2000)
+    normalized = _normalize_portfolio_history_interval(interval)
+    eligible_days = [
+        day for day in days
+        if (not mark_from or day >= str(mark_from)[:10]) and (not mark_to or day <= str(mark_to)[:10])
+    ]
+    if not eligible_days:
+        return set()
+    if normalized == "auto":
+        start_ts = _parse_iso_timestamp(f"{eligible_days[0]}T00:00:00+00:00")
+        end_ts = _parse_iso_timestamp(f"{eligible_days[-1]}T00:00:00+00:00")
+        span_days = max(1, ((end_ts - start_ts).days + 1) if start_ts is not None and end_ts is not None else len(eligible_days))
+        target_days_per_point = max(1, span_days // safe_max_points)
+        if target_days_per_point <= 1:
+            normalized = "day"
+        elif target_days_per_point <= 7:
+            normalized = "week"
+        elif target_days_per_point <= 31:
+            normalized = "month"
+        else:
+            normalized = "quarter"
+    if normalized == "event":
+        selected = set(eligible_days)
+    else:
+        selected_by_bucket: dict[str, str] = {}
+        for day in eligible_days:
+            selected_by_bucket[_portfolio_history_bucket_key(day, normalized)] = day
+        selected = set(selected_by_bucket.values())
+    if len(selected) <= safe_max_points:
+        return selected
+    ordered = sorted(selected)
+    stride = max(1, len(ordered) // safe_max_points)
+    downsampled = set(ordered[::stride])
+    downsampled.add(ordered[-1])
+    return downsampled
+
+
+def _portfolio_history_bucket_key(day: str, interval: str) -> str:
+    if interval == "day":
+        return day
+    parsed = _parse_iso_timestamp(f"{day}T00:00:00+00:00")
+    if parsed is None:
+        return day
+    if interval == "week":
+        iso_year, iso_week, _weekday = parsed.isocalendar()
+        return f"{iso_year}-W{iso_week:02d}"
+    if interval == "quarter":
+        quarter = ((parsed.month - 1) // 3) + 1
+        return f"{parsed.year}-Q{quarter}"
+    return day[:7]
+
+
+def _portfolio_history_counts_event(payload: dict[str, Any]) -> bool:
+    event_type = str(payload.get("event_type") or "").lower().strip()
+    text = " ".join(
+        str(payload.get(key) or "").lower()
+        for key in ("event_type", "type", "source", "tag", "defi_label")
+    )
+    if any(token in text for token in ("derivative", "future", "futures", "perp", "margin", "liquidation")):
+        return False
+    if event_type in {"balance_snapshot", "account_snapshot"}:
+        return False
+    return True
 
 
 def _build_yearly_asset_activity(events: list[dict[str, Any]], year: int | None = None) -> dict[str, Any]:
@@ -1362,6 +2135,7 @@ def _build_yearly_asset_activity(events: list[dict[str, Any]], year: int | None 
     asset_usd_price_cache: dict[tuple[str, str, str], Decimal] = {}
     fx_lookup = _load_fx_lookup()
     ignored_mints = set(_load_ignored_tokens().keys())
+    token_aliases = _load_token_aliases()
 
     for row in events:
         payload = row.get("payload", {})
@@ -1372,9 +2146,10 @@ def _build_yearly_asset_activity(events: list[dict[str, Any]], year: int | None 
         if event_year is None or (year is not None and event_year != year):
             continue
 
-        asset = str(payload.get("asset") or "").upper().strip()
-        if not asset or _normalize_mint(asset) in ignored_mints:
+        raw_asset = str(payload.get("asset") or "").upper().strip()
+        if not raw_asset or _normalize_mint(raw_asset) in ignored_mints:
             continue
+        asset = _asset_canonical_symbol(raw_asset, token_aliases)
 
         qty = _dashboard_event_quantity(payload)
         side = str(payload.get("side") or "").lower()
@@ -1497,6 +2272,32 @@ def _event_quote_asset(payload: dict[str, Any]) -> str:
 def _is_trading_volume_event(event_type: str) -> bool:
     normalized = event_type.lower().strip()
     return any(token in normalized for token in ("trade", "swap", "buy", "sell", "fill", "convert"))
+
+
+def _solana_tx_failed(payload: dict[str, Any]) -> bool:
+    if str(payload.get("source") or "").lower().strip() != "solana_rpc":
+        return False
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return False
+    meta = raw_row.get("meta")
+    if not isinstance(meta, dict):
+        return False
+    status = meta.get("status")
+    if isinstance(status, dict) and status.get("Err") is not None:
+        return True
+    return meta.get("err") is not None
+
+
+def _is_failed_zero_solana_noise(payload: dict[str, Any]) -> bool:
+    event_type = str(payload.get("event_type") or "").lower().strip()
+    if event_type not in {"sol_transfer", "solana_tx"}:
+        return False
+    return _solana_tx_failed(payload) and _dashboard_event_quantity(payload) == Decimal("0")
+
+
+def _counts_dashboard_activity(payload: dict[str, Any]) -> bool:
+    return not _is_failed_zero_solana_noise(payload)
 
 
 def _requires_dashboard_valuation(payload: dict[str, Any]) -> bool:
@@ -2021,6 +2822,46 @@ def _extract_year(ts_raw: str) -> int | None:
 
 def _normalize_mint(value: str) -> str:
     return str(value or "").strip().upper()
+
+
+def _asset_canonical_symbol(asset: str, token_aliases: dict[str, dict[str, str]] | None = None) -> str:
+    normalized = _normalize_mint(asset)
+    if not normalized:
+        return ""
+    if token_aliases:
+        alias = token_aliases.get(normalized)
+        if alias is not None:
+            symbol = str(alias.get("symbol") or "").upper().strip()
+            if symbol:
+                return symbol
+    meta = resolve_token_metadata(normalized)
+    if bool(meta.get("is_known")) and meta.get("symbol"):
+        return str(meta["symbol"]).upper().strip()
+    return normalized
+
+
+def _payload_asset_canonical_symbol(
+    payload: dict[str, Any],
+    token_aliases: dict[str, dict[str, str]] | None = None,
+) -> str:
+    raw_asset = _normalize_mint(str(payload.get("asset") or payload.get("symbol") or ""))
+    base_asset = _normalize_mint(str(payload.get("base_asset") or ""))
+    quote_asset = _normalize_mint(str(payload.get("quote_asset") or ""))
+    source = str(payload.get("source") or "").lower().strip()
+    event_type = str(payload.get("event_type") or "").lower().strip()
+    side = str(payload.get("side") or "").lower().strip()
+    if base_asset and quote_asset and raw_asset:
+        pair_symbols = {
+            f"{base_asset}{quote_asset}",
+            f"{base_asset}-{quote_asset}",
+            f"{base_asset}/{quote_asset}",
+            f"{base_asset}_{quote_asset}",
+        }
+        if raw_asset in pair_symbols or (
+            source.endswith("_api") and event_type in {"trade", "spot_trade", "order"} and side in {"buy", "sell"}
+        ):
+            return _asset_canonical_symbol(base_asset, token_aliases)
+    return _asset_canonical_symbol(raw_asset or base_asset, token_aliases)
 
 
 def _asset_display_symbol(asset: str) -> str:

@@ -15,6 +15,7 @@ import httpx
 
 from tax_engine.admin import resolve_secret_value
 from tax_engine.ingestion.store import STORE
+from tax_engine.queue import apply_review_actions
 
 COINGECKO_DEMO_BASE_URL = "https://api.coingecko.com/api/v3"
 COINGECKO_PRO_BASE_URL = "https://pro-api.coingecko.com/api/v3"
@@ -138,7 +139,8 @@ def _build_alias_map(assets: list[PriceAsset]) -> dict[str, PriceAsset]:
 def _collect_jobs(alias_map: dict[str, PriceAsset], requested: set[str], start_date: str, end_date: str) -> list[tuple[PriceAsset, str]]:
     jobs: set[tuple[str, str]] = set()
     by_symbol = {asset.symbol: asset for asset in alias_map.values()}
-    for row in STORE.list_raw_events():
+    events, _summary = apply_review_actions(STORE.list_raw_events())
+    for row in events:
         payload = row.get("payload", {})
         if not isinstance(payload, dict):
             continue

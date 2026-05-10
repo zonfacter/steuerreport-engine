@@ -25,6 +25,7 @@ def test_import_connectors_lists_supported_sources() -> None:
         "coinbase",
         "pionex",
         "blockpit",
+        "jupiter_perps",
         "heliumgeek",
         "heliumtracker",
         "helium_legacy_cointracking",
@@ -120,6 +121,62 @@ def test_parse_preview_binance_trade_history_splits_market_row() -> None:
     assert next(row for row in rows if row["asset"] == "HNT")["fee"] == "0.01"
 
 
+def test_parse_preview_jupiter_perps_pairs_open_and_close() -> None:
+    _reset_store()
+    response = import_parse_preview(
+        ConnectorParseRequest(
+            connector_id="jupiter_perps",
+            rows=[
+                {
+                    "Created at": "Fri Dec 06 2024 14:55:29 GMT+0000 (Coordinated Universal Time)",
+                    " Transaction ID": "open-tx",
+                    " Asset": "BTC",
+                    " Position": "Long",
+                    " Position change": "Increase",
+                    " Order type": "Market",
+                    " Deposit / Withdraw ($)": "-118.74",
+                    " Execution price ($)": "99390.72",
+                    " Trade size ($)": "5646.52",
+                    " Profit / Loss ($)": "",
+                    " Trade fee ($)": "3.95",
+                    " Liquidation fee ($)": "",
+                    " Mint": "BTC",
+                    " Collateral": "BTC",
+                    " Collateral mint": "BTC",
+                },
+                {
+                    "Created at": "Fri Dec 06 2024 16:27:25 GMT+0000 (Coordinated Universal Time)",
+                    " Transaction ID": "close-tx",
+                    " Asset": "BTC",
+                    " Position": "Long",
+                    " Position change": "Decrease",
+                    " Order type": "Market",
+                    " Deposit / Withdraw ($)": "84.28",
+                    " Execution price ($)": "98929.26",
+                    " Trade size ($)": "5646.52",
+                    " Profit / Loss ($)": "-26.21",
+                    " Trade fee ($)": "4.29",
+                    " Liquidation fee ($)": "",
+                    " Mint": "BTC",
+                    " Collateral": "BTC",
+                    " Collateral mint": "BTC",
+                },
+            ],
+        )
+    )
+
+    assert response.status == "success"
+    assert response.data["count"] == 2
+    rows = response.data["normalized_rows"]
+    assert rows[0]["event_type"] == "derivative open"
+    assert rows[0]["position_id"] == "jupiter-perps:open-tx"
+    assert rows[0]["collateral_eur"] == "118.74"
+    assert rows[1]["event_type"] == "derivative close"
+    assert rows[1]["position_id"] == rows[0]["position_id"]
+    assert rows[1]["proceeds_eur"] == "84.28"
+    assert rows[1]["pnl_eur"] == "-26.21"
+
+
 def test_parse_preview_binance_deposit_utc_plus_two_is_shifted_to_utc() -> None:
     _reset_store()
     response = import_parse_preview(
@@ -141,6 +198,117 @@ def test_parse_preview_binance_deposit_utc_plus_two_is_shifted_to_utc() -> None:
     assert row["timestamp_utc"] == "2021-07-01T08:30:00+00:00"
     assert row["side"] == "in"
     assert row["event_type"] == "deposit"
+
+
+def test_parse_preview_binance_deposit_shape_without_source_name_is_classified() -> None:
+    _reset_store()
+    response = import_parse_preview(
+        ConnectorParseRequest(
+            connector_id="binance",
+            rows=[
+                {
+                    "Time": "25-06-15 09:47:02",
+                    "Coin": "SOL",
+                    "Amount": "7.0700475",
+                    "Network": "SOL",
+                    "Status": "Completed",
+                    "TXID": "sol-deposit-tx",
+                    "Address": "EnbD7GwdYtWgPv5ReEKgCVpExuZsFxiYqjeEM4SgEvhn",
+                }
+            ],
+        )
+    )
+
+    assert response.status == "success"
+    row = response.data["normalized_rows"][0]
+    assert row["timestamp_utc"] == "2025-06-15T09:47:02+00:00"
+    assert row["side"] == "in"
+    assert row["event_type"] == "deposit"
+
+
+def test_parse_preview_pionex_trade_splits_market_row_and_fee() -> None:
+    _reset_store()
+    response = import_parse_preview(
+        ConnectorParseRequest(
+            connector_id="pionex",
+            rows=[
+                {
+                    "date(UTC+0)": "2021-12-31 01:24:12",
+                    "executed_qty": "0.70500000000000000000",
+                    "amount": "26.43435100000000000000",
+                    "price": "37.49553333",
+                    "side": "BUY",
+                    "symbol": "HNT_USDT",
+                    "fee": "0.00035250",
+                    "fee_coin": "HNT",
+                    "tax_id": "s_1",
+                }
+            ],
+        )
+    )
+
+    assert response.status == "success"
+    rows = response.data["normalized_rows"]
+    assert response.data["count"] == 3
+    assert {(row["asset"], row["side"], row["quantity"], row["event_type"]) for row in rows} == {
+        ("USDT", "out", "26.43435100000000000000", "trade"),
+        ("HNT", "in", "0.70500000000000000000", "trade"),
+        ("HNT", "out", "0.00035250", "fee"),
+    }
+
+
+def test_parse_preview_pionex_deposit_withdraw_maps_transfer() -> None:
+    _reset_store()
+    response = import_parse_preview(
+        ConnectorParseRequest(
+            connector_id="pionex",
+            rows=[
+                {
+                    "date(UTC+0)": "2022-01-19 12:54:09",
+                    "tx_type": "DEPOSIT",
+                    "amount": "1245.38419000",
+                    "coin": "USDT",
+                    "network": "TRC20",
+                    "txid": "dep-tx",
+                    "fee": "0.00000000",
+                }
+            ],
+        )
+    )
+
+    assert response.status == "success"
+    row = response.data["normalized_rows"][0]
+    assert row["asset"] == "USDT"
+    assert row["quantity"] == "1245.38419000"
+    assert row["side"] == "in"
+    assert row["event_type"] == "deposit"
+    assert row["network"] == "TRC20"
+
+
+def test_parse_preview_pionex_dust_collector_splits_to_usdt() -> None:
+    _reset_store()
+    response = import_parse_preview(
+        ConnectorParseRequest(
+            connector_id="pionex",
+            rows=[
+                {
+                    "date(UTC+0)": "2024-03-12 04:44:43",
+                    "amount": "0.007625",
+                    "coin": "SHIB",
+                    "price": "0.00003307",
+                    "swap_value": "0.0000002521351125",
+                }
+            ],
+        )
+    )
+
+    assert response.status == "success"
+    rows = response.data["normalized_rows"]
+    assert response.data["count"] == 2
+    assert {(row["asset"], row["side"], row["quantity"], row["event_type"]) for row in rows} == {
+        ("SHIB", "out", "0.007625", "dust_trade"),
+        ("USDT", "in", "252.1351125E-9", "dust_trade"),
+    }
 
 
 def test_upload_preview_parses_csv_and_maps_rows() -> None:
@@ -379,6 +547,37 @@ def test_parse_preview_helium_legacy_raw_maps_wallet_direction() -> None:
     assert row["to_wallet"] == wallet
     assert row["side"] == "in"
     assert row["event_type"] == "legacy_transfer"
+
+
+def test_parse_preview_helium_legacy_raw_maps_rewards_as_income() -> None:
+    _reset_store()
+    wallet = "133rkwoKCfxLTTt1zGjge7c2nGLUSY5sTuG2V61zi6ik269Tf4j"
+    response = import_parse_preview(
+        ConnectorParseRequest(
+            connector_id="helium_legacy_raw",
+            rows=[
+                {
+                    "__source_name": f"helium-{wallet}-2021-raw.csv",
+                    "date": "2021-05-12 09:13:16",
+                    "type": "rewards_v1",
+                    "transaction_hash": "reward-raw-tx",
+                    "hnt_amount": "0.60218015",
+                    "hnt_fee": "",
+                    "usd_amount": "10.15",
+                    "payer": "",
+                    "payee": "",
+                }
+            ],
+        )
+    )
+    assert response.status == "success"
+    row = response.data["normalized_rows"][0]
+    assert row["wallet_address"] == wallet
+    assert row["event_type"] == "mining_reward"
+    assert row["side"] == "in"
+    assert row["tax_category"] == "INCOME_SO"
+    assert row["quantity"] == "0.60218015"
+    assert row["value_usd"] == "10.15"
 
 
 def test_upload_preview_parses_binance_xlsx_with_banner_rows() -> None:

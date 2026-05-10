@@ -12,6 +12,7 @@ _KNOWN_TOKENS: dict[str, dict[str, str]] = {
     "IOT": {"symbol": "IOT", "name": "Helium IOT"},
     "MOBILE": {"symbol": "MOBILE", "name": "Helium MOBILE"},
     "ZEUS": {"symbol": "ZEUS", "name": "Zeus Network"},
+    "SO11111111111111111111111111111111111111111": {"symbol": "SOL", "name": "Solana"},
     "SO11111111111111111111111111111111111111112": {"symbol": "SOL", "name": "Wrapped SOL"},
     "EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V": {"symbol": "USDC", "name": "USD Coin"},
     "ES9VMFRZACERMJFRF4H2FYD4KCONKY11MCCE8BENWNYB": {"symbol": "USDT", "name": "Tether USD"},
@@ -19,7 +20,10 @@ _KNOWN_TOKENS: dict[str, dict[str, str]] = {
     "HNTYVP6YFM1HG25TN9WGLQM12B8TQMCKNKRDU1OXWUX": {"symbol": "HNT", "name": "Helium"},
     "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS": {"symbol": "IOT", "name": "Helium IOT"},
     "MOBILEX6QQ9X4RLAQHQA2GEEA9FSQAP8FKM95J4O5F1N": {"symbol": "MOBILE", "name": "Helium MOBILE"},
+    "MB1EU7TZEC71KXDPSMSKOUCSSUUOGLV1DRYS1OP2JH6": {"symbol": "MOBILE", "name": "Helium MOBILE"},
     "ZEUS1AR7AX8DFFJF5QJWJ2FTDDDNTROMNGO8YOQM3GQ": {"symbol": "ZEUS", "name": "Zeus Network"},
+    "2KFZCKFXJ1US8YRQZA5VKTSXY3GPZFZVVHWJ91N8FV2J": {"symbol": "CBDC", "name": "CBDC"},
+    "SHARKSYJJQANYXVFRPNBN9PJGKHWDHATNMYICWPNR1S": {"symbol": "SHARK", "name": "SHARK"},
 }
 
 

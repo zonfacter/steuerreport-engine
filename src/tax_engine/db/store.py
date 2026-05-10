@@ -71,6 +71,18 @@ class SQLiteImportStore:
                     column_name="transfer_chain_id",
                     column_ddl="TEXT NOT NULL DEFAULT ''",
                 )
+                self._ensure_column(
+                    conn=conn,
+                    table_name="tax_lines",
+                    column_name="tax_domain",
+                    column_ddl="TEXT NOT NULL DEFAULT 'private_veraeusserung'",
+                )
+                self._ensure_column(
+                    conn=conn,
+                    table_name="tax_lines",
+                    column_name="lot_domain",
+                    column_ddl="TEXT NOT NULL DEFAULT 'private'",
+                )
                 self._ensure_table_if_missing(
                     conn=conn,
                     table_name="ruleset_catalog",
@@ -135,6 +147,96 @@ class SQLiteImportStore:
                         )
                     """,
                 )
+                self._ensure_table_if_missing(
+                    conn=conn,
+                    table_name="solscan_transactions",
+                    ddl="""
+                        CREATE TABLE solscan_transactions (
+                            signature TEXT PRIMARY KEY,
+                            wallet_address TEXT NOT NULL DEFAULT '',
+                            endpoint TEXT NOT NULL,
+                            http_status INTEGER NOT NULL,
+                            success INTEGER NOT NULL DEFAULT 0,
+                            block_time_utc TEXT NOT NULL DEFAULT '',
+                            slot INTEGER,
+                            raw_json TEXT NOT NULL,
+                            summary_json TEXT NOT NULL DEFAULT '{}',
+                            fetched_at_utc TEXT NOT NULL,
+                            updated_at_utc TEXT NOT NULL
+                        )
+                    """,
+                )
+                self._ensure_table_if_missing(
+                    conn=conn,
+                    table_name="solscan_account_transactions",
+                    ddl="""
+                        CREATE TABLE solscan_account_transactions (
+                            wallet_address TEXT NOT NULL,
+                            signature TEXT NOT NULL,
+                            slot INTEGER,
+                            block_time_utc TEXT NOT NULL DEFAULT '',
+                            status TEXT NOT NULL DEFAULT '',
+                            raw_json TEXT NOT NULL,
+                            discovered_at_utc TEXT NOT NULL,
+                            updated_at_utc TEXT NOT NULL,
+                            PRIMARY KEY (wallet_address, signature)
+                        )
+                    """,
+                )
+                self._ensure_table_if_missing(
+                    conn=conn,
+                    table_name="solscan_account_transfers",
+                    ddl="""
+                        CREATE TABLE solscan_account_transfers (
+                            transfer_id TEXT PRIMARY KEY,
+                            wallet_address TEXT NOT NULL,
+                            signature TEXT NOT NULL,
+                            block_time_utc TEXT NOT NULL DEFAULT '',
+                            flow TEXT NOT NULL DEFAULT '',
+                            activity_type TEXT NOT NULL DEFAULT '',
+                            token_address TEXT NOT NULL DEFAULT '',
+                            token_decimals INTEGER,
+                            amount TEXT NOT NULL DEFAULT '',
+                            value_usd TEXT NOT NULL DEFAULT '',
+                            from_address TEXT NOT NULL DEFAULT '',
+                            to_address TEXT NOT NULL DEFAULT '',
+                            raw_json TEXT NOT NULL,
+                            discovered_at_utc TEXT NOT NULL,
+                            updated_at_utc TEXT NOT NULL
+                        )
+                    """,
+                )
+                self._ensure_table_if_missing(
+                    conn=conn,
+                    table_name="product_position_events",
+                    ddl="""
+                        product_position_events (
+                            event_id TEXT PRIMARY KEY,
+                            platform TEXT NOT NULL,
+                            product_type TEXT NOT NULL,
+                            product_id TEXT NOT NULL DEFAULT '',
+                            position_id TEXT NOT NULL DEFAULT '',
+                            event_type TEXT NOT NULL,
+                            tax_treatment TEXT NOT NULL,
+                            asset TEXT NOT NULL,
+                            quantity TEXT NOT NULL,
+                            timestamp_utc TEXT NOT NULL,
+                            source_ref TEXT NOT NULL DEFAULT '',
+                            raw_json TEXT NOT NULL,
+                            created_at_utc TEXT NOT NULL,
+                            updated_at_utc TEXT NOT NULL
+                        )
+                    """,
+                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_solscan_transactions_wallet ON solscan_transactions(wallet_address)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_solscan_transactions_block_time ON solscan_transactions(block_time_utc)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_solscan_transactions_success ON solscan_transactions(success)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_solscan_account_transactions_wallet_time ON solscan_account_transactions(wallet_address, block_time_utc)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_solscan_account_transfers_wallet_time ON solscan_account_transfers(wallet_address, block_time_utc)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_solscan_account_transfers_signature ON solscan_account_transfers(signature)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_product_position_events_platform_time ON product_position_events(platform, timestamp_utc)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_product_position_events_asset_time ON product_position_events(asset, timestamp_utc)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_product_position_events_tax_treatment ON product_position_events(tax_treatment)")
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS settings (
@@ -368,6 +470,460 @@ class SQLiteImportStore:
             for row in rows
         ]
 
+    def upsert_product_position_events(self, events: list[dict[str, Any]]) -> dict[str, int]:
+        now_utc = datetime.now(UTC).isoformat()
+        inserted = 0
+        updated = 0
+        with self._lock, self._connect() as conn:
+            for event in events:
+                event_id = str(event.get("event_id") or "").strip()
+                if not event_id:
+                    continue
+                raw_payload = event.get("raw")
+                raw_json = json.dumps(raw_payload if isinstance(raw_payload, dict) else event, sort_keys=True, ensure_ascii=False)
+                existing = conn.execute(
+                    "SELECT 1 FROM product_position_events WHERE event_id = ?",
+                    (event_id,),
+                ).fetchone()
+                conn.execute(
+                    """
+                    INSERT INTO product_position_events (
+                        event_id,
+                        platform,
+                        product_type,
+                        product_id,
+                        position_id,
+                        event_type,
+                        tax_treatment,
+                        asset,
+                        quantity,
+                        timestamp_utc,
+                        source_ref,
+                        raw_json,
+                        created_at_utc,
+                        updated_at_utc
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(event_id) DO UPDATE SET
+                        platform = excluded.platform,
+                        product_type = excluded.product_type,
+                        product_id = excluded.product_id,
+                        position_id = excluded.position_id,
+                        event_type = excluded.event_type,
+                        tax_treatment = excluded.tax_treatment,
+                        asset = excluded.asset,
+                        quantity = excluded.quantity,
+                        timestamp_utc = excluded.timestamp_utc,
+                        source_ref = excluded.source_ref,
+                        raw_json = excluded.raw_json,
+                        updated_at_utc = excluded.updated_at_utc
+                    """,
+                    (
+                        event_id,
+                        str(event.get("platform") or "").strip().lower(),
+                        str(event.get("product_type") or "").strip(),
+                        str(event.get("product_id") or "").strip(),
+                        str(event.get("position_id") or "").strip(),
+                        str(event.get("event_type") or "").strip(),
+                        str(event.get("tax_treatment") or "").strip(),
+                        str(event.get("asset") or "").strip().upper(),
+                        str(event.get("quantity") or "0"),
+                        str(event.get("timestamp_utc") or ""),
+                        str(event.get("source_ref") or ""),
+                        raw_json,
+                        now_utc,
+                        now_utc,
+                    ),
+                )
+                if existing is None:
+                    inserted += 1
+                else:
+                    updated += 1
+            conn.commit()
+        return {"inserted": inserted, "updated": updated, "total": inserted + updated}
+
+    def list_product_position_events(
+        self,
+        *,
+        platform: str | None = None,
+        asset: str | None = None,
+        tax_treatment: str | None = None,
+        limit: int = 10000,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if platform:
+            clauses.append("platform = ?")
+            params.append(str(platform).strip().lower())
+        if asset:
+            clauses.append("asset = ?")
+            params.append(str(asset).strip().upper())
+        if tax_treatment:
+            clauses.append("tax_treatment = ?")
+            params.append(str(tax_treatment).strip())
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, int(limit)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT
+                    event_id,
+                    platform,
+                    product_type,
+                    product_id,
+                    position_id,
+                    event_type,
+                    tax_treatment,
+                    asset,
+                    quantity,
+                    timestamp_utc,
+                    source_ref,
+                    raw_json,
+                    created_at_utc,
+                    updated_at_utc
+                FROM product_position_events
+                {where_sql}
+                ORDER BY timestamp_utc ASC, event_id ASC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                raw = json.loads(str(row["raw_json"]))
+            except Exception:
+                raw = {}
+            result.append(
+                {
+                    "event_id": str(row["event_id"]),
+                    "platform": str(row["platform"]),
+                    "product_type": str(row["product_type"]),
+                    "product_id": str(row["product_id"]),
+                    "position_id": str(row["position_id"]),
+                    "event_type": str(row["event_type"]),
+                    "tax_treatment": str(row["tax_treatment"]),
+                    "asset": str(row["asset"]),
+                    "quantity": str(row["quantity"]),
+                    "timestamp_utc": str(row["timestamp_utc"]),
+                    "source_ref": str(row["source_ref"]),
+                    "raw": raw,
+                    "created_at_utc": str(row["created_at_utc"]),
+                    "updated_at_utc": str(row["updated_at_utc"]),
+                }
+            )
+        return result
+
+    def list_distinct_transaction_ids(
+        self,
+        *,
+        source: str | None = None,
+        wallet_address: str | None = None,
+        limit: int = 100000,
+    ) -> list[str]:
+        signature_expr = """COALESCE(
+                    json_extract(payload_json, '$.tx_id'),
+                    json_extract(payload_json, '$.signature'),
+                    json_extract(payload_json, '$.transaction_hash')
+                )"""
+        filters: list[str] = []
+        args: list[Any] = []
+        if source:
+            filters.append("json_extract(payload_json, '$.source') = ?")
+            args.append(source)
+        if wallet_address:
+            filters.append("json_extract(payload_json, '$.wallet_address') = ?")
+            args.append(wallet_address)
+        filters.append(f"{signature_expr} IS NOT NULL")
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        safe_limit = max(1, min(int(limit), 1000000))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT DISTINCT {signature_expr} AS signature
+                FROM raw_events
+                {where}
+                ORDER BY signature
+                LIMIT ?
+                """,
+                (*args, safe_limit),
+            ).fetchall()
+        return [str(row["signature"]).strip() for row in rows if str(row["signature"] or "").strip()]
+
+    def upsert_solscan_transaction(
+        self,
+        *,
+        signature: str,
+        wallet_address: str,
+        endpoint: str,
+        http_status: int,
+        success: bool,
+        block_time_utc: str,
+        slot: int | None,
+        raw_json: str,
+        summary_json: str,
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO solscan_transactions (
+                    signature,
+                    wallet_address,
+                    endpoint,
+                    http_status,
+                    success,
+                    block_time_utc,
+                    slot,
+                    raw_json,
+                    summary_json,
+                    fetched_at_utc,
+                    updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(signature) DO UPDATE SET
+                    wallet_address = excluded.wallet_address,
+                    endpoint = excluded.endpoint,
+                    http_status = excluded.http_status,
+                    success = excluded.success,
+                    block_time_utc = excluded.block_time_utc,
+                    slot = excluded.slot,
+                    raw_json = excluded.raw_json,
+                    summary_json = excluded.summary_json,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (
+                    signature,
+                    wallet_address,
+                    endpoint,
+                    int(http_status),
+                    1 if success else 0,
+                    block_time_utc,
+                    slot,
+                    raw_json,
+                    summary_json,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+
+    def get_solscan_transaction(self, signature: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    signature,
+                    wallet_address,
+                    endpoint,
+                    http_status,
+                    success,
+                    block_time_utc,
+                    slot,
+                    raw_json,
+                    summary_json,
+                    fetched_at_utc,
+                    updated_at_utc
+                FROM solscan_transactions
+                WHERE signature = ?
+                """,
+                (signature,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "signature": str(row["signature"]),
+            "wallet_address": str(row["wallet_address"]),
+            "endpoint": str(row["endpoint"]),
+            "http_status": int(row["http_status"]),
+            "success": bool(int(row["success"])),
+            "block_time_utc": str(row["block_time_utc"] or ""),
+            "slot": row["slot"],
+            "raw": json.loads(str(row["raw_json"])),
+            "summary": json.loads(str(row["summary_json"] or "{}")),
+            "fetched_at_utc": str(row["fetched_at_utc"]),
+            "updated_at_utc": str(row["updated_at_utc"]),
+        }
+
+    def list_solscan_transactions(self, limit: int = 1000) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 100000))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    signature,
+                    wallet_address,
+                    endpoint,
+                    http_status,
+                    success,
+                    block_time_utc,
+                    slot,
+                    summary_json,
+                    fetched_at_utc,
+                    updated_at_utc
+                FROM solscan_transactions
+                ORDER BY block_time_utc DESC, updated_at_utc DESC
+                LIMIT ?
+                """,
+                (safe_limit,),
+            ).fetchall()
+        return [
+            {
+                "signature": str(row["signature"]),
+                "wallet_address": str(row["wallet_address"]),
+                "endpoint": str(row["endpoint"]),
+                "http_status": int(row["http_status"]),
+                "success": bool(int(row["success"])),
+                "block_time_utc": str(row["block_time_utc"] or ""),
+                "slot": row["slot"],
+                "summary": json.loads(str(row["summary_json"] or "{}")),
+                "fetched_at_utc": str(row["fetched_at_utc"]),
+                "updated_at_utc": str(row["updated_at_utc"]),
+            }
+            for row in rows
+        ]
+
+    def upsert_solscan_account_transaction(
+        self,
+        *,
+        wallet_address: str,
+        signature: str,
+        slot: int | None,
+        block_time_utc: str,
+        status: str,
+        raw_json: str,
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO solscan_account_transactions (
+                    wallet_address,
+                    signature,
+                    slot,
+                    block_time_utc,
+                    status,
+                    raw_json,
+                    discovered_at_utc,
+                    updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(wallet_address, signature) DO UPDATE SET
+                    slot = excluded.slot,
+                    block_time_utc = excluded.block_time_utc,
+                    status = excluded.status,
+                    raw_json = excluded.raw_json,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (wallet_address, signature, slot, block_time_utc, status, raw_json, now, now),
+            )
+            conn.commit()
+
+    def upsert_solscan_account_transfer(
+        self,
+        *,
+        transfer_id: str,
+        wallet_address: str,
+        signature: str,
+        block_time_utc: str,
+        flow: str,
+        activity_type: str,
+        token_address: str,
+        token_decimals: int | None,
+        amount: str,
+        value_usd: str,
+        from_address: str,
+        to_address: str,
+        raw_json: str,
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO solscan_account_transfers (
+                    transfer_id,
+                    wallet_address,
+                    signature,
+                    block_time_utc,
+                    flow,
+                    activity_type,
+                    token_address,
+                    token_decimals,
+                    amount,
+                    value_usd,
+                    from_address,
+                    to_address,
+                    raw_json,
+                    discovered_at_utc,
+                    updated_at_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(transfer_id) DO UPDATE SET
+                    wallet_address = excluded.wallet_address,
+                    signature = excluded.signature,
+                    block_time_utc = excluded.block_time_utc,
+                    flow = excluded.flow,
+                    activity_type = excluded.activity_type,
+                    token_address = excluded.token_address,
+                    token_decimals = excluded.token_decimals,
+                    amount = excluded.amount,
+                    value_usd = excluded.value_usd,
+                    from_address = excluded.from_address,
+                    to_address = excluded.to_address,
+                    raw_json = excluded.raw_json,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (
+                    transfer_id,
+                    wallet_address,
+                    signature,
+                    block_time_utc,
+                    flow,
+                    activity_type,
+                    token_address,
+                    token_decimals,
+                    amount,
+                    value_usd,
+                    from_address,
+                    to_address,
+                    raw_json,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+
+    def count_solscan_account_transactions(self, wallet_address: str | None = None) -> int:
+        args: list[Any] = []
+        where = ""
+        if wallet_address:
+            where = "WHERE wallet_address = ?"
+            args.append(wallet_address)
+        with self._connect() as conn:
+            row = conn.execute(f"SELECT COUNT(*) AS count FROM solscan_account_transactions {where}", args).fetchone()
+        return int(row["count"] if row else 0)
+
+    def count_solscan_account_transfers(self, wallet_address: str | None = None) -> int:
+        args: list[Any] = []
+        where = ""
+        if wallet_address:
+            where = "WHERE wallet_address = ?"
+            args.append(wallet_address)
+        with self._connect() as conn:
+            row = conn.execute(f"SELECT COUNT(*) AS count FROM solscan_account_transfers {where}", args).fetchone()
+        return int(row["count"] if row else 0)
+
+    def list_solscan_account_signatures(self, wallet_address: str, limit: int = 1000000) -> list[str]:
+        safe_limit = max(1, min(int(limit), 1000000))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT signature
+                FROM solscan_account_transactions
+                WHERE wallet_address = ?
+                ORDER BY block_time_utc DESC, signature ASC
+                LIMIT ?
+                """,
+                (wallet_address, safe_limit),
+            ).fetchall()
+        return [str(row["signature"]) for row in rows]
+
     def list_source_file_summaries(self, limit: int = 200) -> list[dict[str, Any]]:
         safe_limit = max(1, min(int(limit), 5000))
         with self._connect() as conn:
@@ -488,10 +1044,12 @@ class SQLiteImportStore:
                         gain_loss_eur,
                         hold_days,
                         tax_status,
+                        tax_domain,
+                        lot_domain,
                         source_event_id,
                         lot_source_event_id,
                         transfer_chain_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
@@ -505,6 +1063,8 @@ class SQLiteImportStore:
                         str(line["gain_loss_eur"]),
                         int(line["hold_days"]),
                         str(line["tax_status"]),
+                        str(line.get("tax_domain", "private_veraeusserung")),
+                        str(line.get("lot_domain", "private")),
                         str(line["source_event_id"]),
                         str(line.get("lot_source_event_id", "")),
                         str(line.get("transfer_chain_id", "")),
@@ -527,6 +1087,8 @@ class SQLiteImportStore:
                     gain_loss_eur,
                     hold_days,
                     tax_status,
+                    tax_domain,
+                    lot_domain,
                     source_event_id,
                     lot_source_event_id,
                     transfer_chain_id
@@ -548,6 +1110,8 @@ class SQLiteImportStore:
                 "gain_loss_eur": row["gain_loss_eur"],
                 "hold_days": int(row["hold_days"]),
                 "tax_status": row["tax_status"],
+                "tax_domain": row["tax_domain"],
+                "lot_domain": row["lot_domain"],
                 "source_event_id": row["source_event_id"],
                 "lot_source_event_id": row["lot_source_event_id"],
                 "transfer_chain_id": row["transfer_chain_id"],
@@ -568,9 +1132,11 @@ class SQLiteImportStore:
                     cost_basis_eur,
                     proceeds_eur,
                     gain_loss_eur,
-                    hold_days,
-                    tax_status,
-                    source_event_id,
+                hold_days,
+                tax_status,
+                tax_domain,
+                lot_domain,
+                source_event_id,
                     lot_source_event_id,
                     transfer_chain_id
                 FROM tax_lines
@@ -591,6 +1157,8 @@ class SQLiteImportStore:
             "gain_loss_eur": row["gain_loss_eur"],
             "hold_days": int(row["hold_days"]),
             "tax_status": row["tax_status"],
+            "tax_domain": row["tax_domain"],
+            "lot_domain": row["lot_domain"],
             "source_event_id": row["source_event_id"],
             "lot_source_event_id": row["lot_source_event_id"],
             "transfer_chain_id": row["transfer_chain_id"],
@@ -1234,6 +1802,10 @@ class SQLiteImportStore:
                 "Set STEUERREPORT_ENV=testing and use a dedicated test database."
             )
         with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM product_position_events")
+            conn.execute("DELETE FROM solscan_account_transfers")
+            conn.execute("DELETE FROM solscan_account_transactions")
+            conn.execute("DELETE FROM solscan_transactions")
             conn.execute("DELETE FROM fx_cache")
             conn.execute("DELETE FROM settings")
             conn.execute("DELETE FROM transfer_matches")

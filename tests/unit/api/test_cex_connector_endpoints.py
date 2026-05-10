@@ -83,6 +83,31 @@ def test_cex_balances_preview_endpoint_success_with_monkeypatched_service(monkey
     assert response.data["rows"][0]["asset"] == "BTC"
 
 
+def test_cex_balances_preview_uses_secret_store_when_payload_credentials_missing(monkeypatch) -> None:
+    _reset_store()
+    app_module = importlib.import_module("tax_engine.api.connectors")
+    put_admin_setting("secret.cex.binance.api_key", "stored-binance-key", is_secret=True)
+    put_admin_setting("secret.cex.binance.api_secret", "stored-binance-secret", is_secret=True)
+    seen: dict[str, str | None] = {}
+
+    def _fake_fetch(**kwargs):
+        seen.update(kwargs)
+        return {"connector_id": kwargs["connector_id"], "count": 0, "rows": []}
+
+    monkeypatch.setattr(app_module, "fetch_cex_balance_preview", _fake_fetch)
+
+    response = connectors_cex_balances_preview(
+        CexBalancesPreviewRequest(
+            connector_id="binance",
+            max_rows=100,
+        )
+    )
+
+    assert response.status == "success"
+    assert seen["api_key"] == "stored-binance-key"
+    assert seen["api_secret"] == "stored-binance-secret"
+
+
 def test_cex_transactions_preview_endpoint_success_with_monkeypatched_service(
     monkeypatch,
 ) -> None:
@@ -125,6 +150,28 @@ def test_cex_transactions_preview_endpoint_success_with_monkeypatched_service(
     assert response.status == "success"
     assert response.data["count"] == 1
     assert response.data["rows"][0]["event_type"] == "deposit"
+
+
+def test_cex_verify_uses_secret_store_when_payload_credentials_missing(monkeypatch) -> None:
+    _reset_store()
+    app_module = importlib.import_module("tax_engine.api.connectors")
+    put_admin_setting("secret.cex.bitget.api_key", "stored-bitget-key", is_secret=True)
+    put_admin_setting("secret.cex.bitget.api_secret", "stored-bitget-secret", is_secret=True)
+    put_admin_setting("secret.cex.bitget.passphrase", "stored-bitget-passphrase", is_secret=True)
+    seen: dict[str, str | None] = {}
+
+    def _fake_verify(**kwargs):
+        seen.update(kwargs)
+        return {"ok": True, "connector_id": kwargs["connector_id"]}
+
+    monkeypatch.setattr(app_module, "verify_cex_credentials", _fake_verify)
+
+    response = connectors_cex_verify(CexVerifyRequest(connector_id="bitget"))
+
+    assert response.status == "success"
+    assert seen["api_key"] == "stored-bitget-key"
+    assert seen["api_secret"] == "stored-bitget-secret"
+    assert seen["passphrase"] == "stored-bitget-passphrase"
 
 
 def test_cex_import_confirm_persists_preview_rows(monkeypatch) -> None:
@@ -336,6 +383,51 @@ def test_cex_import_full_history_binance(monkeypatch) -> None:
     )
     assert response.status == "success"
     assert response.data["windows_processed"] >= 2
+    assert response.data["total_inserted_events"] >= 1
+
+
+def test_cex_import_full_history_bitget(monkeypatch) -> None:
+    _reset_store()
+    app_module = importlib.import_module("tax_engine.api.connectors")
+
+    def _fake_fetch(**kwargs):
+        return {
+            "connector_id": kwargs["connector_id"],
+            "count": 1,
+            "rows": [
+                {
+                    "timestamp_utc": "2025-01-29T00:00:00+00:00",
+                    "asset": "USDT",
+                    "quantity": "100",
+                    "price": "",
+                    "fee": "0",
+                    "fee_asset": "",
+                    "side": "in",
+                    "event_type": "transfer",
+                    "tx_id": f"bitget-bill-{kwargs.get('start_time_ms')}",
+                    "source": "bitget_account_bills_api",
+                    "raw_row": {"billId": f"bitget-bill-{kwargs.get('start_time_ms')}"},
+                }
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(app_module, "fetch_cex_transactions_preview", _fake_fetch)
+
+    response = connectors_cex_import_full_history(
+        CexFullHistoryImportRequest(
+            connector_id="bitget",
+            api_key="key",
+            api_secret="secret",
+            passphrase="passphrase",
+            start_time_ms=1735689600000,  # 2025-01-01
+            end_time_ms=1735862400000,  # 2025-01-03
+            window_days=1,
+            max_rows_per_call=1000,
+        )
+    )
+    assert response.status == "success"
+    assert response.data["connector_id"] == "bitget"
     assert response.data["total_inserted_events"] >= 1
 
 

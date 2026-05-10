@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import json
 from pathlib import Path
 from subprocess import CompletedProcess
 
+import tax_engine.api.dashboard as dashboard_module
 from tax_engine.api.app import (
     AdminServiceActionRequest,
     AdminSettingsPutRequest,
@@ -11,6 +13,8 @@ from tax_engine.api.app import (
     DashboardRoleOverrideRequest,
     IgnoredTokenDeleteRequest,
     IgnoredTokenUpsertRequest,
+    ProcessPreflightRequest,
+    ReviewTimezoneCorrectRequest,
     TokenAliasDeleteRequest,
     TokenAliasUpsertRequest,
     _build_solana_backfill_status,
@@ -34,6 +38,8 @@ from tax_engine.api.app import (
     dashboard_transaction_search,
     dashboard_yearly_activity,
     portfolio_helium_legacy_transfers,
+    process_preflight,
+    review_timezone_correct,
 )
 from tax_engine.ingestion.service import confirm_import
 from tax_engine.ingestion.store import STORE
@@ -133,6 +139,67 @@ def test_dashboard_shell_returns_lightweight_dashboard_contract() -> None:
     assert response.data["portfolio_value_history"] == []
 
 
+def test_platform_ledger_status_separates_documented_residuals(tmp_path, monkeypatch) -> None:
+    root = tmp_path
+    var_dir = root / "var"
+    var_dir.mkdir()
+    date = dashboard_module.PLATFORM_LEDGER_DATE
+    (var_dir / f"platform_break_resolution_plan_{date}.json").write_text(
+        json.dumps(
+            {
+                "break_count": 2,
+                "rows": [
+                    {
+                        "platform": "pionex",
+                        "asset": "USDT",
+                        "priority": "high",
+                        "resolution_status": "opening_balance_or_bot_history_needed",
+                        "final_balance": "-1643.23",
+                        "worst_balance": "-1643.23",
+                    },
+                    {
+                        "platform": "solana_wallet",
+                        "asset": "USDC",
+                        "priority": "low",
+                        "resolution_status": "dust_or_rounding_review",
+                        "final_balance": "0.000988",
+                        "worst_balance": "-0.000002",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (var_dir / f"platform_residual_review_audit_{date}.json").write_text(
+        json.dumps(
+            {
+                "residual_count": 1,
+                "status_counts": {"documented_rounding_dust": 1},
+                "residuals": [
+                    {
+                        "platform": "solana_wallet",
+                        "asset": "USDC",
+                        "review_classification": "documented_rounding_dust",
+                        "reason": "within threshold",
+                        "recommendation": "do not import",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dashboard_module, "ROOT_DIR", root)
+
+    response = dashboard_module.platform_ledger_status()
+
+    assert response.status == "success"
+    resolution = response.data["break_resolution"]
+    assert resolution["active_blocker_count"] == 1
+    assert resolution["documented_residual_count"] == 1
+    assert resolution["active_rows"][0]["platform"] == "pionex"
+    assert resolution["documented_rows"][0]["review_classification"] == "documented_rounding_dust"
+
+
 def test_dashboard_transaction_search_filters_wallet_tx_and_asset() -> None:
     _reset_store()
     rows = [
@@ -194,6 +261,7 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
     STORE.upsert_fx_rate("2025-01-01", "USDT", "USD", "1", "test", "2025-01-01")
     STORE.upsert_fx_rate("2025-01-01", "HNT", "USD", "5", "test", "2025-01-01")
     STORE.upsert_fx_rate("2025-01-01", "USDC", "USD", "1", "test", "2025-01-01")
+    STORE.upsert_fx_rate("2025-01-03", "BTC", "USD", "100000", "test", "2025-01-03")
     rows = [
         {
             "timestamp_utc": "2025-01-01T00:00:00+00:00",
@@ -285,6 +353,15 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
             "source": "blockpit",
             "tx_id": "blockpit-99:in",
         },
+        {
+            "timestamp_utc": "2025-01-03T00:00:00+00:00",
+            "asset": "BTC",
+            "quantity": "30000",
+            "side": "open",
+            "event_type": "derivative open",
+            "source": "jupiter_perps",
+            "tx_id": "perps-btc-open",
+        },
     ]
     confirm_import("dashboard-test", rows)
 
@@ -297,8 +374,8 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
     assert rows_by_asset_source[("SOL", "test")]["value_usd"] == "300"
     assert rows_by_asset_source[("SOL", "test")]["unpriced_events"] == 0
     assert rows_by_asset_source[("HNT", "test")]["value_usd"] == "115"
-    assert rows_by_asset_source[("USDC", "test")]["value_usd"] == "100"
-    assert rows_by_asset_source[("FAKEUSDCMINT1111111111111111111111111111", "test")]["value_usd"] == "50"
+    assert rows_by_asset_source[("USDC", "test")]["value_usd"] == "150"
+    assert ("FAKEUSDCMINT1111111111111111111111111111", "test") not in rows_by_asset_source
     assert rows_by_asset_source[("USDT", "test")]["value_usd"] == "200"
     assert rows_by_asset_source[("USDT", "blockpit")]["value_usd"] == "1000"
     assert totals[2025]["value_usd"] == "1415"
@@ -311,6 +388,8 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
     source_breakdown = {(item["year"], item["source"]): item for item in activity["source_breakdown"]}
     assert source_breakdown[(2025, "blockpit")]["events"] == 2
     assert overview_resp.data["portfolio_value_history"]
+    portfolio_end = overview_resp.data["portfolio_value_history"][-1]
+    assert float(portfolio_end["value_usd"]) < 10000
 
     yearly_resp = dashboard_yearly_activity(year=2025)
     assert yearly_resp.status == "success"
@@ -319,9 +398,156 @@ def test_dashboard_yearly_values_ignore_transfers_and_deduplicate_trade_pairs_fo
     assert yearly_totals[2025]["value_usd"] == "1415"
     assert all(item["year"] == 2025 for item in yearly_activity["rows"])
 
-    history_resp = dashboard_portfolio_history(window_days=0)
+
+def test_dashboard_yearly_activity_applies_review_timestamp_corrections() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2023-04-20", "IOT", "USD", "0.0006", "test", "2023-04-20")
+    confirm_import(
+        "dashboard-review-correction.csv",
+        [
+            {
+                "timestamp_utc": "2023-04-01T00:00:00+00:00",
+                "asset": "IOT",
+                "quantity": "1000",
+                "side": "in",
+                "event_type": "mining_reward",
+                "source": "heliumgeek",
+                "tx_id": "iot-april-period-start",
+            }
+        ],
+    )
+    event_id = str(STORE.list_raw_events()[0]["unique_event_id"])
+    correction = review_timezone_correct(
+        ReviewTimezoneCorrectRequest(
+            source_event_id=event_id,
+            corrected_timestamp_utc="2023-04-20T00:00:00Z",
+            reason_code="source_period_start",
+            note="HeliumGeek April-Aggregat vor IOT-Launch auf ersten belegbaren Markttag korrigiert.",
+        )
+    )
+    assert correction.status == "success"
+
+    response = dashboard_yearly_activity(year=2023)
+
+    rows = response.data["yearly_asset_activity"]["rows"]
+    iot = next(item for item in rows if item["asset"] == "IOT")
+    assert iot["priced_events"] == 1
+    assert iot["unpriced_events"] == 0
+    assert iot["value_usd"] == "0.6"
+
+    history_resp = dashboard_portfolio_history(window_days=0, year=2023)
     assert history_resp.status == "success"
     assert history_resp.data["portfolio_value_history"]
+    assert all(item["year"] == 2023 for item in history_resp.data["portfolio_value_history"])
+
+    ranged_history_resp = dashboard_portfolio_history(
+        window_days=0,
+        year=2023,
+        interval="day",
+        max_points=500,
+        from_date="2023-04-01",
+        to_date="2023-04-30",
+    )
+    assert ranged_history_resp.status == "success"
+    assert ranged_history_resp.data["interval"] == "day"
+    assert all("2023-04-01" <= item["date"] <= "2023-04-30" for item in ranged_history_resp.data["portfolio_value_history"])
+
+    empty_history_resp = dashboard_portfolio_history(window_days=0, year=2024)
+    assert empty_history_resp.status == "success"
+    assert empty_history_resp.data["portfolio_value_history"] == []
+
+
+def test_dashboard_values_jupiter_swap_from_priced_counterparty_leg() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2024-05-01", "JUP", "USD", "1.25", "test", "2024-05-01")
+    confirm_import(
+        "dashboard-counterparty-swap.csv",
+        [
+            {
+                "timestamp_utc": "2024-05-01T12:00:00+00:00",
+                "asset": "UNKNOWNMINT",
+                "quantity": "1000",
+                "side": "out",
+                "event_type": "swap_out_aggregated",
+                "source": "solana_rpc",
+                "tx_id": "swap-unknown-jup",
+                "raw_row": {
+                    "jupiter_aggregated": True,
+                    "from_asset": "UNKNOWNMINT",
+                    "from_quantity": "1000",
+                    "to_asset": "JUP",
+                    "to_quantity": "12",
+                },
+            }
+        ],
+    )
+
+    response = dashboard_yearly_activity(year=2024)
+
+    rows = response.data["yearly_asset_activity"]["rows"]
+    row = next(item for item in rows if item["asset"] == "UNKNOWNMINT")
+    assert row["priced_events"] == 1
+    assert row["unpriced_events"] == 0
+    assert row["value_usd"] == "15"
+
+
+def test_dashboard_values_binance_market_total_with_eur_quote() -> None:
+    _reset_store()
+    confirm_import(
+        "dashboard-binance-eur-market.csv",
+        [
+            {
+                "timestamp_utc": "2021-06-16T07:49:55+00:00",
+                "asset": "ETH",
+                "quantity": "0.01431",
+                "price": "2093.48",
+                "side": "in",
+                "event_type": "trade",
+                "source": "binance",
+                "tx_id": "binance-trade-eur:in:ETH",
+                "raw_row": {"Market": "ETHEUR", "Total": "29.9576988", "Price": "2093.48"},
+            }
+        ],
+    )
+
+    response = dashboard_yearly_activity(year=2021)
+    preflight = process_preflight(ProcessPreflightRequest(tax_year=2021, ruleset_id="DE-2021-v1.0", ruleset_version="1.0", config={}))
+
+    row = next(item for item in response.data["yearly_asset_activity"]["rows"] if item["asset"] == "ETH")
+    assert row["priced_events"] == 1
+    assert row["unpriced_events"] == 0
+    assert row["value_eur"] == "29.9576988"
+    assert preflight.data["counts"]["unresolved_valuation_events"] == 0
+
+
+def test_dashboard_values_binance_market_total_with_crypto_quote() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2021-06-17", "ETH", "USD", "2500", "test", "2021-06-17")
+    confirm_import(
+        "dashboard-binance-eth-market.csv",
+        [
+            {
+                "timestamp_utc": "2021-06-17T04:31:31+00:00",
+                "asset": "HOT",
+                "quantity": "6952",
+                "price": "0.00000323",
+                "side": "out",
+                "event_type": "trade",
+                "source": "binance",
+                "tx_id": "binance-trade-eth:out:HOT",
+                "raw_row": {"Market": "HOTETH", "Total": "0.02245496", "Price": "0.00000323"},
+            }
+        ],
+    )
+
+    response = dashboard_yearly_activity(year=2021)
+    preflight = process_preflight(ProcessPreflightRequest(tax_year=2021, ruleset_id="DE-2021-v1.0", ruleset_version="1.0", config={}))
+
+    row = next(item for item in response.data["yearly_asset_activity"]["rows"] if item["asset"] == "HOT")
+    assert row["priced_events"] == 1
+    assert row["unpriced_events"] == 0
+    assert row["value_usd"] == "56.1374"
+    assert preflight.data["counts"]["unresolved_valuation_events"] == 0
 
 
 def test_portfolio_helium_legacy_transfers_groups_counterparties() -> None:

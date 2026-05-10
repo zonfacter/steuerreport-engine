@@ -48,6 +48,7 @@ _BULK_IMPORT_EXTENSIONS = {".csv", ".txt", ".json", ".xls", ".xlsx"}
 
 def detect_connector_from_filename(file_path: Path) -> str | None:
     name = file_path.name.lower()
+    parent_names = " ".join(part.lower() for part in file_path.parts[-3:])
     if name.startswith("heliumtracker-report-advanced"):
         return "heliumtracker"
     if "helium-staking wallet" in name and "raw" in name:
@@ -62,7 +63,7 @@ def detect_connector_from_filename(file_path: Path) -> str | None:
         return "bitget"
     if "coinbase" in name:
         return "coinbase"
-    if "pionex" in name:
+    if "pionex" in name or "pionex" in parent_names:
         return "pionex"
     if "heliumgeek" in name:
         return "heliumgeek"

@@ -7,12 +7,14 @@ from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 
 from tax_engine.api.app import (
+    BalanceAdjustmentCandidateUpsertRequest,
     ReportSnapshotCreateRequest,
     ReportSnapshotRestorePlanRequest,
     RulesetUpsertRequest,
     _build_csv_from_rows,
     _build_export_rows,
     _build_report_file_index,
+    _build_wiso_tax_csv,
     _decorate_token_rows,
     _format_ruleset_row,
     _http_exception_handler,
@@ -24,6 +26,7 @@ from tax_engine.api.app import (
     _to_iso_date,
     _unhandled_exception_handler,
     _validation_exception_handler,
+    balance_adjustment_candidate_upsert,
     compliance_classification,
     create_snapshot,
     get_snapshot,
@@ -41,6 +44,7 @@ from tax_engine.api.app import (
     ruleset_upsert,
     snapshot_restore_plan,
 )
+from tax_engine.api.dashboard import _asset_canonical_symbol
 from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
 from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
@@ -206,6 +210,13 @@ def test_report_export_integrity_snapshot_and_compliance_paths() -> None:
     csv_body = asyncio.run(_read_streaming_body(csv_export)).decode("utf-8")
     assert "report_integrity_id" in csv_body
 
+    wiso_export = report_export(job_id=job_id, scope="tax", fmt="wiso")
+    wiso_body = asyncio.run(_read_streaming_body(wiso_export)).decode("utf-8")
+    assert wiso_body.startswith("Identifier:Capital_Gains")
+    assert "Tax_Year:2026" in wiso_body
+    assert "Amount,Currency,Date Acquired,Date Sold,Short / Long" in wiso_body
+    assert report_export(job_id=job_id, scope="derivatives", fmt="wiso").errors[0]["code"] == "invalid_wiso_scope"
+
     assert report_export(job_id=job_id, scope="unknown", fmt="json").errors[0]["code"] == "invalid_scope"
     assert report_export(job_id=job_id, scope="all", fmt="xlsx").errors[0]["code"] == "invalid_format"
     assert report_export(job_id="missing", scope="all", fmt="json").errors[0]["code"] == "job_not_found"
@@ -214,6 +225,42 @@ def test_report_export_integrity_snapshot_and_compliance_paths() -> None:
     classification = compliance_classification(job_id)
     assert classification.status == "success"
     assert classification.data["is_commercial"] is True
+
+
+def test_report_export_marks_draft_when_balance_candidate_blocks_gate() -> None:
+    _reset_store()
+    job_id = _completed_job_with_events()
+    upsert = balance_adjustment_candidate_upsert(
+        BalanceAdjustmentCandidateUpsertRequest(
+            candidate_id="pionex-usdt-opening-balance-2021-12-28",
+            platform="pionex",
+            asset="USDT",
+            quantity_delta="1643.2312211162",
+            effective_timestamp_utc="2021-12-28T00:49:11+00:00",
+            adjustment_type="opening_balance_candidate",
+            status="needs_evidence",
+            reason_code="missing_pionex_bot_start_capital",
+            note="Needs primary Pionex evidence or explicit non-tax review decision.",
+            evidence={"report": "docs/167_PIONEX_USDT_FINAL_BLOCKER_AUDIT_2026-05-09.md"},
+        )
+    )
+    assert upsert.status == "success"
+
+    json_export = report_export(job_id=job_id, scope="all", fmt="json")
+    assert json_export.data["draft_notice"]["status"] == "not_final"
+    assert json_export.data["rows"][0]["line_type"] == "draft_notice"
+    assert "pionex" in json_export.data["rows"][0]["notice_message"].lower()
+
+    csv_export = report_export(job_id=job_id, scope="tax", fmt="csv")
+    csv_body = asyncio.run(_read_streaming_body(csv_export)).decode("utf-8")
+    assert "draft_notice" in csv_body
+    assert "review_gate_blocked_balance_candidate" in csv_body
+
+    wiso_export = report_export(job_id=job_id, scope="tax", fmt="wiso")
+    wiso_body = asyncio.run(_read_streaming_body(wiso_export)).decode("utf-8")
+    assert wiso_body.startswith("Identifier:Capital_Gains")
+    assert "Draft_Status:NOT_FINAL" in wiso_body
+    classification = compliance_classification(job_id)
     assert any(reason["code"] == "mining_threshold" for reason in classification.data["reasons"])
 
     snapshot = create_snapshot(job_id, ReportSnapshotCreateRequest(notes="coverage snapshot"))
@@ -260,7 +307,20 @@ def test_report_helpers_and_review_gate_empty_completed_job_paths() -> None:
     assert any(item["code"] == "process_job_empty" for item in gates.data["warning_reasons"])
     assert any(item["code"] == "job_id_missing" for item in review_gates().data["warning_reasons"])
 
-    job = {"job_id": job_id, "tax_year": 2026, "ruleset_id": "DE-2026-v1.0", "ruleset_version": "1.0"}
+    job = {
+        "job_id": job_id,
+        "tax_year": 2026,
+        "ruleset_id": "DE-2026-v1.0",
+        "ruleset_version": "1.0",
+        "result_summary": {
+            "tax_domain_summary": {
+                "anlage_so": {"leistungen_income_eur": "5.0"},
+                "euer": {"betriebsergebnis_eur": "0"},
+                "termingeschaefte": {"netto_eur": "-7"},
+                "classification_counts": {"reward_events": 1},
+            }
+        },
+    }
     tax_rows = [
         {
             "line_no": 1,
@@ -279,13 +339,23 @@ def test_report_helpers_and_review_gate_empty_completed_job_paths() -> None:
         include_derivatives=True,
         integrity={"report_integrity_id": "rid", "config_hash": "cfg", "data_hash": "data"},
     )
-    assert {row["line_type"] for row in export_rows} == {"tax", "derivative"}
-    assert export_rows[0]["lot_source_event_id"] == "buy-event"
-    assert export_rows[0]["transfer_chain_id"] == "match-1"
+    assert {row["line_type"] for row in export_rows} == {"tax_domain_summary", "tax", "derivative"}
+    tax_export = next(row for row in export_rows if row["line_type"] == "tax")
+    summary_export = next(row for row in export_rows if row.get("event_type") == "leistungen_income_eur")
+    assert tax_export["lot_source_event_id"] == "buy-event"
+    assert tax_export["transfer_chain_id"] == "match-1"
+    assert summary_export["summary_value_eur"] == "5.0"
     assert "report_integrity_id" in _build_csv_from_rows(export_rows)
     assert "transfer_chain_id" in _build_csv_from_rows(export_rows)
-    files = _build_report_file_index(job, tax_line_count=1, derivative_line_count=1)
+    assert "summary_value_eur" in _build_csv_from_rows(export_rows)
+    wiso_csv = _build_wiso_tax_csv(job, tax_rows)
+    assert wiso_csv.startswith("Identifier:Capital_Gains,Method:FIFO,Tax_Year:2026,Base_Currency:EUR,Par22Nr3:5")
+    assert "Amount,Currency,Date Acquired,Date Sold,Short / Long" in wiso_csv
+    files = _build_report_file_index(job, tax_line_count=1, derivative_line_count=1, summary_line_count=4)
     assert any(item["format"] == "pdf" and item["scope"] == "all" for item in files)
+    assert any(item["format"] == "wiso" and item["scope"] == "tax" for item in files)
+    tax_file = next(item for item in files if item["scope"] == "tax" and item["format"] == "json")
+    assert tax_file["row_count"] == 5
 
 
 def test_dashboard_setting_helpers_cover_alias_overrides_and_invalid_payloads() -> None:
@@ -318,6 +388,7 @@ def test_dashboard_setting_helpers_cover_alias_overrides_and_invalid_payloads() 
     )
 
     assert _load_token_aliases()[mint]["symbol"] == "IOT"
+    assert _asset_canonical_symbol(mint, _load_token_aliases()) == "IOT"
     decorated = _decorate_token_rows([{"asset": mint, "quantity": "1000000000"}])
     assert decorated[0]["symbol"] == "IOT"
     assert decorated[0]["ignored"] == "true"

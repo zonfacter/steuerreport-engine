@@ -27,11 +27,14 @@ const state = {
   reviewActions: [],
   integrationRows: [],
   integrationConflicts: [],
+  negativeBalances: [],
   importSources: [],
   importJobs: [],
   transactionSearchRows: [],
   selectedImportJob: null,
   dashboard: null,
+  platformLedger: null,
+  aiReadonlyQueue: null,
   admin: {
     settings: [],
     runtime: null,
@@ -84,6 +87,7 @@ const REVIEW_LABELS = {
   mining: "Mining",
   trading: "Trading",
   transfers: "Transfers",
+  platforms: "Plattform-Ledger",
   tax: "Steuer",
 };
 
@@ -296,12 +300,14 @@ async function loadProcessOptions() {
   state.processOptions = data.data;
   const yearSelect = el("taxYear");
   if (yearSelect && Array.isArray(data.data?.tax_years)) {
-    const current = yearSelect.value || String(data.data.default_tax_year || "2026");
+    const dashboardYear = dashboardYearFilter() || loadPref("field.globalYearFilter", "");
+    const current = dashboardYear || yearSelect.value || String(data.data.default_tax_year || "2026");
     yearSelect.innerHTML = data.data.tax_years
       .map((year) => `<option value="${year}">${year}</option>`)
       .join("");
     yearSelect.value = data.data.tax_years.includes(Number(current)) ? current : String(data.data.default_tax_year || "2026");
   }
+  populateGlobalYearFilter();
   syncTaxRunSelection();
 }
 
@@ -345,7 +351,7 @@ function currencyLabel() {
 }
 
 function dashboardYearFilter() {
-  return String(el("globalYearFilter")?.value || "").trim();
+  return String(el("globalYearFilter")?.value || el("dashboardYearMirror")?.value || "").trim();
 }
 
 function filterRowsByDashboardYear(rows, field = "year") {
@@ -444,6 +450,9 @@ function switchReviewTab(tab) {
   $$(".review-tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.reviewTab === tab));
   $$(".review-panel").forEach((panel) => panel.classList.toggle("hidden", panel.dataset.reviewPanel !== tab));
   try { localStorage.setItem("ui.reviewTab", String(tab)); } catch (_) {}
+  if (tab === "platforms" && !state.platformLedger) {
+    loadPlatformLedgerStatus(true);
+  }
   updateContextPath();
   syncRailState();
   refreshPresetUi();
@@ -741,6 +750,7 @@ function collectCurrentViewState() {
     "dashShowIgnored",
     "dashTokenPageSize",
     "dashLotAsset",
+    "dashLotDomain",
     "dashLotAsOf",
     "taxFilterAsset",
     "taxFilterStatus",
@@ -930,15 +940,49 @@ function renderDashboard(data) {
   updateWorkflowGuide();
 }
 
-function populateGlobalYearFilter(activityYears) {
+function addDashboardYearOption(years, value) {
+  const year = Number(String(value ?? "").slice(0, 4));
+  if (Number.isInteger(year) && year >= 2020 && year <= 2100) {
+    years.add(String(year));
+  }
+}
+
+function collectDashboardYearOptions(activityYears = []) {
+  const years = new Set();
+  const currentYear = new Date().getFullYear();
+  for (let year = 2020; year <= currentYear; year += 1) {
+    years.add(String(year));
+  }
+
+  const addYearItems = (items) => {
+    if (!Array.isArray(items)) return;
+    items.forEach((item) => addDashboardYearOption(years, typeof item === "object" ? item?.year : item));
+  };
+
+  addYearItems(activityYears);
+  addYearItems(state.processOptions?.tax_years);
+  addYearItems(state.dashboard?.activity_years);
+
+  const yearly = state.dashboard?.yearly_asset_activity || {};
+  addYearItems(yearly.years);
+  addYearItems(yearly.rows);
+  addYearItems(yearly.totals_by_year);
+  addYearItems(yearly.event_breakdown);
+  addYearItems(yearly.source_breakdown);
+
+  if (Array.isArray(state.dashboard?.portfolio_value_history)) {
+    state.dashboard.portfolio_value_history.forEach((point) => addDashboardYearOption(years, point?.date));
+  }
+
+  return Array.from(years).sort();
+}
+
+function populateGlobalYearFilter(activityYears = []) {
   const select = el("globalYearFilter");
   const mirror = el("dashboardYearMirror");
   if (!select && !mirror) return;
-  const current = select?.value || mirror?.value || loadPref("field.globalYearFilter", "");
-  const years = (Array.isArray(activityYears) ? activityYears : [])
-    .map((item) => String(item.year || ""))
-    .filter(Boolean)
-    .sort();
+  const current = select?.value || mirror?.value || "";
+  const years = collectDashboardYearOptions(activityYears);
   const signature = years.join("|");
   [select, mirror].filter(Boolean).forEach((node) => {
     if (node.dataset.signature === signature) return;
@@ -961,8 +1005,10 @@ function populateGlobalYearFilter(activityYears) {
   syncDashboardYearControls(false);
 }
 
-function syncDashboardYearControls(updateTaxYear = true) {
-  const selectedYear = dashboardYearFilter() || String(el("dashboardYearMirror")?.value || "").trim();
+function syncDashboardYearControls(updateTaxYear = true, forcedYear = null) {
+  const selectedYear = String(
+    forcedYear ?? el("globalYearFilter")?.value ?? el("dashboardYearMirror")?.value ?? el("yearlyYearFilter")?.value ?? ""
+  ).trim();
   if (el("globalYearFilter")) {
     el("globalYearFilter").value = selectedYear;
   }
@@ -1530,6 +1576,7 @@ function renderLotAging(rows, assets = []) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${escapeHtml(item.asset || "")}</td>
+      <td><span class="status-badge ${item.domain === "business" ? "status-warn" : "status-default"}">${escapeHtml(item.domain || "private")}</span></td>
       <td class="num ${qty < 0 ? "num-neg" : qty > 0 ? "num-pos" : ""}">${formatQty(qty)}</td>
       <td>${escapeHtml(item.buy_timestamp_utc || "")}</td>
       <td class="num">${Number.isFinite(holdDays) ? Math.floor(holdDays) : ""}</td>
@@ -1541,7 +1588,7 @@ function renderLotAging(rows, assets = []) {
   });
   if (!rows?.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="7">Keine Lots vorhanden.</td>';
+    tr.innerHTML = '<td colspan="8">Keine Lots vorhanden.</td>';
     tbody.appendChild(tr);
   }
 }
@@ -1623,23 +1670,30 @@ function renderIssues(rows) {
   pageRows.forEach((item) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${item.issue_id || ""}</td>
-      <td>${item.status || ""}</td>
-      <td>${item.severity || ""}</td>
-      <td>${item.type || ""}</td>
-      <td>${item.asset || ""}</td>
-      <td title="${item.note || ""}">${item.detail || ""}</td>
+      <td>${escapeHtml(item.issue_id || "")}</td>
+      <td>${escapeHtml(item.status || "")}</td>
+      <td>${escapeHtml(item.severity || "")}</td>
+      <td title="${escapeHtml(item.scope_note || "")}">${escapeHtml(item.review_scope || "current")}</td>
+      <td>${escapeHtml(item.type || "")}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td title="${escapeHtml(item.note || "")}">${escapeHtml(item.detail || "")}</td>
+      <td>
+        <button type="button" class="btn-issue-context" data-issue-id="${escapeHtml(item.issue_id || "")}">Kontext</button>
+        ${
+          item.type === "zero_cost_tax_lots" && item.status !== "wont_fix"
+            ? `<button type="button" class="btn-issue-confirm-zero" data-issue-id="${escapeHtml(item.issue_id || "")}">Nullbasis bestätigen</button>`
+            : ""
+        }
+      </td>
     `;
     tr.addEventListener("click", () => {
-      el("issueId").value = item.issue_id || "";
-      el("issueStatus").value = item.status || "open";
-      el("issueNote").value = item.note || "";
+      selectIssue(item);
     });
     tbody.appendChild(tr);
   });
   if (!filtered?.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="6">Keine offenen Issues.</td>';
+    tr.innerHTML = '<td colspan="8">Keine offenen Issues.</td>';
     tbody.appendChild(tr);
   }
   const info = el("reviewIssuePageInfo");
@@ -1649,6 +1703,115 @@ function renderIssues(rows) {
   if (prev) prev.disabled = state.paging.issuePage <= 1;
   if (next) next.disabled = state.paging.issuePage >= totalPages;
   updateWorkflowGuide();
+}
+
+async function reloadIssues(silent = true) {
+  const data = await callApi("/api/v1/issues/inbox", "GET", null, null, silent);
+  if (!data?.data) return false;
+  state.issues = data.data.issues ?? [];
+  state.paging.issuePage = 1;
+  renderIssues(state.issues);
+  await loadReviewGates(true);
+  return true;
+}
+
+function selectIssue(item) {
+  if (!item) return;
+  if (el("issueId")) el("issueId").value = item.issue_id || "";
+  if (el("issueStatus")) el("issueStatus").value = item.status || "open";
+  if (el("issueNote")) el("issueNote").value = item.note || "";
+}
+
+async function loadIssueContext(issueId, trigger = null) {
+  const id = String(issueId || "").trim();
+  if (!id) {
+    showToast("Issue-ID fehlt.", "warn");
+    return;
+  }
+  const data = await callApi(`/api/v1/review/issue-context/${encodeURIComponent(id)}`, "GET", null, trigger, true);
+  if (!data?.data) return;
+  renderIssueContext(data.data);
+}
+
+function renderIssueContext(data) {
+  const host = el("issueContextPanel");
+  if (!host) return;
+  const type = String(data.type || "");
+  if (type === "zero_cost_tax_lots") {
+    const rows = Array.isArray(data.tax_lines) ? data.tax_lines : [];
+    host.innerHTML = `
+      <h4>Zero-Cost Kontext</h4>
+      <div class="metrics">
+        <div class="metric"><span>Issue</span><strong title="${escapeHtml(data.issue_id || "")}">${escapeHtml(shortText(data.issue_id || "", 28))}</strong></div>
+        <div class="metric"><span>Jahr / Asset</span><strong>${escapeHtml(data.tax_year || "-")} / ${escapeHtml(data.asset || "-")}</strong></div>
+        <div class="metric"><span>Zeilen</span><strong>${escapeHtml(data.row_count || 0)}</strong></div>
+        <div class="metric"><span>Erlöse EUR</span><strong>${escapeHtml(formatMoney(data.total_proceeds_eur || 0))}</strong></div>
+      </div>
+      <div class="detail-grid">
+        <div><span>Status</span><strong>${escapeHtml(data.status || "open")}</strong></div>
+        <div><span>Entscheidung</span><strong>Nullbasis bleibt sichtbar, wenn bestätigt</strong></div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn-issue-context" data-issue-id="${escapeHtml(data.issue_id || "")}">Aktualisieren</button>
+        <button type="button" class="btn-issue-confirm-zero" data-issue-id="${escapeHtml(data.issue_id || "")}">Nullbasis bestätigen</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Asset</th>
+              <th class="num">Menge</th>
+              <th class="num">Erlös EUR</th>
+              <th class="num">Cost Basis EUR</th>
+              <th>Source Event</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${escapeHtml(row.sell_timestamp_utc || "")}</td>
+                <td>${escapeHtml(row.asset || "")}</td>
+                <td class="num">${escapeHtml(formatQty(row.qty || 0))}</td>
+                <td class="num">${escapeHtml(formatMoney(row.proceeds_eur || 0))}</td>
+                <td class="num">${escapeHtml(formatMoney(row.cost_basis_eur || 0))}</td>
+                <td title="${escapeHtml(row.source_event_id || "")}">${escapeHtml(shortHash(row.source_event_id || ""))}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+    return;
+  }
+  host.innerHTML = `
+    <h4>Issue-Kontext</h4>
+    <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+  `;
+}
+
+async function confirmZeroBasisIssue(issueId, trigger = null) {
+  const id = String(issueId || "").trim();
+  if (!id) {
+    showToast("Issue-ID fehlt.", "warn");
+    return;
+  }
+  const ok = window.confirm(
+    "Nullbasis fachlich bestätigen? Die Steuerzeilen bleiben mit Cost Basis 0 sichtbar, nur das Review-Issue wird auf wont_fix gesetzt."
+  );
+  if (!ok) return;
+  const note = "Explizite Review-Entscheidung: Anschaffungskette nicht belegbar, Nullbasis bleibt im Steuerreport sichtbar dokumentiert.";
+  const res = await callApi(
+    "/api/v1/issues/update-status",
+    "POST",
+    { issue_id: id, status: "wont_fix", note },
+    trigger
+  );
+  if (res?.status === "success") {
+    await reloadIssues(true);
+    await loadIssueContext(id);
+    showToast("Nullbasis-Entscheidung gespeichert.", "ok");
+  }
 }
 
 function countBy(rows, key) {
@@ -1670,19 +1833,20 @@ function renderIssueSummary(rows) {
   if (!host) return;
   const issues = Array.isArray(rows) ? rows : [];
   const byType = countBy(issues, "type");
-  const bySeverity = countBy(issues, "severity");
   const byStatus = countBy(issues, "status");
   const byAsset = countBy(issues, "asset");
-  const highOpen = issues.filter((item) => item.status === "open" && item.severity === "high").length;
-  const mediumOpen = issues.filter((item) => item.status === "open" && item.severity === "medium").length;
+  const currentIssues = issues.filter((item) => item.is_current_scope !== false);
+  const historicalOpen = issues.filter((item) => item.status === "open" && item.is_current_scope === false).length;
+  const highOpen = currentIssues.filter((item) => item.status === "open" && item.severity === "high").length;
+  const mediumOpen = currentIssues.filter((item) => item.status === "open" && item.severity === "medium").length;
   host.innerHTML = "";
   [
     { label: "Issues Gesamt", value: String(issues.length), sub: topCountLabel(byStatus) },
     { label: "High offen", value: String(highOpen), sub: highOpen ? "exportkritisch" : "kein Blocker" },
     { label: "Medium offen", value: String(mediumOpen), sub: "prüfen, aber nicht automatisch Blocker" },
+    { label: "Altjahr offen", value: String(historicalOpen), sub: "sichtbar, nicht Current-Gate" },
     { label: "Typen", value: topCountLabel(byType), sub: "dominierende Issue-Arten" },
     { label: "Assets", value: topCountLabel(byAsset), sub: "betroffene Assets" },
-    { label: "Severity", value: topCountLabel(bySeverity), sub: "Risikostufen" },
   ].forEach((item) => {
     const div = document.createElement("div");
     div.className = "metric";
@@ -1698,15 +1862,25 @@ function renderReviewGates(gates) {
   const summary = el("gateSummary");
   const blockersHost = el("gateBlockers");
   const warningsHost = el("gateWarnings");
+  const actionHost = el("gateActionPanel");
+  const previewHost = el("gateDecisionPreview");
+  const balanceCandidates = Array.isArray(gates?.balance_adjustment_candidates) ? gates.balance_adjustment_candidates : [];
   if (!badge || !summary || !blockersHost || !warningsHost) return;
 
   blockersHost.innerHTML = "";
   warningsHost.innerHTML = "";
+  if (actionHost) actionHost.innerHTML = "";
+  if (previewHost) {
+    previewHost.innerHTML = "";
+    previewHost.classList.add("hidden");
+  }
 
   if (!gates || typeof gates !== "object") {
     badge.textContent = "unbekannt";
     badge.className = "status-badge status-default";
     summary.textContent = "Prüfung noch nicht ausgeführt.";
+    renderGateBalanceCandidates([]);
+    renderGateActionPanel(null);
     if (el("globalIssueBadge")) el("globalIssueBadge").textContent = "Issues: -";
     setCsvButtonsDisabled(true, "Review-Gates noch nicht geprüft.");
     return;
@@ -1721,11 +1895,14 @@ function renderReviewGates(gates) {
   badge.className = allow ? "status-badge status-alias" : "status-badge status-spam";
   summary.textContent =
     `Unmatched: ${counts.unmatched_total || 0}, offene Issues: ${counts.issues_open || 0}, ` +
-    `High-Severity offen: ${counts.issues_high_open || 0}`;
+    `Altjahr offen: ${counts.issues_historical_open || 0}, ` +
+    `High-Severity offen: ${counts.issues_high_open || 0}, ` +
+    `Balance-Review offen: ${counts.balance_adjustment_candidates_open || 0}`;
   if (el("globalIssueBadge")) {
     const totalOpen = Number(counts.issues_open || 0);
+    const historicalOpen = Number(counts.issues_historical_open || 0);
     const highOpen = Number(counts.issues_high_open || 0);
-    el("globalIssueBadge").textContent = `Issues: ${totalOpen}${highOpen ? ` / High ${highOpen}` : ""}`;
+    el("globalIssueBadge").textContent = `Issues: ${totalOpen}${historicalOpen ? ` / Alt ${historicalOpen}` : ""}${highOpen ? ` / High ${highOpen}` : ""}`;
     el("globalIssueBadge").className = highOpen ? "pill pill-err" : (totalOpen ? "pill pill-neutral" : "pill pill-ok");
   }
 
@@ -1746,7 +1923,180 @@ function renderReviewGates(gates) {
     blockersHost.appendChild(li);
   }
 
+  renderGateBalanceCandidates(balanceCandidates);
+  renderGateActionPanel(gates);
   setCsvButtonsDisabled(!allow, allow ? "" : "Export gesperrt: Review-Gates nicht erfüllt.");
+}
+
+function renderGateActionPanel(gates) {
+  const host = el("gateActionPanel");
+  if (!host) return;
+  host.innerHTML = "";
+  if (!gates || typeof gates !== "object") return;
+  const policy = gates.draft_export_policy || {};
+  const candidates = Array.isArray(gates.balance_adjustment_candidates) ? gates.balance_adjustment_candidates : [];
+  if (gates.allow_export) {
+    const card = document.createElement("div");
+    card.className = "source-card";
+    card.innerHTML = `<span>Exportstatus</span><strong>Final freigegeben</strong><small>${escapeHtml(policy.message || "Review-Gates erfüllt.")}</small>`;
+    host.appendChild(card);
+    return;
+  }
+  candidates.forEach((item) => {
+    const evidence = Array.isArray(item.required_evidence) ? item.required_evidence : [];
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "source-card action-card";
+    card.innerHTML = `
+      <span>${escapeHtml(item.platform || "")} / ${escapeHtml(item.asset || "")}</span>
+      <strong>${escapeHtml(item.status || "")} · Vorschau</strong>
+      <small>${evidence.map((entry) => escapeHtml(entry)).join("<br>") || escapeHtml(item.note || "")}</small>
+    `;
+    card.addEventListener("click", async () => {
+      await loadGateDecisionPreview(item.candidate_id || "");
+    });
+    host.appendChild(card);
+  });
+  const draft = document.createElement("button");
+  draft.type = "button";
+  draft.className = "source-card action-card";
+  draft.innerHTML = `
+    <span>Entwurfsreport</span>
+    <strong>Mit offenem Hinweis laden</strong>
+    <small>${escapeHtml(policy.message || "Finaler Export bleibt gesperrt, Entwurf kann zur Prüfung geöffnet werden.")}</small>
+  `;
+  draft.addEventListener("click", async () => {
+    await loadReportFiles(currentJobId(), false);
+    showToast("Entwurfsdateien geladen. Finaler Export bleibt gesperrt.", "warn");
+  });
+  host.appendChild(draft);
+}
+
+async function loadGateDecisionPreview(candidateId) {
+  const id = String(candidateId || "").trim();
+  if (!id) {
+    showToast("Kein Kandidat ausgewählt.", "warn");
+    return;
+  }
+  const data = await callApi(
+    `/api/v1/review/balance-adjustment-candidates/${encodeURIComponent(id)}/decision-preview`,
+    "GET",
+    null,
+    null,
+    false,
+  );
+  if (data?.status !== "success") return;
+  renderGateDecisionPreview(data.data || {});
+  showToast("Read-only Entscheidungsvorschau geladen.", "ok");
+}
+
+async function loadGateEvidencePackage(candidateId) {
+  const id = String(candidateId || "").trim();
+  if (!id) {
+    showToast("Kein Kandidat ausgewählt.", "warn");
+    return;
+  }
+  const data = await callApi(
+    `/api/v1/review/balance-adjustment-candidates/${encodeURIComponent(id)}/evidence-package`,
+    "GET",
+    null,
+    null,
+    false,
+  );
+  if (data?.status !== "success") return;
+  renderGateEvidencePackage(data.data || {});
+  showToast("Pionex-Belegpaket geladen.", "ok");
+}
+
+function renderGateDecisionPreview(preview) {
+  const host = el("gateDecisionPreview");
+  if (!host) return;
+  const candidate = preview.candidate || {};
+  const effect = preview.current_gate_effect || {};
+  const payload = preview.approval_payload_template || {};
+  const decisions = Array.isArray(preview.available_decisions) ? preview.available_decisions : [];
+  const safety = Array.isArray(preview.safety_notes) ? preview.safety_notes : [];
+  host.classList.remove("hidden");
+  host.innerHTML = `
+    <h4>Read-only Entscheidungsvorschau</h4>
+    <span><strong>Kandidat</strong><br>${escapeHtml(candidate.candidate_id || "")}</span>
+    <span><strong>Status</strong><br>${escapeHtml(preview.current_status || "")}</span>
+    <span><strong>Finalexport blockiert</strong><br>${effect.blocks_final_export ? "ja" : "nein"}</span>
+    <span><strong>Steuerwirksam</strong><br>${effect.tax_effective ? "ja" : "nein"}</span>
+    <button type="button" class="source-card action-card" id="btnGateEvidencePackage">
+      <span>Belegpaket</span>
+      <strong>Pionex Support-ZIP laden</strong>
+      <small>Supporttext, bekannte Transfers und Audit-Dateien anzeigen.</small>
+    </button>
+    <div class="detail-grid">
+      ${decisions.map((item) => `
+        <div class="source-card">
+          <span>${escapeHtml(item.decision || "")}</span>
+          <strong>${escapeHtml(item.resulting_status || "")}</strong>
+          <small>${escapeHtml(item.when_to_use || "")}</small>
+        </div>
+      `).join("")}
+    </div>
+    <p class="muted">${safety.map((item) => escapeHtml(item)).join(" · ")}</p>
+    <pre class="log-box">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>
+  `;
+  const button = el("btnGateEvidencePackage");
+  if (button) {
+    button.addEventListener("click", async () => {
+      await loadGateEvidencePackage(candidate.candidate_id || "");
+    });
+  }
+}
+
+function renderGateEvidencePackage(pkg) {
+  const host = el("gateDecisionPreview");
+  if (!host) return;
+  const files = Array.isArray(pkg.files) ? pkg.files : [];
+  const transfers = Array.isArray(pkg.known_transfers) ? pkg.known_transfers : [];
+  const zip = pkg.zip_file || {};
+  host.classList.remove("hidden");
+  host.innerHTML = `
+    <h4>Pionex-Belegpaket</h4>
+    <span><strong>Kandidat</strong><br>${escapeHtml(pkg.candidate_id || "")}</span>
+    <span><strong>ZIP</strong><br>${escapeHtml(zip.path || "")} (${Number(zip.size_bytes || 0)} Bytes)</span>
+    <span><strong>Bekannte Transfers</strong><br>${Number(pkg.known_transfer_count || transfers.length || 0)}</span>
+    <div class="detail-grid">
+      ${files.map((item) => `
+        <div class="source-card">
+          <span>${escapeHtml(item.key || "")}</span>
+          <strong>${item.exists ? "vorhanden" : "fehlt"}</strong>
+          <small>${escapeHtml(item.path || "")}</small>
+        </div>
+      `).join("")}
+    </div>
+    <pre class="log-box">${escapeHtml(pkg.support_request_en || pkg.support_request_de || "")}</pre>
+    <pre class="log-box">${escapeHtml(JSON.stringify(transfers.slice(0, 20), null, 2))}</pre>
+  `;
+}
+
+function renderGateBalanceCandidates(rows) {
+  const tbody = el("gateBalanceCandidateTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  const items = Array.isArray(rows) ? rows : [];
+  items.forEach((item) => {
+    const decision = item.review_decision || {};
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td title="${escapeHtml(item.candidate_id || "")}">${escapeHtml(shortHash(item.candidate_id || ""))}</td>
+      <td>${escapeHtml(item.platform || "")}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.quantity_delta || 0)}</td>
+      <td>${escapeHtml(item.status || "")}<br><small class="muted">tax_effective=${item.tax_effective === true ? "true" : "false"}</small></td>
+      <td>${escapeHtml(decision.label || decision.decision || "")}<br><small class="muted">${escapeHtml(decision.note || item.reason_code || "")}</small></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6">Keine offenen Review-only Balance-Kandidaten.</td>';
+    tbody.appendChild(tr);
+  }
 }
 
 async function loadReviewGates(silent = true) {
@@ -2046,12 +2396,6 @@ async function loadDashboard() {
     loadLegacyHntTransfers(true);
     const suggestedYear = shell.data?.summary?.suggested_tax_year;
     const currentTaxYear = el("taxYear").value.trim();
-    const currentDashboardYear = dashboardYearFilter();
-    if (suggestedYear && !currentDashboardYear) {
-      el("globalYearFilter").value = String(suggestedYear);
-      syncDashboardYearControls(false);
-      renderDashboard(state.dashboard);
-    }
     if (suggestedYear && (!currentTaxYear || currentTaxYear === "2026")) {
       el("taxYear").value = String(suggestedYear);
       syncTaxRunSelection();
@@ -2060,6 +2404,9 @@ async function loadDashboard() {
   await Promise.all([
     loadDashboardYearlyActivity(),
     loadDashboardPortfolioHistory(),
+    loadDashboardNegativeBalances(),
+    loadPlatformLedgerStatus(true),
+    loadAiReadonlyQueueStatus(true),
   ]);
 }
 
@@ -2072,19 +2419,103 @@ async function loadDashboardYearlyActivity() {
     ...(state.dashboard || {}),
     yearly_asset_activity: res.data?.yearly_asset_activity || {},
   };
+  populateGlobalYearFilter(state.dashboard.yearly_asset_activity?.years || []);
   renderYearlyAssetActivity(state.dashboard.yearly_asset_activity);
   renderCockpit();
 }
 
 async function loadDashboardPortfolioHistory() {
-  const res = await callApi("/api/v1/dashboard/portfolio-history?window_days=3650", "GET", null, null, true);
+  const year = dashboardYearFilter();
+  const range = portfolioRangeValue();
+  const query = new URLSearchParams({
+    window_days: range,
+    interval: portfolioIntervalValue(),
+    max_points: String(portfolioMaxPoints()),
+  });
+  if (year) query.set("year", year);
+  const res = await callApi(`/api/v1/dashboard/portfolio-history?${query.toString()}`, "GET", null, null, true);
   if (res?.status !== "success") return;
   state.dashboard = {
     ...(state.dashboard || {}),
     portfolio_value_history: res.data?.portfolio_value_history || [],
+    portfolio_value_summary: res.data?.summary || {},
+    portfolio_value_interval: res.data?.interval || "",
+    portfolio_value_max_points: res.data?.max_points || 0,
   };
+  populateGlobalYearFilter();
   renderPortfolioValueHistory(state.dashboard.portfolio_value_history, dashboardYearFilter());
   renderCockpit();
+}
+
+function portfolioRangeValue() {
+  const select = el("portfolioRange");
+  const value = String(select?.value || loadPref("field.portfolioRange", "all")).trim();
+  return value === "all" || !value ? "0" : value;
+}
+
+function portfolioIntervalValue() {
+  return String(el("portfolioInterval")?.value || loadPref("field.portfolioInterval", "auto") || "auto").trim();
+}
+
+function portfolioMaxPoints() {
+  const canvas = el("chartPortfolioValueHistory");
+  const width = canvas?.parentElement?.clientWidth || canvas?.clientWidth || 900;
+  return Math.min(Math.max(Math.floor(width / 4), 120), 1200);
+}
+
+async function loadDashboardNegativeBalances() {
+  const year = dashboardYearFilter();
+  const query = new URLSearchParams({ limit: "50", include_events: "1" });
+  if (year) query.set("year", year);
+  const res = await callApi(`/api/v1/review/negative-balances?${query.toString()}`, "GET", null, null, true);
+  if (res?.status !== "success") return;
+  state.negativeBalances = res.data?.rows || [];
+  renderNegativeBalances(state.negativeBalances);
+}
+
+async function loadPlatformLedgerStatus(silent = false) {
+  const res = await callApi("/api/v1/platform-ledger/status", "GET", null, null, true);
+  if (res?.status !== "success") {
+    if (!silent) showToast("Plattform-Ledger konnte nicht geladen werden.", "error");
+    return;
+  }
+  state.platformLedger = res.data || {};
+  renderPlatformLedgerStatus(state.platformLedger);
+  if (!silent) showToast("Plattform-Ledger geladen.", "ok");
+}
+
+async function loadAiReadonlyQueueStatus(silent = false) {
+  const res = await callApi("/api/v1/ai-readonly-queue/status", "GET", null, null, true);
+  if (res?.status !== "success") {
+    if (!silent) showToast("KI-Queue konnte nicht geladen werden.", "error");
+    return;
+  }
+  state.aiReadonlyQueue = res.data || {};
+  renderAiReadonlyQueueStatus(state.aiReadonlyQueue);
+  if (!silent) showToast("KI-Queue geladen.", "ok");
+}
+
+async function applyDashboardYearFilter({ toast = false } = {}) {
+  syncDashboardYearControls();
+  await Promise.all([
+    loadDashboardYearlyActivity(),
+    loadDashboardPortfolioHistory(),
+    loadDashboardNegativeBalances(),
+    loadPlatformLedgerStatus(true),
+    loadAiReadonlyQueueStatus(true),
+  ]);
+  const snapshot = state.dashboard?.lastSnapshot;
+  if (snapshot?.scope && snapshot?.entity_id) {
+    await refreshWalletSnapshotChart(snapshot.scope, snapshot.entity_id);
+  }
+  if (state.selectedWalletGroupId) {
+    await refreshPortfolioSetHistory(state.selectedWalletGroupId);
+  }
+  renderDashboard(state.dashboard);
+  if (currentJobId()) await loadTaxDomainSummary(currentJobId(), true);
+  if (toast) {
+    showToast(dashboardYearFilter() ? `Dashboard-Zeitraum ${dashboardYearFilter()} aktiv.` : "Dashboard zeigt alle Jahre.", "ok");
+  }
 }
 
 function renderIntegrationTable(rows) {
@@ -2516,6 +2947,7 @@ function renderYearlyAssetActivity(activity) {
   const sourceBreakdown = Array.isArray(activity?.source_breakdown) ? activity.source_breakdown : [];
   const filter = (el("yearlyAssetFilter")?.value || "").trim().toLowerCase();
   populateYearlyYearFilter(activity?.years ?? [], rows);
+  populateGlobalYearFilter(activity?.years ?? []);
   populateYearlySourceFilter(sourceBreakdown, rows);
   const selectedYear = dashboardYearFilter() || (el("yearlyYearFilter")?.value || "").trim();
   if (el("yearlyYearFilter") && el("yearlyYearFilter").value !== selectedYear) {
@@ -2762,6 +3194,7 @@ function renderPortfolioValueHistory(points, selectedYear = "") {
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const labels = visible.map((point) => point.date || "");
   const values = visible.map((point) => toNumber(point.value_eur || 0));
+  const pointRadius = visible.length > 180 ? 0 : visible.length > 90 ? 1 : 2;
   buildChart("chartPortfolioValueHistory", {
     type: "line",
     data: {
@@ -2772,8 +3205,9 @@ function renderPortfolioValueHistory(points, selectedYear = "") {
         borderColor: "#54a2f0",
         backgroundColor: "rgba(84,162,240,0.18)",
         borderWidth: 2,
-        pointRadius: 2,
-        tension: 0.25,
+        pointRadius,
+        pointHoverRadius: 4,
+        tension: visible.length > 120 ? 0.12 : 0.25,
         fill: true,
       }],
     },
@@ -2786,7 +3220,11 @@ function renderPortfolioValueHistory(points, selectedYear = "") {
             label: (ctx) => `Portfolio-Wert: ${formatCurrency(ctx.parsed.y, "EUR")}`,
             afterLabel: (ctx) => {
               const point = visible[ctx.dataIndex] || {};
-              return `bewertet: ${formatInt(point.priced_assets || 0)}, unbewertet: ${formatInt(point.unpriced_assets || 0)}`;
+              return [
+                `Datum: ${point.date || ""}`,
+                `bewertet: ${formatInt(point.priced_assets || 0)}, unbewertet: ${formatInt(point.unpriced_assets || 0)}`,
+                `Punkte: ${formatInt(visible.length)} · Intervall: ${state.dashboard?.portfolio_value_interval || portfolioIntervalValue()}`,
+              ];
             },
           },
         },
@@ -2799,6 +3237,337 @@ function renderPortfolioValueHistory(points, selectedYear = "") {
       },
     },
   });
+}
+
+function renderNegativeBalances(rows) {
+  const tbody = el("negativeBalanceTable")?.querySelector("tbody");
+  const summary = el("negativeBalanceSummary");
+  const items = Array.isArray(rows) ? rows : [];
+  if (summary) {
+    const openHigh = items.filter((item) => item.status === "open" && item.severity === "high").length;
+    const year = dashboardYearFilter();
+    summary.textContent = `${items.length} Negativbestand-Issues${year ? ` im Jahr ${year}` : ""}, davon ${openHigh} offen/high. Bearbeitung erfolgt über die Review-API.`;
+  }
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  items.slice(0, 50).forEach((item) => {
+    const last = item.last_event || {};
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${item.date || ""}</td>
+      <td>${item.asset || ""}</td>
+      <td>${item.status || ""}</td>
+      <td>${item.severity || ""}</td>
+      <td class="num">${formatQty(item.balance || 0)}</td>
+      <td class="num">${formatCurrency(toNumber(item.value_usd || 0), "USD")}</td>
+      <td title="${last.source_event_id || ""}">${last.source || ""} · ${last.event_type || ""} · ${last.side || ""}</td>
+    `;
+    tr.addEventListener("click", () => {
+      if (el("issueId")) el("issueId").value = item.issue_id || "";
+      if (el("issueStatus")) el("issueStatus").value = item.status || "open";
+      if (el("issueNote")) el("issueNote").value = item.note || "";
+      if (el("txAsset")) el("txAsset").value = item.asset || "";
+      renderTransactionSearch(state.transactionSearchRows);
+    });
+    tbody.appendChild(tr);
+  });
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="7">Keine Negativbestände im gewählten Zeitraum.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPlatformLedgerStatus(data) {
+  const summary = data?.summary || {};
+  const transfers = data?.transfers || {};
+  const simulation = data?.simulation || {};
+  const transferCandidates = data?.transfer_candidates || {};
+  const breakResolution = data?.break_resolution || {};
+  const residualReview = data?.residual_review || {};
+  const ai = data?.ai_review || {};
+  if (el("platformLedgerRows")) el("platformLedgerRows").textContent = formatInt(summary.active_ledger_row_count || simulation.ledger_rows || 0);
+  if (el("platformTransferGroups")) el("platformTransferGroups").textContent = formatInt(transfers.transfer_group_count || 0);
+  if (el("platformUnmatchedTransfers")) el("platformUnmatchedTransfers").textContent = formatInt(transfers.unmatched_transfer_like_count || 0);
+  if (el("platformTransferCandidates")) el("platformTransferCandidates").textContent = formatInt(transferCandidates.candidate_count || 0);
+  if (el("platformNegativeAccounts")) el("platformNegativeAccounts").textContent = formatInt(simulation.negative_platform_asset_count || 0);
+  if (el("platformActiveBlockers")) el("platformActiveBlockers").textContent = formatInt(breakResolution.active_blocker_count ?? breakResolution.break_count ?? 0);
+  if (el("platformDocumentedResiduals")) el("platformDocumentedResiduals").textContent = formatInt(breakResolution.documented_residual_count ?? residualReview.residual_count ?? 0);
+  if (el("platformLedgerStatus")) {
+    const generated = simulation.generated_at_utc || summary.generated_at_utc || "";
+    const aiStatus = ai.status ? ` · KI: ${ai.status}` : "";
+    const blockerCount = breakResolution.active_blocker_count ?? breakResolution.break_count;
+    const blockerStatus = blockerCount !== undefined ? ` · aktive Blocker: ${formatInt(blockerCount)}` : "";
+    el("platformLedgerStatus").textContent = generated ? `Stand ${generated}${blockerStatus}${aiStatus}` : `Artefakte noch nicht vollständig erzeugt${blockerStatus}${aiStatus}`;
+  }
+  renderPlatformBalanceTable(simulation.negative_assets || []);
+  renderPlatformResolutionTable(breakResolution.active_rows || breakResolution.rows || []);
+  renderPlatformResidualTable(breakResolution.documented_rows || residualReview.residuals || []);
+  renderPlatformCandidateTable(transferCandidates.candidates || []);
+  renderPlatformUnmatchedTable(transfers.unmatched_transfer_like || []);
+  renderPlatformAiBox(ai);
+}
+
+function renderAiReadonlyQueueStatus(data) {
+  const counts = data?.counts || {};
+  const service = data?.service || {};
+  const statusFile = data?.status_file || {};
+  const active = String(service.active_state || "unknown");
+  const sub = String(service.sub_state || "");
+  ["aiQueueServiceBadge", "aiQueueServiceBadgeTab"].forEach((id) => {
+    const badge = el(id);
+    if (!badge) return;
+    badge.textContent = `${active}${sub ? ` / ${sub}` : ""}`;
+    badge.className = `status-badge ${active === "active" ? "status-running" : active === "inactive" ? "status-default" : "status-warn"}`;
+  });
+  setTextForIds(["aiQueuePending", "aiQueuePendingTab"], formatInt(counts.pending || 0));
+  setTextForIds(["aiQueueRunning", "aiQueueRunningTab"], formatInt(counts.running || 0));
+  setTextForIds(["aiQueueDone", "aiQueueDoneTab"], formatInt(counts.done || 0));
+  setTextForIds(["aiQueueFailed", "aiQueueFailedTab"], formatInt(counts.failed || 0));
+
+  const runningTasks = Array.isArray(data?.running_tasks) ? data.running_tasks : [];
+  const pendingTasks = Array.isArray(data?.pending_tasks) ? data.pending_tasks : [];
+  ["aiQueueCurrent", "aiQueueCurrentTab"].forEach((id) => {
+    const current = el(id);
+    if (!current) return;
+    const currentTask = data?.current_task || runningTasks[0]?.task_id || "";
+    const updated = data?.updated_at_utc || statusFile.updated_at_utc || "";
+    const queueLine = [
+      currentTask ? `Aktuell: ${currentTask}` : "Kein aktiver Task",
+      updated ? `Stand: ${updated}` : "",
+      pendingTasks.length ? `nächste: ${pendingTasks.slice(0, 3).map((item) => item.task_id).join(", ")}` : "",
+    ].filter(Boolean).join(" · ");
+    current.textContent = queueLine || "KI-Queue ist eingerichtet, aber noch ohne Statusdaten.";
+    current.className = `notice ${counts.failed ? "notice-warn" : active === "active" ? "notice-ok" : "notice-neutral"}`;
+  });
+
+  const results = Array.isArray(data?.recent_results) ? [...data.recent_results].reverse() : [];
+  ["aiQueueResultsTable", "aiQueueResultsTableTab"].forEach((tableId) => {
+    const tbody = el(tableId)?.querySelector("tbody");
+    if (!tbody) return;
+    tbody.innerHTML = "";
+    results.slice(0, 10).forEach((item) => {
+      const tr = document.createElement("tr");
+      const resultPath = item.result_md || item.result_json || "";
+      tr.innerHTML = `
+        <td>${escapeHtml(item.title || item.task_id || "")}<br><small class="muted">${escapeHtml(item.task_id || "")}</small></td>
+        <td><span class="status-badge ${item.status === "success" ? "status-ok" : item.status === "error" ? "status-fail" : "status-default"}">${escapeHtml(item.status || "")}</span></td>
+        <td class="num">${formatDuration(item.duration_seconds || 0)}</td>
+        <td class="num">${formatInt(item.queries || 0)}</td>
+        <td title="${escapeHtml(resultPath)}">${escapeHtml(shortPath(resultPath))}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    if (!results.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="5">Noch keine KI-Queue-Ergebnisse gespeichert.</td>';
+      tbody.appendChild(tr);
+    }
+  });
+
+  const taskBody = el("aiQueueTaskTable")?.querySelector("tbody");
+  if (taskBody) {
+    taskBody.innerHTML = "";
+    const tasks = [
+      ...runningTasks.map((item) => ({ ...item, queue_status: "running" })),
+      ...pendingTasks.map((item) => ({ ...item, queue_status: "pending" })),
+      ...(Array.isArray(data?.failed_tasks) ? data.failed_tasks.map((item) => ({ ...item, queue_status: "failed" })) : []),
+    ];
+    tasks.slice(0, 20).forEach((item) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><span class="status-badge ${item.queue_status === "failed" ? "status-fail" : item.queue_status === "running" ? "status-running" : "status-default"}">${escapeHtml(item.queue_status || "")}</span></td>
+        <td>${escapeHtml(item.title || item.task_id || "")}<br><small class="muted">${escapeHtml(item.task_id || "")}</small></td>
+        <td>${escapeHtml(item.created_at_utc || "")}</td>
+      `;
+      taskBody.appendChild(tr);
+    });
+    if (!tasks.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="3">Keine aktiven oder wartenden KI-Aufträge.</td>';
+      taskBody.appendChild(tr);
+    }
+  }
+  if (el("aiQueueLogTail")) {
+    const logTail = Array.isArray(data?.log_tail) ? data.log_tail : [];
+    el("aiQueueLogTail").textContent = logTail.length ? logTail.join("\n") : "Kein Queue-Log vorhanden.";
+  }
+}
+
+function setTextForIds(ids, value) {
+  ids.forEach((id) => {
+    const node = el(id);
+    if (node) node.textContent = value;
+  });
+}
+
+function shortPath(value) {
+  const text = String(value || "");
+  if (!text) return "-";
+  const parts = text.split("/");
+  return parts.slice(-2).join("/");
+}
+
+function formatDuration(seconds) {
+  const value = Number(seconds || 0);
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  if (value >= 3600) return `${formatQty(value / 3600)} h`;
+  if (value >= 60) return `${formatQty(value / 60)} min`;
+  return `${formatInt(value)} s`;
+}
+
+function renderPlatformBalanceTable(rows) {
+  const tbody = el("platformBalanceTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  const items = Array.isArray(rows) ? rows : [];
+  items.slice(0, 80).forEach((item) => {
+    const first = item.first_negative || {};
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.platform || "")}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.final_balance || 0)}</td>
+      <td class="num">${formatQty(item.worst_balance || 0)}</td>
+      <td title="${escapeHtml(first.ledger_id || "")}">${escapeHtml(first.timestamp_utc || "")}<br><small class="muted">${formatQty(first.balance_after || 0)}</small></td>
+      <td>${escapeHtml(first.source || "")}<br><small class="muted" title="${escapeHtml(first.tx_id || "")}">${escapeHtml(shortHash(first.tx_id || ""))}</small></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6">Keine negativen Plattform-Salden in der aktiven Simulation.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPlatformUnmatchedTable(rows) {
+  const tbody = el("platformUnmatchedTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  const items = Array.isArray(rows) ? rows : [];
+  items.slice(0, 100).forEach((item) => {
+    const tr = document.createElement("tr");
+    const counterparty = item.counterparty_platform || shortAddress(item.counterparty_address || "");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.timestamp_utc || "")}</td>
+      <td>${escapeHtml(item.platform || "")}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.quantity_delta || 0)}</td>
+      <td>${escapeHtml(item.event_type || "")}</td>
+      <td title="${escapeHtml(item.counterparty_address || "")}">${escapeHtml(counterparty || "")}</td>
+      <td title="${escapeHtml(item.tx_id || "")}">${escapeHtml(shortHash(item.tx_id || ""))}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="7">Keine unmatched Transfer-Kandidaten geladen.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPlatformCandidateTable(rows) {
+  const tbody = el("platformCandidateTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  const items = Array.isArray(rows) ? rows : [];
+  items.slice(0, 120).forEach((item) => {
+    const seconds = toNumber(item.time_delta_seconds || 0);
+    const timeLabel = seconds >= 3600 ? `${formatQty(seconds / 3600)} h` : `${formatInt(seconds)} s`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.confidence || "")}<br><small class="muted">${escapeHtml(item.match_type || "")}</small></td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.quantity_out || 0)}</td>
+      <td>${escapeHtml(item.from_platform || "")}<br><small class="muted">${escapeHtml(item.from_timestamp_utc || "")}</small></td>
+      <td>${escapeHtml(item.to_platform || "")}<br><small class="muted">${escapeHtml(item.to_timestamp_utc || "")}</small></td>
+      <td class="num">${formatQty(item.quantity_diff || 0)}</td>
+      <td class="num">${escapeHtml(timeLabel)}</td>
+      <td title="${escapeHtml(`${item.from_tx_id || ""} -> ${item.to_tx_id || ""}`)}">${escapeHtml(shortHash(item.from_tx_id || ""))}<br><small class="muted">${escapeHtml(shortHash(item.to_tx_id || ""))}</small></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="8">Keine Transfer-Kandidaten gefunden.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPlatformResolutionTable(rows) {
+  const tbody = el("platformResolutionTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  const items = Array.isArray(rows) ? rows : [];
+  items.slice(0, 80).forEach((item) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(item.priority || "")}</td>
+      <td>${escapeHtml(item.resolution_status || "")}<br><small class="muted">${escapeHtml(item.first_negative_timestamp_utc || "")}</small></td>
+      <td>${escapeHtml(item.platform || "")}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.final_balance || 0)}</td>
+      <td class="num">${formatQty(item.worst_balance || 0)}</td>
+      <td>direct ${formatInt(item.direct_candidate_count || 0)}<br><small class="muted">nearby ${formatInt(item.nearby_candidate_count || 0)}</small></td>
+      <td>${escapeHtml(item.recommended_action || "")}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="8">Keine Bruchstellen-Resolution geladen.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPlatformResidualTable(rows) {
+  const tbody = el("platformResidualTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  const items = Array.isArray(rows) ? rows : [];
+  items.slice(0, 80).forEach((item) => {
+    const status = item.review_classification || item.resolution_status || "";
+    const reason = item.review_reason || item.reason || item.recommended_action || "";
+    const report = item.supporting_report || "";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(status)}</td>
+      <td>${escapeHtml(item.platform || "")}</td>
+      <td>${escapeHtml(item.asset || "")}</td>
+      <td class="num">${formatQty(item.final_balance || 0)}</td>
+      <td class="num">${formatQty(item.worst_balance || item.worst_negative || 0)}</td>
+      <td>${escapeHtml(reason)}</td>
+      <td title="${escapeHtml(report)}">${escapeHtml(report ? report.split("/").pop() : "")}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="7">Keine dokumentierten Plattformreste geladen.</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function renderPlatformAiBox(ai) {
+  const host = el("platformAiBox");
+  if (!host) return;
+  const hypotheses = Array.isArray(ai?.hypotheses) ? ai.hypotheses : [];
+  if (ai?.status && ai.status !== "success") {
+    host.innerHTML = `<p class="muted">KI-Status: ${escapeHtml(ai.status)}${ai.error ? ` · ${escapeHtml(ai.error)}` : ""}</p>`;
+    return;
+  }
+  if (!hypotheses.length) {
+    host.innerHTML = '<p class="muted">Keine KI-Hypothesen vorhanden. Deterministische Tabellen bleiben maßgeblich.</p>';
+    return;
+  }
+  host.innerHTML = hypotheses.slice(0, 10).map((item) => `
+    <div class="review-note">
+      <strong>${escapeHtml(item.priority || "")} · ${escapeHtml(item.platform || "")} · ${escapeHtml(item.asset || "")}</strong>
+      <p>${escapeHtml(item.likely_cause || "")}</p>
+      <small class="muted">${escapeHtml(item.next_action || "")}</small>
+    </div>
+  `).join("");
 }
 
 function yearlyMetricValue(item, mode) {
@@ -3150,11 +3919,13 @@ async function refreshPortfolioSetHistory(groupId) {
     group_id: safeGroupId,
     window_days: String(windowDays),
   });
+  const year = dashboardYearFilter();
+  if (year) query.set("year", year);
   const res = await callApi(`/api/v1/dashboard/portfolio-set-history?${query.toString()}`, "GET", null, null, true);
   if (res?.status !== "success") return;
   const data = res.data || {};
   const points = data.points || [];
-  const labels = points.map((point) => String(point.month || ""));
+  const labels = points.map((point) => String(point.date || point.month || ""));
   const values = points.map((point) => convertUsdForDisplay(point.value_usd || 0));
   renderPnlCards(data.summary || {});
   buildChart("chartWalletSnapshots", {
@@ -3488,7 +4259,7 @@ function renderCockpitIssuePile() {
   if (!host) return;
   const severityRank = { high: 0, medium: 1, low: 2 };
   const openIssues = (state.issues || [])
-    .filter((item) => String(item.status || "open") === "open")
+    .filter((item) => String(item.status || "open") === "open" && item.is_current_scope !== false)
     .sort((a, b) => {
       const sevA = severityRank[String(a.severity || "low")] ?? 9;
       const sevB = severityRank[String(b.severity || "low")] ?? 9;
@@ -3914,8 +4685,11 @@ async function refreshWalletSnapshotChart(scope, entityId) {
     scope,
     entity_id: entityId,
     window_days: String(windowDays),
-  }).toString();
-  const data = await callApi(`/api/v1/dashboard/wallet-snapshots?${query}`, "GET", null, null, true);
+  });
+  const year = dashboardYearFilter();
+  if (year) query.set("year", year);
+  const queryString = query.toString();
+  const data = await callApi(`/api/v1/dashboard/wallet-snapshots?${queryString}`, "GET", null, null, true);
   if (!data || data.status !== "success") return;
   state.dashboard = state.dashboard || {};
   state.dashboard.lastSnapshot = {
@@ -4573,6 +5347,7 @@ function init() {
     ["dashShowIgnored", "0"],
     ["dashTokenPageSize", "50"],
     ["dashLotAsset", ""],
+    ["dashLotDomain", "private"],
     ["dashLotAsOf", ""],
     ["taxFilterAsset", ""],
     ["taxFilterStatus", ""],
@@ -4597,6 +5372,8 @@ function init() {
     ["processJobsSortDir", "desc"],
     ["processJobsLimit", "25"],
     ["processJobsOffset", "0"],
+    ["portfolioRange", "all"],
+    ["portfolioInterval", "auto"],
     ["taxYear", "2026"],
   ].forEach(([id, fallback]) => {
     const node = el(id);
@@ -4696,6 +5473,8 @@ function init() {
     await loadDashboard();
     if (currentJobId()) await refreshTaxReviewData(currentJobId(), true);
   });
+  el("btnAiQueueRefresh")?.addEventListener("click", () => loadAiReadonlyQueueStatus(false));
+  el("btnAiQueueRefreshTab")?.addEventListener("click", () => loadAiReadonlyQueueStatus(false));
   el("btnRailToggle")?.addEventListener("click", () => {
     const shell = document.querySelector(".app-shell");
     const collapsed = !shell?.classList.contains("rail-collapsed");
@@ -5314,11 +6093,14 @@ async function loadUnmatched() {
   });
 
   async function loadLotAging() {
-    const asOf = el("dashLotAsOf").value.trim();
+    const selectedYear = dashboardYearFilter();
+    const asOf = el("dashLotAsOf").value.trim() || (selectedYear ? `${selectedYear}-12-31T23:59:59Z` : "");
     const asset = el("dashLotAsset").value.trim().toUpperCase();
+    const domain = el("dashLotDomain")?.value.trim() || "";
     const params = new URLSearchParams();
     if (asOf) params.set("as_of_utc", asOf);
     if (asset) params.set("asset", asset);
+    if (domain) params.set("domain", domain);
     const data = await callApi(`/api/v1/portfolio/lot-aging?${params.toString()}`, "GET", null, null, true);
     if (!data?.data) return;
     state.lotRows = data.data.lot_rows ?? [];
@@ -5327,15 +6109,38 @@ async function loadUnmatched() {
   el("btnLoadLotAging").addEventListener("click", loadLotAging);
 
   async function loadIssues() {
-    const data = await callApi("/api/v1/issues/inbox", "GET", null, null, true);
-    if (!data?.data) return;
-    state.issues = data.data.issues ?? [];
-    state.paging.issuePage = 1;
-    renderIssues(state.issues);
-    await loadReviewGates(true);
+    await reloadIssues(true);
   }
   el("btnIssuesLoad").addEventListener("click", loadIssues);
   loadIssues();
+  el("issuesTable")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const contextBtn = target.closest(".btn-issue-context");
+    if (contextBtn instanceof HTMLElement) {
+      event.stopPropagation();
+      await loadIssueContext(contextBtn.dataset.issueId || "", contextBtn);
+      return;
+    }
+    const confirmBtn = target.closest(".btn-issue-confirm-zero");
+    if (confirmBtn instanceof HTMLElement) {
+      event.stopPropagation();
+      await confirmZeroBasisIssue(confirmBtn.dataset.issueId || "", confirmBtn);
+    }
+  });
+  el("issueContextPanel")?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const contextBtn = target.closest(".btn-issue-context");
+    if (contextBtn instanceof HTMLElement) {
+      await loadIssueContext(contextBtn.dataset.issueId || "", contextBtn);
+      return;
+    }
+    const confirmBtn = target.closest(".btn-issue-confirm-zero");
+    if (confirmBtn instanceof HTMLElement) {
+      await confirmZeroBasisIssue(confirmBtn.dataset.issueId || "", confirmBtn);
+    }
+  });
   el("btnReviewGates")?.addEventListener("click", async (e) => {
     await loadReviewGates(false);
     if (state.reviewGates?.allow_export) {
@@ -5801,38 +6606,45 @@ async function loadUnmatched() {
   el("btnYearlyRefresh")?.addEventListener("click", () => {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
   });
+  el("btnNegativeBalancesLoad")?.addEventListener("click", async () => {
+    await loadDashboardNegativeBalances();
+    showToast("Negativbestand-Prüfung aktualisiert.", "ok");
+  });
+  el("btnPlatformLedgerRefresh")?.addEventListener("click", async () => {
+    await loadPlatformLedgerStatus(false);
+  });
+  el("portfolioRange")?.addEventListener("change", async () => {
+    savePref("field.portfolioRange", el("portfolioRange")?.value || "all");
+    await loadDashboardPortfolioHistory();
+  });
+  el("portfolioInterval")?.addEventListener("change", async () => {
+    savePref("field.portfolioInterval", el("portfolioInterval")?.value || "auto");
+    await loadDashboardPortfolioHistory();
+  });
+  el("btnPortfolioRefresh")?.addEventListener("click", async () => {
+    await loadDashboardPortfolioHistory();
+    showToast("Portfolio-Wertentwicklung aktualisiert.", "ok");
+  });
   el("yearlyScaleMode")?.addEventListener("change", () => {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
   });
   el("yearlyYearFilter")?.addEventListener("change", () => {
-    if (el("globalYearFilter")) {
-      el("globalYearFilter").value = el("yearlyYearFilter")?.value || "";
-      syncDashboardYearControls();
-    }
-    renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
-    renderDashboard(state.dashboard);
+    syncDashboardYearControls(true, el("yearlyYearFilter")?.value || "");
+    void applyDashboardYearFilter();
   });
   el("globalYearFilter")?.addEventListener("change", () => {
-    syncDashboardYearControls();
-    renderDashboard(state.dashboard);
-    if (currentJobId()) void loadTaxDomainSummary(currentJobId(), true);
+    syncDashboardYearControls(true, el("globalYearFilter")?.value || "");
+    void applyDashboardYearFilter();
   });
   el("dashboardYearMirror")?.addEventListener("change", () => {
-    syncDashboardYearControls();
-    renderDashboard(state.dashboard);
-    if (currentJobId()) void loadTaxDomainSummary(currentJobId(), true);
+    syncDashboardYearControls(true, el("dashboardYearMirror")?.value || "");
+    void applyDashboardYearFilter();
   });
   el("btnGlobalYearApply")?.addEventListener("click", async () => {
-    syncDashboardYearControls();
-    renderDashboard(state.dashboard);
-    if (currentJobId()) await loadTaxDomainSummary(currentJobId(), true);
-    showToast(dashboardYearFilter() ? `Dashboard-Zeitraum ${dashboardYearFilter()} aktiv.` : "Dashboard zeigt alle Jahre.", "ok");
+    await applyDashboardYearFilter({ toast: true });
   });
   el("btnDashboardYearApply")?.addEventListener("click", async () => {
-    syncDashboardYearControls();
-    renderDashboard(state.dashboard);
-    if (currentJobId()) await loadTaxDomainSummary(currentJobId(), true);
-    showToast(dashboardYearFilter() ? `Dashboard-Zeitraum ${dashboardYearFilter()} aktiv.` : "Dashboard zeigt alle Jahre.", "ok");
+    await applyDashboardYearFilter({ toast: true });
   });
   el("yearlyAssetFilter")?.addEventListener("input", () => {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});
@@ -5940,11 +6752,8 @@ async function loadUnmatched() {
   el("taxYear")?.addEventListener("change", () => {
     syncTaxRunSelection();
     savePref("field.taxYear", el("taxYear")?.value || "2026");
-    if (el("globalYearFilter")) {
-      el("globalYearFilter").value = el("taxYear")?.value || "";
-      syncDashboardYearControls(false);
-      renderDashboard(state.dashboard);
-    }
+    syncDashboardYearControls(false, el("taxYear")?.value || "");
+    void applyDashboardYearFilter();
   });
   el("cwSolanaFocus")?.addEventListener("click", () => {
     openSettingsPanel("solanaSettings", "solWallet");
@@ -6148,6 +6957,9 @@ async function loadUnmatched() {
   });
   el("dashLotAsset")?.addEventListener("input", () => {
     savePref("field.dashLotAsset", el("dashLotAsset").value);
+  });
+  el("dashLotDomain")?.addEventListener("change", () => {
+    savePref("field.dashLotDomain", el("dashLotDomain").value);
   });
   el("dashLotAsOf")?.addEventListener("input", () => {
     savePref("field.dashLotAsOf", el("dashLotAsOf").value);

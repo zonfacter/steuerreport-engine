@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from tax_engine.rulesets import RuleContext, TaxStatus, build_default_registry
+from tax_engine.rulesets import MiningTaxCategory, RuleContext, TaxStatus, build_default_registry
 
 
 def test_select_for_date_returns_de_2026_ruleset() -> None:
@@ -16,6 +16,7 @@ def test_select_for_date_returns_de_2026_ruleset() -> None:
     assert ruleset.ruleset_id == "DE-2026-v1.0"
     assert ruleset.exemption_limit_so == Decimal("1000.00")
     assert ruleset.other_services_exemption_limit == Decimal("256.00")
+    assert ruleset.mining_tax_category == MiningTaxCategory.BUSINESS
 
 
 def test_default_registry_covers_de_years_2020_to_2026() -> None:

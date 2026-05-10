@@ -81,15 +81,16 @@ CONNECTOR_SPECS: dict[str, ConnectorSpec] = {
         label="Pionex",
         modes=("csv", "xlsx", "api_planned"),
         aliases={
-            "timestamp": ("time", "date", "timestamp"),
+            "timestamp": ("date(utc+0)", "time", "date", "timestamp"),
             "asset": ("coin", "asset", "currency", "symbol"),
-            "quantity": ("amount", "quantity", "filled", "deal amount"),
+            "quantity": ("amount", "quantity", "filled", "deal amount", "executed_qty"),
             "price": ("price", "deal price", "avg price"),
             "fee": ("fee", "trading fee"),
             "fee_asset": ("fee coin", "fee currency", "fee asset"),
-            "side": ("side", "type"),
-            "event_type": ("type", "order type", "business type"),
-            "tx_id": ("order id", "trade id", "txid"),
+            "side": ("side", "tx_type", "type"),
+            "event_type": ("tx_type", "type", "order type", "business type"),
+            "tx_id": ("tax_id", "order id", "trade id", "txid"),
+            "network": ("network", "chain"),
         },
     ),
     "blockpit": ConnectorSpec(
@@ -111,6 +112,28 @@ CONNECTOR_SPECS: dict[str, ConnectorSpec] = {
             "outgoing_asset": ("outgoing asset", "sell cur"),
             "outgoing_amount": ("outgoing amount", "sell amount"),
             "label": ("label",),
+        },
+    ),
+    "jupiter_perps": ConnectorSpec(
+        connector_id="jupiter_perps",
+        label="Jupiter Perps Export",
+        modes=("csv",),
+        aliases={
+            "timestamp": ("created at",),
+            "tx_id": ("transaction id",),
+            "asset": ("asset",),
+            "position": ("position",),
+            "position_change": ("position change",),
+            "order_type": ("order type",),
+            "deposit_withdraw_usd": ("deposit / withdraw ($)",),
+            "execution_price_usd": ("execution price ($)",),
+            "trade_size_usd": ("trade size ($)",),
+            "pnl_usd": ("profit / loss ($)",),
+            "trade_fee_usd": ("trade fee ($)",),
+            "liquidation_fee_usd": ("liquidation fee ($)",),
+            "mint": ("mint",),
+            "collateral": ("collateral",),
+            "collateral_mint": ("collateral mint",),
         },
     ),
     "heliumgeek": ConnectorSpec(
@@ -367,7 +390,12 @@ def _normalize_binance_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -
     elif "deposit" in source_name or "einzahlung" in source_name:
         side = "in"
     event_type = str(event_type_raw).lower() if event_type_raw is not None else ""
-    if not event_type and ("withdraw" in source_name or "deposit" in source_name or "einzahlung" in source_name):
+    if not event_type and (
+        "withdraw" in source_name
+        or "deposit" in source_name
+        or "einzahlung" in source_name
+        or _looks_like_binance_wallet_transfer(row)
+    ):
         event_type = "withdrawal" if side == "out" else "deposit"
 
     out_rows.append(
@@ -395,6 +423,177 @@ def _split_binance_market(market: str) -> tuple[str, str]:
         if market.endswith(quote) and len(market) > len(quote):
             return market[: -len(quote)], quote
     return "", ""
+
+
+def _looks_like_binance_wallet_transfer(row: dict[str, Any]) -> bool:
+    tx_id = _get_value(row, ("txid", "transaction id", "transactionid"))
+    address = _get_value(row, ("address", "wallet address"))
+    status = str(_get_value(row, ("status",)) or "").lower().strip()
+    network = _get_value(row, ("network", "chain"))
+    return tx_id is not None and address is not None and network is not None and (not status or "complete" in status)
+
+
+def _normalize_pionex_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    warnings: list[dict[str, str]] = []
+    out_rows: list[dict[str, Any]] = []
+
+    timestamp_raw = _get_value(row, spec.aliases["timestamp"])
+    timestamp_utc: str | None = None
+    if timestamp_raw is not None:
+        parsed_ts, ts_error = parse_datetime_value(timestamp_raw)
+        if ts_error:
+            warnings.append({"row": str(idx), "code": ts_error, "field": "timestamp"})
+            timestamp_utc = str(timestamp_raw)
+        else:
+            timestamp_utc = parsed_ts
+
+    def _num(value: Any, field: str) -> str:
+        if value is None:
+            return ""
+        parsed, parse_error = parse_decimal_value(value)
+        if parse_error:
+            warnings.append({"row": str(idx), "code": parse_error, "field": field})
+            return str(value)
+        if parsed is None:
+            return ""
+        return parsed.to_eng_string()
+
+    symbol_raw = _get_value(row, ("symbol",))
+    side_raw = _get_value(row, spec.aliases["side"])
+    executed_qty_raw = _get_value(row, ("executed_qty", "executed qty"))
+    amount_raw = _get_value(row, ("amount",))
+    swap_value_raw = _get_value(row, ("swap_value", "swap value"))
+    price_raw = _get_value(row, spec.aliases["price"])
+    fee_raw = _get_value(row, spec.aliases["fee"])
+    fee_asset_raw = _get_value(row, spec.aliases["fee_asset"])
+    tax_id_raw = _get_value(row, spec.aliases["tx_id"])
+    network_raw = _get_value(row, spec.aliases.get("network", tuple()))
+    event_type_raw = _get_value(row, spec.aliases["event_type"])
+
+    symbol = str(symbol_raw or "").upper().strip()
+    side = str(side_raw or "").lower().strip()
+    base_asset, quote_asset = _split_pionex_symbol(symbol)
+    base_tx = str(tax_id_raw).strip() if tax_id_raw is not None and str(tax_id_raw).strip() else f"pionex-{idx}"
+
+    dust_asset_raw = _get_value(row, spec.aliases["asset"])
+    if dust_asset_raw is not None and amount_raw is not None and swap_value_raw is not None:
+        dust_asset = str(dust_asset_raw).upper().strip()
+        out_rows.append(
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": dust_asset,
+                "quantity": _num(amount_raw, "amount"),
+                "price": _num(price_raw, "price"),
+                "fee": "",
+                "fee_asset": "",
+                "side": "out",
+                "event_type": "dust_trade",
+                "tx_id": f"{base_tx}:dust:{idx}:out:{dust_asset}",
+                "network": str(network_raw) if network_raw is not None else "",
+                "source": "pionex",
+                "raw_row": row,
+            }
+        )
+        out_rows.append(
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": "USDT",
+                "quantity": _num(swap_value_raw, "swap_value"),
+                "price": "",
+                "fee": "",
+                "fee_asset": "",
+                "side": "in",
+                "event_type": "dust_trade",
+                "tx_id": f"{base_tx}:dust:{idx}:in:USDT",
+                "network": str(network_raw) if network_raw is not None else "",
+                "source": "pionex",
+                "raw_row": row,
+            }
+        )
+        return out_rows, warnings
+
+    if base_asset and quote_asset and side in {"buy", "sell"} and executed_qty_raw is not None and amount_raw is not None:
+        if side == "buy":
+            legs = ((quote_asset, amount_raw, "out"), (base_asset, executed_qty_raw, "in"))
+        else:
+            legs = ((base_asset, executed_qty_raw, "out"), (quote_asset, amount_raw, "in"))
+        for leg_asset, leg_amount, leg_side in legs:
+            out_rows.append(
+                {
+                    "timestamp_utc": timestamp_utc,
+                    "asset": leg_asset,
+                    "quantity": _num(leg_amount, "amount"),
+                    "price": _num(price_raw, "price"),
+                    "fee": "",
+                    "fee_asset": "",
+                    "side": leg_side,
+                    "event_type": "trade",
+                    "tx_id": f"{base_tx}:{idx}:{leg_side}:{leg_asset}",
+                    "network": str(network_raw) if network_raw is not None else "",
+                    "source": "pionex",
+                    "raw_row": row,
+                }
+            )
+        fee_amount = _num(fee_raw, "fee")
+        fee_asset = str(fee_asset_raw or "").upper().strip()
+        if fee_asset and fee_amount not in {"", "0", "0.0", "-0", "-0.0"}:
+            out_rows.append(
+                {
+                    "timestamp_utc": timestamp_utc,
+                    "asset": fee_asset,
+                    "quantity": fee_amount,
+                    "price": "",
+                    "fee": "",
+                    "fee_asset": "",
+                    "side": "out",
+                    "event_type": "fee",
+                    "tx_id": f"{base_tx}:{idx}:fee:{fee_asset}",
+                    "network": str(network_raw) if network_raw is not None else "",
+                    "source": "pionex",
+                    "raw_row": row,
+                }
+            )
+        return out_rows, warnings
+
+    asset_raw = _get_value(row, spec.aliases["asset"])
+    quantity_raw = _get_value(row, spec.aliases["quantity"])
+    if asset_raw is None and quantity_raw is None:
+        warnings.append({"row": str(idx), "code": "row_not_mappable"})
+        return out_rows, warnings
+
+    quantity = _num(quantity_raw, "quantity")
+    event_type = str(event_type_raw or "").lower().strip()
+    transfer_side = "out" if event_type in {"withdraw", "withdrawal"} or side in {"withdraw", "withdrawal"} else "in"
+    if event_type in {"deposit", "withdraw", "withdrawal"}:
+        normalized_type = "withdrawal" if transfer_side == "out" else "deposit"
+    else:
+        normalized_type = event_type or "transfer"
+
+    out_rows.append(
+        {
+            "timestamp_utc": timestamp_utc,
+            "asset": str(asset_raw or "").upper().strip(),
+            "quantity": quantity,
+            "price": _num(price_raw, "price"),
+            "fee": _num(fee_raw, "fee"),
+            "fee_asset": str(fee_asset_raw or "").upper().strip(),
+            "side": transfer_side,
+            "event_type": normalized_type,
+            "tx_id": base_tx,
+            "network": str(network_raw) if network_raw is not None else "",
+            "source": "pionex",
+            "raw_row": row,
+        }
+    )
+    return out_rows, warnings
+
+
+def _split_pionex_symbol(symbol: str) -> tuple[str, str]:
+    normalized = str(symbol or "").upper().strip()
+    if "_" in normalized:
+        base, quote = normalized.split("_", 1)
+        return base, quote
+    return _split_binance_market(normalized)
 
 
 def _shift_iso_timestamp(value: str, *, hours: int) -> str:
@@ -502,6 +701,117 @@ def _normalize_blockpit_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) 
             }
         )
     return out_rows, warnings
+
+
+def _normalize_jupiter_perps_rows(
+    spec: ConnectorSpec,
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, str]], list[dict[str, str]]]:
+    warnings: list[dict[str, str]] = []
+    errors: list[dict[str, str]] = []
+    prepared: list[tuple[int, dict[str, Any], str, str, str, str, Decimal, Decimal, Decimal, Decimal, Decimal, Decimal]] = []
+
+    for idx, row in enumerate(rows):
+        timestamp_raw = _get_value(row, spec.aliases["timestamp"])
+        timestamp_utc: str | None = None
+        if timestamp_raw is not None:
+            timestamp_text = re.sub(r"\s*\([^)]*\)\s*$", "", str(timestamp_raw)).replace(" GMT+0000", " +0000")
+            parsed_ts, ts_error = parse_datetime_value(timestamp_text)
+            if ts_error:
+                warnings.append({"row": str(idx), "code": ts_error, "field": "timestamp"})
+                timestamp_utc = str(timestamp_raw)
+            else:
+                timestamp_utc = parsed_ts
+
+        def _num(field: str, source_row: dict[str, Any] = row, source_idx: int = idx) -> Decimal:
+            value = _get_value(source_row, spec.aliases[field])
+            parsed, parse_error = parse_decimal_value(value)
+            if parse_error:
+                warnings.append({"row": str(source_idx), "code": parse_error, "field": field})
+            return parsed or Decimal("0")
+
+        asset = str(_get_value(row, spec.aliases["asset"]) or "").strip().upper()
+        position = str(_get_value(row, spec.aliases["position"]) or "").strip().lower()
+        position_change = str(_get_value(row, spec.aliases["position_change"]) or "").strip().lower()
+        tx_id = str(_get_value(row, spec.aliases["tx_id"]) or f"jupiter-perps-{idx}").strip()
+        if not timestamp_utc or not asset or position_change not in {"increase", "decrease"}:
+            warnings.append({"row": str(idx), "code": "row_not_mappable"})
+            continue
+
+        prepared.append(
+            (
+                idx,
+                row,
+                timestamp_utc,
+                tx_id,
+                asset,
+                position,
+                _num("deposit_withdraw_usd"),
+                _num("execution_price_usd"),
+                _num("trade_size_usd"),
+                _num("pnl_usd"),
+                _num("trade_fee_usd"),
+                _num("liquidation_fee_usd"),
+            )
+        )
+
+    prepared.sort(key=lambda item: item[2])
+    open_by_key: dict[tuple[str, str, str], list[str]] = {}
+    out_rows: list[dict[str, Any]] = []
+
+    for _idx, row, timestamp_utc, tx_id, asset, position, deposit_withdraw, price, trade_size, pnl, fee, liquidation_fee in prepared:
+        position_change = str(_get_value(row, spec.aliases["position_change"]) or "").strip().lower()
+        collateral = str(_get_value(row, spec.aliases["collateral"]) or "").strip().upper()
+        collateral_mint = str(_get_value(row, spec.aliases["collateral_mint"]) or "").strip()
+        mint = str(_get_value(row, spec.aliases["mint"]) or "").strip()
+        order_type = str(_get_value(row, spec.aliases["order_type"]) or "").strip()
+        key = (asset, position, collateral)
+        if position_change == "increase":
+            position_id = f"jupiter-perps:{tx_id}"
+            open_by_key.setdefault(key, []).append(position_id)
+            ev_type = "derivative open"
+        else:
+            stack = open_by_key.get(key) or []
+            position_id = stack.pop() if stack else f"jupiter-perps:unmatched:{tx_id}"
+            ev_type = "derivative close"
+            if not stack and key in open_by_key:
+                open_by_key.pop(key, None)
+
+        out_rows.append(
+            {
+                "timestamp": timestamp_utc,
+                "timestamp_utc": timestamp_utc,
+                "asset": asset,
+                "quantity": abs(trade_size).to_eng_string(),
+                "price": price.to_eng_string() if price else "",
+                "side": "open" if position_change == "increase" else "close",
+                "event_type": ev_type,
+                "position_id": position_id,
+                "position_side": position,
+                "order_type": order_type,
+                "collateral_asset": collateral,
+                "collateral_mint": collateral_mint,
+                "mint": mint,
+                "collateral_usd": abs(deposit_withdraw).to_eng_string() if position_change == "increase" else "0",
+                "collateral_eur": abs(deposit_withdraw).to_eng_string() if position_change == "increase" else "0",
+                "proceeds_eur": deposit_withdraw.to_eng_string() if position_change == "decrease" else "0",
+                "pnl_usd": pnl.to_eng_string() if pnl else "",
+                "pnl_eur": pnl.to_eng_string() if pnl else "",
+                "fee": abs(fee).to_eng_string(),
+                "fee_asset": "USD",
+                "fee_eur": abs(fee + liquidation_fee).to_eng_string(),
+                "liquidation_fee_eur": abs(liquidation_fee).to_eng_string(),
+                "tx_id": f"{tx_id}:jupiter_perps_v2",
+                "signature": tx_id,
+                "source": "jupiter_perps",
+                "raw_row": row,
+            }
+        )
+
+    remaining_open = sum(len(items) for items in open_by_key.values())
+    if remaining_open:
+        warnings.append({"code": "jupiter_perps_open_positions_remaining", "message": str(remaining_open)})
+    return out_rows, warnings, errors
 
 
 def _normalize_heliumgeek_row(spec: ConnectorSpec, row: dict[str, Any], idx: int) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
@@ -947,8 +1257,31 @@ def _normalize_helium_legacy_raw_row(
     payer = str(_get_value(row, spec.aliases["payer"]) or "").strip()
     payee = str(_get_value(row, spec.aliases["payee"]) or "").strip()
     tx_id = str(_get_value(row, spec.aliases["tx_id"]) or f"helium-legacy-raw-{idx}").strip()
+    event_type_raw = str(_get_value(row, spec.aliases["type"]) or "").strip().lower()
     source_name = str(row.get("__source_name") or row.get("__file_name") or "")
     wallet_address = _infer_wallet_from_source_name(source_name)
+    if event_type_raw.startswith("rewards"):
+        return [
+            {
+                "timestamp_utc": timestamp_utc,
+                "asset": "HNT",
+                "quantity": abs(qty).to_eng_string(),
+                "fee": abs(fee).to_eng_string(),
+                "fee_asset": "HNT" if fee and fee > 0 else "",
+                "value_usd": value_usd.to_eng_string() if value_usd is not None else "",
+                "side": "in",
+                "event_type": "mining_reward",
+                "tax_category": "INCOME_SO",
+                "tx_id": tx_id,
+                "wallet_address": wallet_address,
+                "from_wallet": payer,
+                "to_wallet": payee or wallet_address,
+                "counterparty_wallet": payer,
+                "legacy_chain": "helium_l1",
+                "source": "helium_legacy_raw",
+                "raw_row": row,
+            }
+        ], warnings
     side = "in" if wallet_address and payee == wallet_address else "out" if wallet_address and payer == wallet_address else "out"
     return [
         {
@@ -986,9 +1319,17 @@ def normalize_connector_rows(
     errors: list[dict[str, str]] = []
     limited_rows = rows[:max_rows]
 
+    if connector_id.lower() == "jupiter_perps":
+        return _normalize_jupiter_perps_rows(spec, limited_rows)
+
     for idx, row in enumerate(limited_rows):
         if connector_id.lower() == "binance":
             row_items, row_warnings = _normalize_binance_row(spec, row, idx)
+            warnings.extend(row_warnings)
+            normalized_rows.extend(row_items)
+            continue
+        if connector_id.lower() == "pionex":
+            row_items, row_warnings = _normalize_pionex_row(spec, row, idx)
             warnings.extend(row_warnings)
             normalized_rows.extend(row_items)
             continue

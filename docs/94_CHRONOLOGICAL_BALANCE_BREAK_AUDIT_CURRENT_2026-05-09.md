@@ -1,0 +1,1327 @@
+# Chronologische Bestandsbruch-Analyse
+
+Generiert: `2026-05-09T12:46:58.936903+00:00`
+JSON: `var/chronological_balance_break_audit_current_2026-05-09_after_blockpit_bitget.json`
+
+## Überblick
+
+- Bewegungen: `48733`
+- Assets: `225`
+- Assets mit negativem Endbestand: `3`
+
+## Asset-Befunde
+
+### VTHO
+
+- Endbestand Modell: `-84.78775868`
+- Events: `2`
+- Erster Negativbestand: `2023-05-02T04:13:23+00:00` nach `60a6999481873ae7bd8c6bb5a0373b89297497257a9faab26a8a411705c3b670`
+- Auslösend: `blockpit` / `trade` / `out` / `-42.39387934`
+- Schlimmster Stand: `-84.78775868` am `2023-05-02T04:13:23+00:00`
+
+Jahres-Netto:
+- `2023`: `-84.78775868`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `out`: `-42.39387934`
+- `binance_api` / `dust_convert_out` / `out`: `-42.39387934`
+
+### BUSD
+
+- Endbestand Modell: `-0.55168701480000000000`
+- Events: `19`
+- Erster Negativbestand: `2023-01-14T08:14:03+00:00` nach `266f6a64a54bf3d60213ca7cf8cd651995d597291edb5487b90ff8dc6f374543`
+- Auslösend: `pionex` / `fee` / `out` / `-0.12348780`
+- Schlimmster Stand: `-0.55168701480000000000` am `2023-05-02T04:13:23+00:00`
+
+Jahres-Netto:
+- `2022`: `0.07906062520000000000`
+- `2023`: `-0.63074764000000000000`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `in`: `1116.78780198`
+- `blockpit` / `trade` / `out`: `-1116.29088245`
+- `pionex` / `trade` / `in`: `406.43612130000000000000`
+- `pionex` / `trade` / `out`: `-406.23079100480000000000`
+- `binance_api` / `dust_convert_out` / `out`: `-0.55379925`
+- `blockpit` / `fee` / `out`: `-0.49691953`
+- `pionex` / `fee` / `out`: `-0.20321806`
+
+### GFT
+
+- Endbestand Modell: `-0.0081`
+- Events: `1`
+- Erster Negativbestand: `2021-03-29T16:48:07+00:00` nach `bfaeb566d635a01a81a9384b9c3958145e0619975559b5bf7da90de40b26f4ca`
+- Auslösend: `blockpit` / `trade` / `out` / `-0.0081`
+- Schlimmster Stand: `-0.0081` am `2021-03-29T16:48:07+00:00`
+
+Jahres-Netto:
+- `2021`: `-0.0081`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `out`: `-0.0081`
+
+### IOT
+
+- Endbestand Modell: `1595933832938.0366660`
+- Events: `3066`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `3421905036` am `2023-04-20T00:00:00+00:00`
+
+Jahres-Netto:
+- `2023`: `683909500931.8233920`
+- `2024`: `845402107237.856436`
+- `2025`: `66622253596.563938`
+- `2026`: `-28828.20710`
+
+Top Quellen-Netto:
+- `heliumgeek` / `mining_reward` / `in`: `1595933017592`
+- `solana_rpc` / `swap_out_aggregated` / `out`: `-11393200.321693`
+- `blockpit` / `trade` / `out`: `-10179281.476749`
+- `solana_rpc` / `swap_in_aggregated` / `in`: `8779057.673155`
+- `blockpit` / `trade` / `in`: `6389925.585255`
+- `blockpit` / `deposit` / `in`: `5067129.024822`
+- `solana_rpc` / `token_transfer` / `in`: `4725849.956961`
+- `solana_rpc` / `token_transfer` / `out`: `-2111707.308423`
+- `blockpit` / `withdrawal` / `out`: `-1652294.920054`
+- `heliumtracker` / `mining_reward` / `in`: `920501.267322`
+
+### HNT
+
+- Endbestand Modell: `10995659885.61936115143114379`
+- Events: `27751`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `0.000` am `2021-02-09T18:45:43+00:00`
+
+Jahres-Netto:
+- `2021`: `2409.56241081362897023903392`
+- `2022`: `1280.49718020921237215284314`
+- `2023`: `140.607037860000001399402`
+- `2024`: `-398.86690628`
+- `2025`: `10292884553.3340185885898`
+- `2026`: `702771900.48561996`
+
+Top Quellen-Netto:
+- `heliumgeek` / `mining_reward` / `in`: `10995657317.12162`
+- `solana_rpc` / `swap_out_aggregated` / `out`: `-4650.43703630`
+- `blockpit` / `deposit` / `in`: `3911.0548326814102`
+- `blockpit` / `trade` / `out`: `-3888.02278308`
+- `binance` / `trade` / `out`: `-3456.346000`
+- `binance` / `trade` / `in`: `3046.956000`
+- `solana_rpc` / `swap_in_aggregated` / `in`: `2980.04789129`
+- `pionex` / `trade` / `in`: `2310.29384864000000000000`
+- `pionex` / `trade` / `out`: `-2309.30500000000000000000`
+- `blockpit` / `trade` / `in`: `2026.31336719`
+
+### CM8VSESV7MBHAFD5UDXH84QFGXMAVWJCVVHOPB1DZIF4
+
+- Endbestand Modell: `1000000000`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1000000000` am `2023-07-30T06:59:36+00:00`
+
+Jahres-Netto:
+- `2023`: `1000000000`
+
+Top Quellen-Netto:
+- `solana_rpc` / `token_transfer` / `in`: `1000000000`
+
+### BONKBOX
+
+- Endbestand Modell: `1000000000`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1000000000` am `2025-07-06T12:33:13+00:00`
+
+Jahres-Netto:
+- `2025`: `1000000000`
+
+Top Quellen-Netto:
+- `blockpit` / `auto-balancing in` / `in`: `1000000000`
+
+### JUPDROP
+
+- Endbestand Modell: `107032493`
+- Events: `120`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-01T22:06:30+00:00`
+
+Jahres-Netto:
+- `2024`: `107000011`
+- `2025`: `32482`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `107000011`
+- `blockpit` / `auto-balancing in` / `in`: `32482`
+
+### PYTH
+
+- Endbestand Modell: `88044724`
+- Events: `95`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-01T22:09:50+00:00`
+
+Jahres-Netto:
+- `2024`: `88000006`
+- `2025`: `44718`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `88000006`
+- `blockpit` / `auto-balancing in` / `in`: `44718`
+
+### 7ATGF8KQO4WJRD5ATGX7T1V2ZVVYKPJBFFNEVF1ICFV1
+
+- Endbestand Modell: `11310642.83`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `384000` am `2024-03-30T17:25:05+00:00`
+
+Jahres-Netto:
+- `2024`: `11310642.83`
+
+Top Quellen-Netto:
+- `solana_rpc` / `swap_in_aggregated` / `in`: `10926642.83`
+- `solana_rpc` / `token_transfer` / `in`: `384000`
+
+### CWIF
+
+- Endbestand Modell: `11310642.83`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `384000` am `2024-03-30T17:25:05+00:00`
+
+Jahres-Netto:
+- `2024`: `11310642.83`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `in`: `10926642.83`
+- `blockpit` / `deposit` / `in`: `384000`
+
+### BTTC
+
+- Endbestand Modell: `4209810.9`
+- Events: `1217`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `29` am `2023-04-01T01:03:23+00:00`
+
+Jahres-Netto:
+- `2023`: `2689385.0`
+- `2024`: `1520425.9`
+
+Top Quellen-Netto:
+- `binance_api` / `asset_dividend` / `in`: `4209810.9`
+
+### CBDC
+
+- Endbestand Modell: `4202343.53`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `4202343.53` am `2024-03-11T22:04:53+00:00`
+
+Jahres-Netto:
+- `2024`: `4202343.53`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `in`: `18902619.55`
+- `blockpit` / `trade` / `out`: `-14700276.02`
+
+### 2KFZCKFXJ1US8YRQZA5VKTSXY3GPZFZVVHWJ91N8FV2J
+
+- Endbestand Modell: `4202343.53`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `4202343.53` am `2024-03-11T22:04:53+00:00`
+
+Jahres-Netto:
+- `2024`: `4202343.53`
+
+Top Quellen-Netto:
+- `solana_rpc` / `swap_in_aggregated` / `in`: `18902619.55`
+- `solana_rpc` / `swap_out_aggregated` / `out`: `-14700276.02`
+
+### SOL
+
+- Endbestand Modell: `963140.69038353704400000000`
+- Events: `4916`
+- Erster Negativbestand: `2023-05-08T04:43:46+00:00` nach `834dd4b04416ebcbde6d4b5731d23466566e3001779d00222b40cb7654a5f754`
+- Auslösend: `blockpit` / `withdrawal` / `out` / `-1.192`
+- Schlimmster Stand: `-113.640928354` am `2024-03-12T17:25:45+00:00`
+
+Jahres-Netto:
+- `2021`: `0.001`
+- `2023`: `7.461172274`
+- `2024`: `963050.26016434000000000000`
+- `2025`: `81.431379543044`
+- `2026`: `1.536667380`
+
+Top Quellen-Netto:
+- `jupiter_perps` / `derivative open` / `open`: `481585.80`
+- `jupiter_perps` / `derivative close` / `close`: `481585.79`
+- `solana_rpc` / `sol_transfer` / `in`: `498.696819928`
+- `solana_rpc` / `sol_transfer` / `out`: `-498.298336418`
+- `blockpit` / `withdrawal` / `out`: `-397.890049214`
+- `blockpit` / `deposit` / `in`: `324.298520451`
+- `blockpit` / `trade` / `in`: `274.345172397`
+- `blockpit` / `trade` / `out`: `-218.622905696`
+- `binance_api` / `trade` / `buy_base`: `72.94900000`
+- `blockpit` / `auto-balancing in` / `in`: `62.851376394`
+
+### PEPE
+
+- Endbestand Modell: `345988.35`
+- Events: `67`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `2.73` am `2024-03-09T00:00:00+00:00`
+
+Jahres-Netto:
+- `2024`: `39456.36`
+- `2025`: `306531.99`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `out`: `-8912775`
+- `blockpit` / `trade` / `in`: `8882016`
+- `binance_api` / `asset_dividend` / `in`: `141633.43`
+- `blockpit` / `bounty` / `in`: `102177.33`
+- `binance_api` / `interest` / `in`: `102177.33`
+- `blockpit` / `interest` / `in`: `39641.28`
+- `blockpit` / `fee` / `out`: `-8882.02`
+
+### BTC
+
+- Endbestand Modell: `234297.24417954800000000100`
+- Events: `93`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `0.00000277` am `2021-02-23T10:54:47+00:00`
+
+Jahres-Netto:
+- `2021`: `0.000035310`
+- `2022`: `0.00000213`
+- `2023`: `0.02098780000000000000`
+- `2024`: `234297.21518430800000000100`
+- `2025`: `0.00520000`
+- `2026`: `0.00277`
+
+Top Quellen-Netto:
+- `jupiter_perps` / `derivative open` / `open`: `117148.61`
+- `jupiter_perps` / `derivative close` / `close`: `117148.61`
+- `binance` / `trade` / `in`: `0.06605408`
+- `binance` / `trade` / `out`: `-0.06601751`
+- `blockpit` / `trade` / `out`: `-0.043994379999999999`
+- `blockpit` / `trade` / `in`: `0.03431573`
+- `blockpit` / `deposit` / `in`: `0.015061274`
+- `binance` / `deposit` / `in`: `0.01036997`
+- `binance_api` / `deposit` / `in`: `0.01036997`
+- `bitget_tax_api` / `trade` / `out`: `-0.004570`
+
+### JUP
+
+- Endbestand Modell: `57042.10278720999993000000`
+- Events: `1478`
+- Erster Negativbestand: `2024-03-12T04:47:59+00:00` nach `d169196f8933614907db0944a1ceae9cb6539bce569d4a62265102a63c2f2210`
+- Auslösend: `pionex` / `fee` / `out` / `-0.01085231`
+- Schlimmster Stand: `-8426.81204898000007000000` am `2025-01-19T22:37:40+00:00`
+
+Jahres-Netto:
+- `2024`: `16855.06891001999993000000`
+- `2025`: `40134.40844058`
+- `2026`: `52.62543661`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `in`: `104281.27853076`
+- `blockpit` / `withdrawal` / `out`: `-101230.089776`
+- `blockpit` / `deposit` / `in`: `86467.775033`
+- `solana_rpc` / `swap_in_aggregated` / `in`: `79451.784276`
+- `blockpit` / `trade` / `out`: `-76774.48477842000007`
+- `solana_rpc` / `swap_out_aggregated` / `out`: `-66713.161665`
+- `binance_api` / `trade` / `sell_base`: `-49464.60000000`
+- `binance_api` / `trade` / `buy_base`: `42877.80000000`
+- `solana_rpc` / `token_transfer` / `out`: `-30625.570394`
+- `binance` / `deposit` / `in`: `23175.356052`
+
+### WIN
+
+- Endbestand Modell: `28292.30730362`
+- Events: `73`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `14143` am `2021-05-05T04:59:31+00:00`
+
+Jahres-Netto:
+- `2021`: `14143`
+- `2023`: `0.00E-6`
+- `2024`: `14149.30730362`
+
+Top Quellen-Netto:
+- `binance` / `trade` / `in`: `56570`
+- `binance` / `trade` / `out`: `-42427`
+- `blockpit` / `auto-balancing in` / `in`: `28298.61460724`
+- `blockpit` / `trade` / `out`: `-14156.61280211`
+- `blockpit` / `interest` / `in`: `7.30549849`
+
+### DOGE
+
+- Endbestand Modell: `3581.32894478`
+- Events: `93`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `3` am `2021-02-17T18:13:26+00:00`
+
+Jahres-Netto:
+- `2021`: `21.4`
+- `2022`: `1554.203`
+- `2023`: `-1557.5355282`
+- `2024`: `3.0647641`
+- `2025`: `2360.19670888`
+- `2026`: `1200`
+
+Top Quellen-Netto:
+- `binance` / `trade` / `in`: `24683.6`
+- `binance` / `trade` / `out`: `-24662.2`
+- `blockpit` / `trade` / `in`: `9903`
+- `blockpit` / `trade` / `out`: `-7517.2677641`
+- `binance_api` / `trade` / `buy_base`: `5906.00000000`
+- `binance_api` / `trade` / `sell_base`: `-4720.00000000`
+- `blockpit` / `fee` / `out`: `-8.703`
+- `binance_api` / `trade` / `fee`: `-5.90600000`
+- `blockpit` / `auto-balancing in` / `in`: `3.0647641`
+- `binance_api` / `dust_convert_out` / `out`: `-0.2677641`
+
+### BTTOLD
+
+- Endbestand Modell: `2497.5`
+- Events: `3`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `0.0` am `2021-04-28T05:14:15+00:00`
+
+Jahres-Netto:
+- `2021`: `0.0`
+- `2025`: `2497.5`
+
+Top Quellen-Netto:
+- `blockpit` / `auto-balancing in` / `in`: `4995.0`
+- `blockpit` / `trade` / `out`: `-2497.5`
+
+### BTT
+
+- Endbestand Modell: `1989.000000000`
+- Events: `1436`
+- Erster Negativbestand: `2023-02-02T05:13:21+00:00` nach `261faa59ec34e49783f860bc90bad24a83e747deddc362986bebe384ead6a342`
+- Auslösend: `blockpit` / `fee` / `out` / `-45945.9`
+- Schlimmster Stand: `-43957.4` am `2023-02-02T05:13:21+00:00`
+
+Jahres-Netto:
+- `2021`: `1988.5`
+- `2023`: `64409493.3`
+- `2024`: `-56933727.000000002`
+- `2025`: `-7475765.799999998`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `out`: `-192919979`
+- `blockpit` / `trade` / `in`: `181314207`
+- `blockpit` / `auto-balancing in` / `in`: `14951532.099999998`
+- `blockpit` / `auto-balancing out` / `out`: `-7475765.799999998`
+- `blockpit` / `interest` / `in`: `4311320.4`
+- `blockpit` / `fee` / `out`: `-181314.2`
+- `binance` / `trade` / `in`: `129068`
+- `binance` / `trade` / `out`: `-124582`
+- `binance_api` / `dust_convert_out` / `out`: `-2497.5`
+
+### EUR
+
+- Endbestand Modell: `1572.92627741`
+- Events: `216`
+- Erster Negativbestand: `2021-02-06T21:18:02+00:00` nach `045981a004a46c697c23e7518be8d8b4dd1c0a810d3d399bc7d91ccd95a34a43`
+- Auslösend: `blockpit` / `trade` / `out` / `-98`
+- Schlimmster Stand: `-6950.40774346` am `2023-05-02T04:13:23+00:00`
+
+Jahres-Netto:
+- `2021`: `-6350.3887714`
+- `2022`: `-100`
+- `2023`: `-500.01897206`
+- `2024`: `8592.71124993`
+- `2025`: `-569.94774696`
+- `2026`: `500.5705179`
+
+Top Quellen-Netto:
+- `blockpit` / `withdrawal` / `out`: `-10003.98`
+- `binance` / `trade` / `in`: `9612.5471437`
+- `blockpit` / `auto-balancing in` / `in`: `8572.71124993`
+- `binance` / `fiat_withdrawal` / `out`: `-7035.49`
+- `blockpit` / `deposit` / `in`: `6065`
+- `blockpit` / `trade` / `out`: `-5084.08460551`
+- `bitget_tax_api` / `fiat_recharge_in` / `in`: `4010`
+- `bitget_tax_api` / `fiat_balance_user_out` / `out`: `-3000.14`
+- `binance` / `trade` / `out`: `-2961.3823873`
+- `binance` / `fiat_deposit` / `in`: `2426.2`
+
+### ADA
+
+- Endbestand Modell: `1219.900868450`
+- Events: `1364`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `0.6` am `2021-04-05T10:12:32+00:00`
+
+Jahres-Netto:
+- `2021`: `10.6`
+- `2023`: `0.642558540`
+- `2024`: `11.50139690`
+- `2025`: `797.15691301`
+- `2026`: `400`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `in`: `804.8`
+- `binance_api` / `trade` / `buy_base`: `404.80000000`
+- `binance` / `trade` / `in`: `76.6`
+- `binance` / `trade` / `out`: `-66`
+- `blockpit` / `auto-balancing in` / `in`: `23.39854777`
+- `blockpit` / `trade` / `out`: `-12.1`
+- `blockpit` / `auto-balancing out` / `out`: `-11.67396699`
+- `blockpit` / `interest` / `in`: `0.42603300`
+- `binance_api` / `asset_dividend` / `in`: `0.419374660`
+- `blockpit` / `fee` / `out`: `-0.384560`
+
+### SHARK
+
+- Endbestand Modell: `963.536668`
+- Events: `5`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `0.000000` am `2024-11-22T15:59:16+00:00`
+
+Jahres-Netto:
+- `2024`: `0.000000`
+- `2026`: `963.536668`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `in`: `1354.930693`
+- `blockpit` / `withdrawal` / `out`: `-1354.930693`
+- `blockpit` / `deposit` / `in`: `963.536668`
+
+### SHARKSYJJQANYXVFRPNBN9PJGKHWDHATNMYICWPNR1S
+
+- Endbestand Modell: `963.536668`
+- Events: `5`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `0.000000` am `2024-11-22T15:59:16+00:00`
+
+Jahres-Netto:
+- `2024`: `0.000000`
+- `2026`: `963.536668`
+
+Top Quellen-Netto:
+- `solana_rpc` / `swap_in_aggregated` / `in`: `1354.930693`
+- `solana_rpc` / `token_transfer` / `in`: `963.536668`
+- `solana_rpc` / `swap_out_aggregated` / `out`: `-677.465347`
+- `solana_rpc` / `token_transfer` / `out`: `-677.465346`
+
+### USDT
+
+- Endbestand Modell: `690.11952391396508054000`
+- Events: `5030`
+- Erster Negativbestand: `2022-01-19T12:50:48+00:00` nach `3450aa41e7b74c69acf27e9104f44cb956c9847870d864a24e988ff3a9b446e8`
+- Auslösend: `binance_api` / `withdrawal` / `out` / `-1245.38419`
+- Schlimmster Stand: `-1571.08543483620000200000` am `2022-01-19T23:28:01+00:00`
+
+Jahres-Netto:
+- `2021`: `1434.47817132000000000000`
+- `2022`: `-1347.91636536536000200000`
+- `2023`: `-14.27771110170000000000`
+- `2024`: `1819.63964345790408254000`
+- `2025`: `-1201.8042143968790`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `in`: `104915.17478894999997`
+- `blockpit` / `trade` / `out`: `-99770.5232141799997`
+- `binance_api` / `trade` / `sell_quote`: `75304.76031000`
+- `binance_api` / `trade` / `buy_quote`: `-70220.53397000`
+- `binance` / `trade` / `in`: `54321.88957400`
+- `binance` / `trade` / `out`: `-52550.28606327`
+- `blockpit` / `withdrawal` / `out`: `-47943.97913344`
+- `blockpit` / `deposit` / `in`: `44544.951068550434`
+- `solana_rpc` / `token_transfer` / `out`: `-34733.843023`
+- `solana_rpc` / `swap_in_aggregated` / `in`: `31653.240947`
+
+### XRP
+
+- Endbestand Modell: `183.178126880000`
+- Events: `69`
+- Erster Negativbestand: `2025-03-09T19:00:30+00:00` nach `4744cb9ccb39354ec9ae9795b941bba5280acdbfefe04d755797130b38d5d167`
+- Auslösend: `blockpit` / `fee` / `out` / `-0.0050823`
+- Schlimmster Stand: `-5.057941800000` am `2025-07-13T21:38:44+00:00`
+
+Jahres-Netto:
+- `2025`: `183.178126880000`
+
+Top Quellen-Netto:
+- `blockpit` / `trade` / `in`: `99.20033434`
+- `binance_api` / `fiat_payment_in` / `in`: `94.11803434`
+- `blockpit` / `withdrawal` / `out`: `-19.5156`
+- `blockpit` / `deposit` / `in`: `19.2876`
+- `blockpit` / `derivative loss` / `out`: `-14.609562299632`
+- `blockpit` / `derivative profit` / `in`: `6.353168849132`
+- `bitget_tax_api` / `trade` / `in`: `5.0823`
+- `bitget_tax_api` / `transfer` / `out`: `-5.0772216`
+- `blockpit` / `derivative fee` / `out`: `-1.650762149500`
+- `blockpit` / `fee` / `out`: `-0.0101646`
+
+### VET
+
+- Endbestand Modell: `100.00000000`
+- Events: `5`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `100` am `2021-05-10T17:50:48+00:00`
+
+Jahres-Netto:
+- `2021`: `100`
+- `2023`: `0.00E-6`
+- `2024`: `100.01639287`
+- `2025`: `-100.01639287`
+
+Top Quellen-Netto:
+- `blockpit` / `auto-balancing in` / `in`: `200.03278574`
+- `blockpit` / `trade` / `out`: `-100.01639287`
+- `blockpit` / `auto-balancing out` / `out`: `-100.01639287`
+- `binance` / `trade` / `in`: `100`
+
+### YFIDOWN
+
+- Endbestand Modell: `57.67331`
+- Events: `5`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `57.67331` am `2021-04-28T05:14:15+00:00`
+
+Jahres-Netto:
+- `2021`: `57.67331`
+
+Top Quellen-Netto:
+- `binance` / `trade` / `in`: `57673.31`
+- `binance` / `trade` / `out`: `-43211.72`
+- `blockpit` / `auto-balancing in` / `in`: `14403.91669`
+- `binance_api` / `dust_convert_out` / `out`: `-14403.91669`
+- `blockpit` / `trade` / `out`: `-14403.91669`
+
+### PIXEL
+
+- Endbestand Modell: `19`
+- Events: `19`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-09-06T15:02:54+00:00`
+
+Jahres-Netto:
+- `2024`: `19`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `19`
+
+### DWNO
+
+- Endbestand Modell: `12`
+- Events: `12`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-06-15T19:43:42+00:00`
+
+Jahres-Netto:
+- `2024`: `12`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `12`
+
+### CLD
+
+- Endbestand Modell: `10`
+- Events: `10`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-06-24T20:25:37+00:00`
+
+Jahres-Netto:
+- `2024`: `10`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `10`
+
+### FOFME
+
+- Endbestand Modell: `8`
+- Events: `8`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-09-09T23:59:42+00:00`
+
+Jahres-Netto:
+- `2024`: `8`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `8`
+
+### HOT
+
+- Endbestand Modell: `6.918`
+- Events: `5`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `6.918` am `2023-05-02T04:13:23+00:00`
+
+Jahres-Netto:
+- `2021`: `7`
+- `2023`: `-0.082`
+
+Top Quellen-Netto:
+- `binance` / `trade` / `in`: `6959`
+- `binance` / `trade` / `out`: `-6952`
+- `binance_api` / `dust_convert_out` / `out`: `-0.041`
+- `blockpit` / `trade` / `out`: `-0.041`
+
+### A777CLU5WMULSDMWMNBKNNZFNVEMKMWN3XCOF1PWH2GC
+
+- Endbestand Modell: `6`
+- Events: `6`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2025-07-06T12:33:33+00:00`
+
+Jahres-Netto:
+- `2025`: `6`
+
+Top Quellen-Netto:
+- `blockpit` / `auto-balancing in` / `in`: `6`
+
+### SA
+
+- Endbestand Modell: `5`
+- Events: `5`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-15T10:58:59+00:00`
+
+Jahres-Netto:
+- `2024`: `5`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `5`
+
+### JFY
+
+- Endbestand Modell: `5`
+- Events: `5`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-03-05T21:31:19+00:00`
+
+Jahres-Netto:
+- `2024`: `5`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `5`
+
+### F8XM2GWIPZAKH1T8HOROFWS27SNRWDJZQHTIR4UNXFWW
+
+- Endbestand Modell: `3`
+- Events: `3`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-12-13T02:22:12+00:00`
+
+Jahres-Netto:
+- `2024`: `3`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `3`
+
+### 2QLUY6CKSV8RRYA4ZJSCJQZUPCHTRPXZTVHAKXGBCD26
+
+- Endbestand Modell: `3`
+- Events: `3`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-12-25T23:37:38+00:00`
+
+Jahres-Netto:
+- `2024`: `3`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `3`
+
+### HOTSPOT
+
+- Endbestand Modell: `3`
+- Events: `3`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2025-07-06T12:33:09+00:00`
+
+Jahres-Netto:
+- `2025`: `3`
+
+Top Quellen-Netto:
+- `blockpit` / `auto-balancing in` / `in`: `3`
+
+### HB5BEXTHUMKLQ5XOVARP9AKS97V9KPTEHMQJKFWYXQ8L
+
+- Endbestand Modell: `3`
+- Events: `3`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2025-07-06T12:33:37+00:00`
+
+Jahres-Netto:
+- `2025`: `3`
+
+Top Quellen-Netto:
+- `blockpit` / `auto-balancing in` / `in`: `3`
+
+### AOBKUNDHQ2CPTHXXAIU9DNIU97ZPSFYK6VWPDBSQK3WA
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-03T02:19:45+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### 9WZADPQ63VA66QZZGWRWZSWK5D5ZC5G9ZKAH6NQTF3IS
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-26T17:34:05+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### 94J6FQ5DNVYSLWVTTADBFYI4PMUZFYKZGUSA5KCERCN7
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-03-08T03:23:23+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### JP
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-03-13T18:31:22+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### HC1HJMCQNMUU7TCQDG1QVMDGF225ELQDNYQPHJ1DC8R
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-04-03T07:06:36+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### FWKZFEZI5FJT7VQIHDMPKVDYRTPHXPNIFJQSS36TNCK9
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-06-06T04:25:33+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### BОNK
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-06-29T15:45:41+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### TFF
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-07-05T11:39:41+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### HL_LAND
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-08-04T07:02:36+00:00`
+
+Jahres-Netto:
+- `2024`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### JUPBOX
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2025-06-03T19:45:37+00:00`
+
+Jahres-Netto:
+- `2025`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### MYNF
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2025-08-29T23:19:43+00:00`
+
+Jahres-Netto:
+- `2025`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### WKMRNWIGNUSZRQKCGXQW6K8RUGDEX8PFCDLQE1UMN6I
+
+- Endbestand Modell: `2`
+- Events: `2`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2025-12-20T12:13:54+00:00`
+
+Jahres-Netto:
+- `2025`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `2`
+
+### GTO
+
+- Endbestand Modell: `1.8919`
+- Events: `3`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1.8919` am `2021-03-29T16:48:07+00:00`
+
+Jahres-Netto:
+- `2021`: `1.8919`
+
+Top Quellen-Netto:
+- `binance` / `trade` / `in`: `1891.9`
+- `binance` / `trade` / `out`: `-1890`
+- `binance_api` / `dust_convert_out` / `out`: `-0.0081`
+
+### VSR
+
+- Endbestand Modell: `1`
+- Events: `7`
+- Erster Negativbestand: `2024-04-25T10:47:12+00:00` nach `921751f8c473fba69d682750384a6f35ac50bb421861a0ccbf5b1a1c6b10765d`
+- Auslösend: `blockpit` / `withdrawal` / `out` / `-1`
+- Schlimmster Stand: `-1` am `2024-04-25T10:47:12+00:00`
+
+Jahres-Netto:
+- `2024`: `-1`
+- `2025`: `2`
+
+Top Quellen-Netto:
+- `blockpit` / `auto-balancing in` / `in`: `4`
+- `blockpit` / `withdrawal` / `out`: `-3`
+
+### DSA1VHV1GOSIM1DV5K9H7S8HCJQZEFLSG6A4WNKQGJDU
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2023-05-08T04:52:01+00:00`
+
+Jahres-Netto:
+- `2023`: `1`
+
+Top Quellen-Netto:
+- `solana_rpc` / `swap_in_aggregated` / `in`: `1`
+
+### HJGKKKPN9EKNQJRTNZAUJX8WCINDFLWTD5HLK3OAQNQN
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2023-05-09T00:49:13+00:00`
+
+Jahres-Netto:
+- `2023`: `1`
+
+Top Quellen-Netto:
+- `solana_rpc` / `token_transfer` / `in`: `1`
+
+### BPXYGGVFENQCQXWXYV5VINYCRCQZRSZ3WIAGEQ3MXX59
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2023-06-02T04:28:57+00:00`
+
+Jahres-Netto:
+- `2023`: `1`
+
+Top Quellen-Netto:
+- `solana_rpc` / `token_transfer` / `in`: `1`
+
+### 2DWZNYB3TCPSPHDP4MH7KWF2F4U6PAWFA1SINSFXNRQC
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2023-06-29T03:20:08+00:00`
+
+Jahres-Netto:
+- `2023`: `1`
+
+Top Quellen-Netto:
+- `solana_rpc` / `token_transfer` / `in`: `1`
+
+### 7F1ENCQZBKYCS92LGGMTSZEMUEPUNAFDNPT1KCUNHVMG
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2023-08-02T06:43:13+00:00`
+
+Jahres-Netto:
+- `2023`: `1`
+
+Top Quellen-Netto:
+- `solana_rpc` / `token_transfer` / `in`: `1`
+
+### 4T4TMHWGWBMXJEAK3FFRJMKDGUSMH9Q3NDH2JUKF2RGU
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2023-08-19T07:55:38+00:00`
+
+Jahres-Netto:
+- `2023`: `1`
+
+Top Quellen-Netto:
+- `solana_rpc` / `token_transfer` / `in`: `1`
+
+### EUKMXS2PC2U2EBJSHXH5MNEZNGFDYNJYJYFAEDN7TEAV
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2023-12-17T00:57:32+00:00`
+
+Jahres-Netto:
+- `2023`: `1`
+
+Top Quellen-Netto:
+- `solana_rpc` / `token_transfer` / `in`: `1`
+
+### C4JGTTSWDTMYNRRAAREFSLOKDWNDMBT7D5ZZXPUHZUMH
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-02T23:14:07+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### MER
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-05T15:36:38+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### 9BJXRSXLLQXEZRWBPTGHHDLAP7QB1Q9ESRE84C78DA1S
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-14T17:51:25+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### BNHQV5RJ8XOK82GMWDAC5TYUKZAYUK4CSJ6N3PDT5U3E
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-19T00:41:09+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### DMEXF2C2HK9O8XY3NBKEZ2HJFHBZEQIJVEL9X9V9GVG3
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-26T05:56:40+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### AYSKQRCTGZO3M1RKXJJ1PBNJGXWQOWJJQEJELYPIGSCL
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-28T14:29:37+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### JDP
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-30T01:51:03+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### GM2SP9DNOS8O5MABZREM9YKQMWO3ITDVFJP1CBY7KJST
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-31T02:40:08+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### 6UCXUTH2X1SEQVVDWPXDSJBJWAGCQ4HPMP3YHGEZWK5Y
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-31T10:45:34+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### 2SZZHWXNRS3YSRM77JWK7HMJF6TNXTHJSZGPDLTJGR6A
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-01-31T18:35:37+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### 6VJCTW2DBZU2HKCVUBVJRJC5R9ZCBUYS872GMSUPAVDM
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-01T01:11:02+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### 3RZQ5RS1YMJP2DYNWFRPMDEHANR5H5ATDRCHGJFUCS7X
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-04T21:32:46+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### LD
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-05T12:32:25+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### B1MBFKBLWPHC8VMGRMCZTTXLDAAFJHOJM32QX1KY1Q9S
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-05T13:44:49+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### CYHFAHDDF1OPDQYRCSZIAVFRWBT6MB2W5TKAVCBFRTYS
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-05T14:07:44+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### GPHOHLBUPGZMMHHOAIWBFFWVQFUM5ZK2NOFMMURWVS8T
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-11T03:08:57+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`
+
+### 4GZ1IM2C6WGHE8WSNWJMAJIQZLMU3FA4VW31DEUUDPZZ
+
+- Endbestand Modell: `1`
+- Events: `1`
+- Erster Negativbestand: `` nach ``
+- Auslösend: `` / `` / `` / ``
+- Schlimmster Stand: `1` am `2024-02-15T07:29:07+00:00`
+
+Jahres-Netto:
+- `2024`: `1`
+
+Top Quellen-Netto:
+- `blockpit` / `deposit` / `in`: `1`

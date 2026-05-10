@@ -1208,6 +1208,12 @@ tr.sum-row td {
   border-color: rgba(224, 93, 103, 0.42);
 }
 
+.notice-neutral {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--line);
+}
+
 .guided-actions {
   display: flex;
   flex-wrap: wrap;

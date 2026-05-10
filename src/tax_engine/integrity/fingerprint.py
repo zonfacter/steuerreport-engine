@@ -41,7 +41,7 @@ def event_fingerprint(payload: Mapping[str, Any]) -> str:
 
 def ruleset_fingerprint(ruleset: Any) -> str:
     if is_dataclass(ruleset):
-        payload = asdict(ruleset)
+        payload = asdict(ruleset)  # type: ignore[arg-type]
     elif isinstance(ruleset, Mapping):
         payload = dict(ruleset)
     elif hasattr(ruleset, "to_dict"):

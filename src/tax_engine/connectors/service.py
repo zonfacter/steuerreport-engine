@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import re
 import time
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -10,6 +11,18 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
+
+BITGET_ACCOUNT_BILL_GROUP_TYPES = (
+    "transfer",
+    "strategy",
+    "convert",
+    "financial",
+    "loan",
+    "c2c",
+    "pre_c2c",
+    "on_chain",
+    "other",
+)
 
 
 def mask_api_key(value: str) -> str:
@@ -45,6 +58,14 @@ def build_coinbase_signature(
     prehash = f"{timestamp}{method.upper()}{request_path}{body}"
     digest = hmac.new(key, prehash.encode("utf-8"), hashlib.sha256).digest()
     return base64.b64encode(digest).decode("ascii")
+
+
+def build_pionex_signature(method: str, path: str, params: dict[str, str], secret: str, body: str = "") -> str:
+    query = "&".join(f"{key}={params[key]}" for key in sorted(params))
+    payload = f"{method.upper()}{path}?{query}"
+    if method.upper() in {"POST", "DELETE"} and body:
+        payload += body
+    return hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _to_decimal(value: Any) -> Decimal:
@@ -145,6 +166,8 @@ def verify_cex_credentials(
         return _verify_bitget(api_key, api_secret, passphrase, timeout_seconds)
     if connector == "coinbase":
         return _verify_coinbase(api_key, api_secret, passphrase, timeout_seconds)
+    if connector == "pionex":
+        return _verify_pionex(api_key, api_secret, timeout_seconds)
     return {"ok": False, "error_code": "unsupported_connector", "connector_id": connector}
 
 
@@ -175,8 +198,10 @@ def fetch_cex_balance_preview(
                     "quantity": total.to_eng_string(),
                     "event_type": "balance_snapshot",
                     "source": "binance_api",
+                    "account_type": "spot",
                 }
             )
+        lines.extend(_binance_earn_position_balance_rows(api_key, api_secret, timeout_seconds, now_iso))
         return {"connector_id": connector, "count": len(lines[:max_rows]), "rows": lines[:max_rows]}
 
     if connector == "bitget":
@@ -216,6 +241,29 @@ def fetch_cex_balance_preview(
                     "quantity": balance.to_eng_string(),
                     "event_type": "balance_snapshot",
                     "source": "coinbase_api",
+                }
+            )
+        return {"connector_id": connector, "count": len(lines[:max_rows]), "rows": lines[:max_rows]}
+
+    if connector == "pionex":
+        payload = _pionex_account_payload(api_key, api_secret, timeout_seconds)
+        raw_items = (payload.get("data") or {}).get("balances", [])
+        if not isinstance(raw_items, list):
+            raise ValueError("pionex_invalid_payload")
+        lines = []
+        for item in raw_items:
+            free = _to_decimal(item.get("free", "0"))
+            frozen = _to_decimal(item.get("frozen", "0"))
+            total = free + frozen
+            if total <= Decimal("0"):
+                continue
+            lines.append(
+                {
+                    "timestamp_utc": now_iso,
+                    "asset": str(item.get("coin", "")).upper(),
+                    "quantity": total.to_eng_string(),
+                    "event_type": "balance_snapshot",
+                    "source": "pionex_api",
                 }
             )
         return {"connector_id": connector, "count": len(lines[:max_rows]), "rows": lines[:max_rows]}
@@ -260,6 +308,15 @@ def fetch_cex_transactions_preview(
             passphrase=passphrase,
             timeout_seconds=timeout_seconds,
             max_rows=max_rows,
+        )
+    if connector == "pionex":
+        return _pionex_transactions_preview(
+            api_key=api_key,
+            api_secret=api_secret,
+            timeout_seconds=timeout_seconds,
+            max_rows=max_rows,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
         )
     raise ValueError("unsupported_connector")
 
@@ -314,6 +371,48 @@ def _verify_coinbase(
     return {"ok": True, "connector_id": "coinbase", "account_items": len(payload)}
 
 
+def _verify_pionex(api_key: str, api_secret: str, timeout_seconds: int) -> dict[str, Any]:
+    payload = _pionex_account_payload(api_key, api_secret, timeout_seconds)
+    if not bool(payload.get("result")):
+        return {
+            "ok": False,
+            "connector_id": "pionex",
+            "error_code": str(payload.get("code", "pionex_api_error")),
+            "error_message": str(payload.get("message", "unknown")),
+        }
+    balances = (payload.get("data") or {}).get("balances", [])
+    return {"ok": True, "connector_id": "pionex", "account_items": len(balances) if isinstance(balances, list) else 0}
+
+
+def _pionex_account_payload(api_key: str, api_secret: str, timeout_seconds: int) -> dict[str, Any]:
+    payload = _pionex_signed_get(
+        path="/api/v1/account/balances",
+        api_key=api_key,
+        api_secret=api_secret,
+        timeout_seconds=timeout_seconds,
+    )
+    if not isinstance(payload, dict):
+        raise ValueError("pionex_invalid_payload")
+    return payload
+
+
+def _pionex_signed_get(
+    path: str,
+    api_key: str,
+    api_secret: str,
+    timeout_seconds: int,
+    params: dict[str, str] | None = None,
+) -> Any:
+    base_params = {"timestamp": str(int(time.time() * 1000))}
+    if params:
+        base_params.update({key: str(value) for key, value in params.items() if value is not None})
+    signature = build_pionex_signature("GET", path, base_params, api_secret)
+    query = urlencode(base_params)
+    url = f"https://api.pionex.com{path}?{query}"
+    headers = {"PIONEX-KEY": api_key, "PIONEX-SIGNATURE": signature}
+    return _safe_get_json(url=url, headers=headers, timeout_seconds=timeout_seconds)
+
+
 def _binance_account_payload(api_key: str, api_secret: str, timeout_seconds: int) -> dict[str, Any]:
     timestamp = str(int(time.time() * 1000))
     params = {"timestamp": timestamp, "recvWindow": "5000"}
@@ -326,6 +425,75 @@ def _binance_account_payload(api_key: str, api_secret: str, timeout_seconds: int
     if not isinstance(payload, dict):
         raise ValueError("binance_invalid_payload")
     return payload
+
+
+def _binance_earn_position_balance_rows(
+    api_key: str,
+    api_secret: str,
+    timeout_seconds: int,
+    timestamp_utc: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    endpoints = [
+        ("simple_earn_flexible", "/sapi/v1/simple-earn/flexible/position", {"size": "100", "current": "1"}),
+        ("simple_earn_locked", "/sapi/v1/simple-earn/locked/position", {"size": "100", "current": "1"}),
+    ]
+    for account_type, path, base_params in endpoints:
+        for page in range(1, 101):
+            params = dict(base_params)
+            params["current"] = str(page)
+            try:
+                payload = _binance_signed_get(
+                    path=path,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    timeout_seconds=timeout_seconds,
+                    params=params,
+                )
+            except Exception:
+                break
+            raw_rows = payload.get("rows", []) if isinstance(payload, dict) else []
+            if not isinstance(raw_rows, list) or not raw_rows:
+                break
+            for item in raw_rows:
+                if not isinstance(item, dict):
+                    continue
+                asset = str(item.get("asset", "")).upper()
+                amount_key = "totalAmount" if account_type == "simple_earn_flexible" else "amount"
+                quantity = _to_decimal(item.get(amount_key))
+                if asset and quantity > Decimal("0"):
+                    rows.append(
+                        {
+                            "timestamp_utc": timestamp_utc,
+                            "asset": asset,
+                            "quantity": quantity.to_eng_string(),
+                            "event_type": "balance_snapshot",
+                            "source": "binance_api",
+                            "account_type": account_type,
+                            "product_id": str(item.get("productId") or item.get("projectId") or ""),
+                            "position_id": str(item.get("positionId") or ""),
+                            "raw_row": item,
+                        }
+                    )
+                reward_asset = str(item.get("rewardAsset", asset) or asset).upper()
+                reward_amount = _to_decimal(item.get("rewardAmt"))
+                if account_type == "simple_earn_locked" and reward_asset and reward_amount > Decimal("0"):
+                    rows.append(
+                        {
+                            "timestamp_utc": timestamp_utc,
+                            "asset": reward_asset,
+                            "quantity": reward_amount.to_eng_string(),
+                            "event_type": "earn_accrued_reward_snapshot",
+                            "source": "binance_api",
+                            "account_type": account_type,
+                            "product_id": str(item.get("projectId") or ""),
+                            "position_id": str(item.get("positionId") or ""),
+                            "raw_row": item,
+                        }
+                    )
+            if len(raw_rows) < int(params.get("size", "100")):
+                break
+    return rows
 
 
 def _binance_signed_get(
@@ -946,47 +1114,114 @@ def _bitget_transactions_preview(
     start_ms = start_time_ms if start_time_ms is not None else default_start
     end_ms = end_time_ms if end_time_ms is not None else now_ms
 
+    spot_query_limit = str(min(max_rows, 100))
     base_params = {
         "startTime": str(start_ms),
         "endTime": str(end_ms),
-        "limit": str(min(max_rows, 1000)),
+        "limit": spot_query_limit,
     }
-
-    deposit_payload = _bitget_signed_get(
-        path="/api/v2/spot/wallet/deposit-records",
-        api_key=api_key,
-        api_secret=api_secret,
-        passphrase=passphrase,
-        timeout_seconds=timeout_seconds,
-        params=base_params,
-    )
-    withdrawal_payload = _bitget_signed_get(
-        path="/api/v2/spot/wallet/withdrawal-records",
-        api_key=api_key,
-        api_secret=api_secret,
-        passphrase=passphrase,
-        timeout_seconds=timeout_seconds,
-        params=base_params,
-    )
-    fills_payload = _bitget_signed_get(
-        path="/api/v2/spot/trade/fills",
-        api_key=api_key,
-        api_secret=api_secret,
-        passphrase=passphrase,
-        timeout_seconds=timeout_seconds,
-        params=base_params,
-    )
 
     rows: list[dict[str, Any]] = []
     warnings: list[dict[str, str]] = []
 
-    for payload_name, payload in (
-        ("deposit", deposit_payload),
-        ("withdrawal", withdrawal_payload),
-        ("fills", fills_payload),
-    ):
+    def _fetch(payload_name: str, path: str, params: dict[str, str]) -> dict[str, Any]:
+        try:
+            payload = _bitget_signed_get(
+                path=path,
+                api_key=api_key,
+                api_secret=api_secret,
+                passphrase=passphrase,
+                timeout_seconds=timeout_seconds,
+                params=params,
+            )
+        except Exception as exc:
+            warnings.append({"code": f"{payload_name}_fetch_failed", "message": str(exc)})
+            return {}
         if not isinstance(payload, dict):
             warnings.append({"code": f"{payload_name}_invalid_payload"})
+            return {}
+        code = str(payload.get("code") or "")
+        if code and code != "00000":
+            warnings.append({"code": f"{payload_name}_api_error", "message": str(payload.get("msg") or payload.get("message") or code)})
+        return payload
+
+    def _fetch_list_pages(
+        payload_name: str,
+        path: str,
+        params: dict[str, str],
+        list_key: str | None = None,
+        cursor_key: str = "idLessThan",
+        max_pages: int = 20,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        next_params = dict(params)
+        for page_index in range(max_pages):
+            payload = _fetch(f"{payload_name}_page_{page_index + 1}", path, next_params)
+            data = payload.get("data") if isinstance(payload, dict) else None
+            raw_items: Any
+            next_cursor = ""
+            if list_key and isinstance(data, dict):
+                raw_items = data.get(list_key) or []
+                next_cursor = str(data.get("endId") or "").strip()
+            else:
+                raw_items = data if isinstance(data, list) else []
+                if raw_items:
+                    last_item = raw_items[-1]
+                    if isinstance(last_item, dict):
+                        next_cursor = str(last_item.get("id") or last_item.get("billId") or last_item.get("orderId") or "").strip()
+            if not isinstance(raw_items, list) or not raw_items:
+                break
+            items.extend(item for item in raw_items if isinstance(item, dict))
+            if not next_cursor or next_params.get(cursor_key) == next_cursor:
+                break
+            next_params[cursor_key] = next_cursor
+        return items
+
+    deposit_payload = _fetch("deposit", "/api/v2/spot/wallet/deposit-records", base_params)
+    withdrawal_payload = _fetch("withdrawal", "/api/v2/spot/wallet/withdrawal-records", base_params)
+    fills_payload = _fetch("fills", "/api/v2/spot/trade/fills", base_params)
+    spot_tax_items = _fetch_list_pages(
+        "spot_tax",
+        "/api/v2/tax/spot-record",
+        {"startTime": str(start_ms), "endTime": str(end_ms), "limit": str(min(max_rows, 500))},
+    )
+    spot_account_bill_items: list[dict[str, Any]] = []
+    if _bitget_account_bills_window_is_recent(end_ms=end_ms, now_ms=now_ms):
+        for group_type in BITGET_ACCOUNT_BILL_GROUP_TYPES:
+            spot_account_bill_items.extend(
+                _fetch_list_pages(
+                    f"spot_account_bills_{group_type}",
+                    "/api/v2/spot/account/bills",
+                    {
+                        "groupType": group_type,
+                        "startTime": str(start_ms),
+                        "endTime": str(end_ms),
+                        "limit": str(min(max_rows, 500)),
+                    },
+                )
+            )
+    else:
+        warnings.append(
+            {
+                "code": "bitget_spot_account_bills_history_limit",
+                "message": "Spot Account Bills API liefert nur aktuelle Historie; fuer aeltere Zeitraeume Bitget-Web-Export/Statement verwenden.",
+            }
+        )
+    futures_bill_items: list[dict[str, Any]] = []
+    for product_type in ("USDT-FUTURES", "COIN-FUTURES", "USDC-FUTURES"):
+        futures_bill_items.extend(
+            _fetch_list_pages(
+                f"mix_bill_{product_type.lower()}",
+                "/api/v2/mix/account/bill",
+                {
+                    "productType": product_type,
+                    "startTime": str(start_ms),
+                    "endTime": str(end_ms),
+                    "limit": str(min(max_rows, 100)),
+                },
+                list_key="bills",
+            )
+        )
 
     dep_items = deposit_payload.get("data", []) if isinstance(deposit_payload, dict) else []
     wdr_items = withdrawal_payload.get("data", []) if isinstance(withdrawal_payload, dict) else []
@@ -1009,6 +1244,69 @@ def _bitget_transactions_preview(
                 "event_type": "deposit",
                 "tx_id": str(item.get("orderId") or item.get("txId") or item.get("id") or ""),
                 "source": "bitget_api",
+                "raw_row": item,
+            }
+        )
+
+    for item in spot_tax_items:
+        amount = _to_decimal(item.get("amount") or "0")
+        fee = _to_decimal(item.get("fee") or "0")
+        event_type = _bitget_tax_event_type(str(item.get("spotTaxType") or item.get("businessType") or "spot_tax"))
+        rows.append(
+            {
+                "timestamp_utc": _to_utc_iso(item.get("ts") or item.get("cTime")),
+                "asset": str(item.get("coin") or "").upper(),
+                "quantity": abs(amount).to_eng_string(),
+                "price": "",
+                "fee": abs(fee).to_eng_string(),
+                "fee_asset": str(item.get("coin") or "").upper() if fee else "",
+                "side": "out" if amount < 0 else "in",
+                "event_type": event_type,
+                "tx_id": str(item.get("id") or item.get("bizOrderId") or ""),
+                "source": "bitget_tax_api",
+                "raw_row": item,
+            }
+        )
+
+    for item in spot_account_bill_items:
+        amount = _to_decimal(item.get("size") or item.get("amount") or "0")
+        fee = _to_decimal(item.get("fees") or item.get("fee") or "0")
+        group_type = str(item.get("groupType") or "")
+        business_type = str(item.get("businessType") or "")
+        rows.append(
+            {
+                "timestamp_utc": _to_utc_iso(item.get("cTime") or item.get("uTime") or item.get("ts")),
+                "asset": str(item.get("coin") or "").upper(),
+                "quantity": abs(amount).to_eng_string(),
+                "price": "",
+                "fee": abs(fee).to_eng_string(),
+                "fee_asset": str(item.get("coin") or "").upper() if fee else "",
+                "side": _bitget_account_bill_side(group_type=group_type, business_type=business_type, amount=amount),
+                "event_type": _bitget_account_bill_event_type(group_type=group_type, business_type=business_type),
+                "tx_id": str(item.get("billId") or item.get("id") or ""),
+                "source": "bitget_account_bills_api",
+                "balance_after": str(item.get("balance") or ""),
+                "raw_row": item,
+            }
+        )
+
+    for item in futures_bill_items:
+        amount = _to_decimal(item.get("amount") or "0")
+        fee = _to_decimal(item.get("fee") or "0")
+        coin = str(item.get("coin") or item.get("marginCoin") or "").upper()
+        business_type = str(item.get("businessType") or item.get("type") or "futures_bill")
+        rows.append(
+            {
+                "timestamp_utc": _to_utc_iso(item.get("cTime") or item.get("uTime")),
+                "asset": coin,
+                "quantity": abs(amount).to_eng_string(),
+                "price": "",
+                "fee": abs(fee).to_eng_string(),
+                "fee_asset": coin if fee else "",
+                "side": "out" if amount < 0 else "in",
+                "event_type": _bitget_futures_event_type(business_type, amount),
+                "tx_id": str(item.get("billId") or item.get("id") or item.get("tradeId") or ""),
+                "source": "bitget_tax_api",
                 "raw_row": item,
             }
         )
@@ -1047,8 +1345,13 @@ def _bitget_transactions_preview(
             or "0"
         )
         price = _to_decimal(item.get("price") or item.get("priceAvg") or item.get("fillPrice") or "0")
-        fee = _to_decimal(item.get("feeDetail") or item.get("fee") or "0")
-        fee_coin = str(item.get("feeCoin") or item.get("feeCurrency") or "")
+        fee_detail = item.get("feeDetail")
+        if isinstance(fee_detail, dict):
+            fee = _to_decimal(fee_detail.get("totalFee") or fee_detail.get("totalDeductionFee") or "0")
+            fee_coin = str(fee_detail.get("feeCoin") or item.get("feeCoin") or item.get("feeCurrency") or "")
+        else:
+            fee = _to_decimal(fee_detail or item.get("fee") or "0")
+            fee_coin = str(item.get("feeCoin") or item.get("feeCurrency") or "")
         ts_raw = item.get("fillTime") or item.get("cTime") or item.get("uTime") or item.get("ts")
         event_time = _to_utc_iso(ts_raw)
         rows.append(
@@ -1075,6 +1378,68 @@ def _bitget_transactions_preview(
         "rows": limited_rows,
         "warnings": warnings,
     }
+
+
+def _bitget_tax_event_type(value: str) -> str:
+    normalized = _snake_case(value)
+    if normalized in {"deposit", "withdraw", "withdrawal"}:
+        return "deposit" if normalized == "deposit" else "withdrawal"
+    if normalized in {"buy", "sell", "transaction"} or "trade" in normalized:
+        return "trade"
+    if "strategy" in normalized:
+        return "strategy"
+    if "transfer" in normalized:
+        return "transfer"
+    if "fee" in normalized:
+        return "fee"
+    return normalized or "spot_tax"
+
+
+def _bitget_futures_event_type(value: str, amount: Decimal) -> str:
+    normalized = _snake_case(value)
+    if "fee" in normalized or "funding" in normalized:
+        return "derivative fee"
+    if "pnl" in normalized or "profit" in normalized or "loss" in normalized:
+        return "derivative profit" if amount >= 0 else "derivative loss"
+    if "trans" in normalized or "transfer" in normalized:
+        return "transfer"
+    return f"derivative {normalized}".strip()
+
+
+def _bitget_account_bill_event_type(group_type: str, business_type: str) -> str:
+    group = _snake_case(group_type)
+    business = _snake_case(business_type)
+    if group == "convert" or business in {"buy", "sell"}:
+        return "trade"
+    if "fee" in business:
+        return "fee"
+    if group in {"transfer", "strategy", "financial", "loan", "c2c", "pre_c2c", "on_chain", "other"}:
+        return group
+    return business or group or "account_bill"
+
+
+def _bitget_account_bill_side(group_type: str, business_type: str, amount: Decimal) -> str:
+    business = _snake_case(business_type)
+    if amount < 0:
+        return "out"
+    if amount > 0:
+        return "in"
+    if business in {"sell", "withdraw", "withdrawal", "transfer_out"} or business.endswith("_out"):
+        return "out"
+    if business in {"buy", "deposit", "transfer_in"} or business.endswith("_in"):
+        return "in"
+    return "in"
+
+
+def _bitget_account_bills_window_is_recent(end_ms: int, now_ms: int) -> bool:
+    ninety_days_ms = 90 * 24 * 60 * 60 * 1000
+    return end_ms >= now_ms - ninety_days_ms
+
+
+def _snake_case(value: str) -> str:
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(value or ""))
+    text = re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_").lower()
+    return text
 
 
 def _coinbase_accounts_payload(
@@ -1248,6 +1613,130 @@ def _coinbase_transactions_preview(
         "rows": limited_rows,
         "warnings": warnings,
     }
+
+
+def _pionex_transactions_preview(
+    api_key: str,
+    api_secret: str,
+    timeout_seconds: int,
+    max_rows: int,
+    start_time_ms: int | None,
+    end_time_ms: int | None,
+) -> dict[str, Any]:
+    warnings: list[dict[str, str]] = [
+        {
+            "code": "pionex_history_limit",
+            "message": "Pionex API may return empty results for old trade history; use CSV/account statements for 2021/2022 bot start balances.",
+        }
+    ]
+    rows: list[dict[str, Any]] = []
+    symbols = _pionex_candidate_symbols(api_key=api_key, api_secret=api_secret, timeout_seconds=timeout_seconds)
+    for symbol in symbols:
+        if len(rows) >= max_rows:
+            break
+        params: dict[str, str] = {"symbol": symbol}
+        if start_time_ms is not None:
+            params["startTime"] = str(start_time_ms)
+        if end_time_ms is not None:
+            params["endTime"] = str(end_time_ms)
+        try:
+            payload = _pionex_signed_get(
+                path="/api/v1/trade/fills",
+                api_key=api_key,
+                api_secret=api_secret,
+                timeout_seconds=timeout_seconds,
+                params=params,
+            )
+        except Exception:
+            warnings.append({"code": "pionex_fills_fetch_failed", "symbol": symbol})
+            continue
+        fills = (payload.get("data") or {}).get("fills", []) if isinstance(payload, dict) else []
+        if not isinstance(fills, list):
+            warnings.append({"code": "pionex_fills_invalid_payload", "symbol": symbol})
+            continue
+        for fill in fills:
+            if not isinstance(fill, dict):
+                continue
+            base_asset, quote_asset = _split_pionex_symbol(str(fill.get("symbol") or symbol))
+            size = _to_decimal(fill.get("size") or fill.get("filledSize") or "0")
+            price = _to_decimal(fill.get("price") or "0")
+            amount = _to_decimal(fill.get("amount") or "0")
+            if amount == 0 and price > 0:
+                amount = size * price
+            side_raw = str(fill.get("side") or "").upper()
+            fee = _to_decimal(fill.get("fee") or "0")
+            fee_asset = str(fill.get("feeCoin") or "").upper()
+            ts = _to_utc_iso(fill.get("timestamp") or fill.get("time") or fill.get("createTime") or fill.get("updateTime"))
+            tx_base = str(fill.get("fillId") or fill.get("tradeId") or fill.get("orderId") or f"{symbol}:{len(rows)}")
+            if side_raw == "BUY":
+                legs = ((quote_asset, amount, "out"), (base_asset, size, "in"))
+            else:
+                legs = ((base_asset, size, "out"), (quote_asset, amount, "in"))
+            for asset, quantity, side in legs:
+                if not asset or quantity == 0:
+                    continue
+                rows.append(
+                    {
+                        "timestamp_utc": ts or "",
+                        "asset": asset,
+                        "quantity": quantity.to_eng_string(),
+                        "price": price.to_eng_string() if price else "",
+                        "fee": "",
+                        "fee_asset": "",
+                        "side": side,
+                        "event_type": "trade",
+                        "tx_id": f"{tx_base}:{side}:{asset}",
+                        "source": "pionex_api",
+                        "raw_row": fill,
+                    }
+                )
+            if fee != 0 and fee_asset:
+                rows.append(
+                    {
+                        "timestamp_utc": ts or "",
+                        "asset": fee_asset,
+                        "quantity": abs(fee).to_eng_string(),
+                        "price": "",
+                        "fee": "",
+                        "fee_asset": "",
+                        "side": "out",
+                        "event_type": "fee",
+                        "tx_id": f"{tx_base}:fee:{fee_asset}",
+                        "source": "pionex_api",
+                        "raw_row": fill,
+                    }
+                )
+
+    rows.sort(key=lambda r: str(r.get("timestamp_utc") or ""))
+    limited_rows = rows[:max_rows]
+    return {"connector_id": "pionex", "count": len(limited_rows), "rows": limited_rows, "warnings": warnings}
+
+
+def _pionex_candidate_symbols(api_key: str, api_secret: str, timeout_seconds: int) -> list[str]:
+    assets: set[str] = {"USDT", "HNT", "SHIB", "MXC", "BTC", "JUP"}
+    try:
+        payload = _pionex_account_payload(api_key=api_key, api_secret=api_secret, timeout_seconds=timeout_seconds)
+        balances = (payload.get("data") or {}).get("balances", [])
+        if isinstance(balances, list):
+            for item in balances:
+                asset = str(item.get("coin") or "").upper()
+                if asset:
+                    assets.add(asset)
+    except Exception:
+        pass
+    symbols: set[str] = set()
+    for asset in assets:
+        if asset and asset != "USDT":
+            symbols.add(f"{asset}_USDT")
+    return sorted(symbols)
+
+
+def _split_pionex_symbol(symbol: str) -> tuple[str, str]:
+    normalized = str(symbol or "").upper().strip()
+    if "_" in normalized:
+        base, quote = normalized.split("_", 1)
+        return base, quote
+    return normalized, ""
 
 
 def _to_utc_iso(value: Any) -> str | None:

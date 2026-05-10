@@ -61,6 +61,7 @@ def resolve_effective_runtime_config() -> dict[str, Any]:
     binance_key = _load_secret_json_value("secret.cex.binance.api_key")
     bitget_key = _load_secret_json_value("secret.cex.bitget.api_key")
     coinbase_key = _load_secret_json_value("secret.cex.coinbase.api_key")
+    pionex_key = _load_secret_json_value("secret.cex.pionex.api_key")
     default_wallet = _load_value("runtime.solana.default_wallet")
     if not isinstance(default_wallet, str):
         default_wallet = ""
@@ -81,6 +82,44 @@ def resolve_effective_runtime_config() -> dict[str, Any]:
     if str(coingecko_plan).lower() not in {"demo", "pro"}:
         coingecko_plan = os.getenv("COINGECKO_PLAN", "demo")
     coingecko_plan = str(coingecko_plan).lower() if str(coingecko_plan).lower() in {"demo", "pro"} else "demo"
+    ai_review_provider = _load_value("runtime.ai_review.provider")
+    if not isinstance(ai_review_provider, str) or not ai_review_provider.strip():
+        ai_review_provider = os.getenv("AI_REVIEW_PROVIDER", "deterministic")
+    ai_review_provider = str(ai_review_provider).strip().lower()
+    ollama_base_url = _load_value("runtime.ai_review.ollama_base_url")
+    if not isinstance(ollama_base_url, str) or not ollama_base_url.strip():
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    ollama_model = _load_value("runtime.ai_review.ollama_model")
+    if not isinstance(ollama_model, str) or not ollama_model.strip():
+        ollama_model = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
+    ollama_timeout = _load_value("runtime.ai_review.ollama_timeout_seconds")
+    if isinstance(ollama_timeout, str):
+        try:
+            ollama_timeout = float(ollama_timeout)
+        except ValueError:
+            ollama_timeout = None
+    if not isinstance(ollama_timeout, (int, float)) or ollama_timeout <= 0:
+        ollama_timeout = 120.0
+    ollama_temperature = _load_value("runtime.ai_review.ollama_temperature")
+    if isinstance(ollama_temperature, str):
+        try:
+            ollama_temperature = float(ollama_temperature)
+        except ValueError:
+            ollama_temperature = None
+    if not isinstance(ollama_temperature, (int, float)) or ollama_temperature < 0:
+        ollama_temperature = 0.1
+    ollama_num_ctx = _load_value("runtime.ai_review.ollama_num_ctx")
+    if isinstance(ollama_num_ctx, str):
+        try:
+            ollama_num_ctx = int(ollama_num_ctx)
+        except ValueError:
+            ollama_num_ctx = None
+    if not isinstance(ollama_num_ctx, int) or ollama_num_ctx <= 0:
+        try:
+            ollama_num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
+        except ValueError:
+            ollama_num_ctx = 4096
+    ollama_num_ctx = min(max(int(ollama_num_ctx), 2048), 32768)
     return {
         "master_key_configured": has_master_key_material(),
         "runtime": {
@@ -95,6 +134,39 @@ def resolve_effective_runtime_config() -> dict[str, Any]:
             "coingecko": {
                 "plan": coingecko_plan,
             },
+            "ai_review": {
+                "provider": ai_review_provider,
+                "ollama_base_url": str(ollama_base_url),
+                "ollama_model": str(ollama_model),
+                "ollama_timeout_seconds": float(ollama_timeout),
+                "ollama_temperature": float(ollama_temperature),
+                "ollama_num_ctx": int(ollama_num_ctx),
+                "llama_cpp_base_url": _runtime_str(
+                    "runtime.ai_review.llama_cpp_base_url",
+                    "LLAMA_CPP_BASE_URL",
+                    "http://127.0.0.1:11435",
+                ),
+                "llama_cpp_model": _runtime_str(
+                    "runtime.ai_review.llama_cpp_model",
+                    "LLAMA_CPP_MODEL",
+                    "qwen3-coder-30b-a3b-llamacpp",
+                ),
+                "llama_cpp_timeout_seconds": float(
+                    _runtime_float("runtime.ai_review.llama_cpp_timeout_seconds", "LLAMA_CPP_TIMEOUT_SECONDS", 180.0)
+                ),
+                "llama_cpp_temperature": float(
+                    _runtime_float("runtime.ai_review.llama_cpp_temperature", "LLAMA_CPP_TEMPERATURE", 0.1)
+                ),
+                "llama_cpp_max_tokens": int(
+                    min(
+                        max(
+                            _runtime_int("runtime.ai_review.llama_cpp_max_tokens", "LLAMA_CPP_MAX_TOKENS", 384),
+                            128,
+                        ),
+                        2048,
+                    )
+                ),
+            },
         },
         "credentials": {
             "alchemy_configured": bool(alchemy_key),
@@ -107,13 +179,15 @@ def resolve_effective_runtime_config() -> dict[str, Any]:
             "bitget_api_key_masked": _mask_secret(str(bitget_key or "")),
             "coinbase_configured": bool(coinbase_key),
             "coinbase_api_key_masked": _mask_secret(str(coinbase_key or "")),
+            "pionex_configured": bool(pionex_key),
+            "pionex_api_key_masked": _mask_secret(str(pionex_key or "")),
         },
     }
 
 
 def resolve_cex_credentials(connector_id: str) -> dict[str, str]:
     connector = str(connector_id or "").strip().lower()
-    if connector not in {"binance", "bitget", "coinbase"}:
+    if connector not in {"binance", "bitget", "coinbase", "pionex"}:
         raise ValueError("unsupported_connector")
     api_key = _load_secret_json_value(f"secret.cex.{connector}.api_key")
     api_secret = _load_secret_json_value(f"secret.cex.{connector}.api_secret")
@@ -154,6 +228,43 @@ def _load_secret_json_value(setting_key: str) -> Any:
     if decrypted is None:
         return None
     return json.loads(decrypted)
+
+
+def _runtime_str(setting_key: str, env_key: str, default: str) -> str:
+    value = _load_value(setting_key)
+    if not isinstance(value, str) or not value.strip():
+        value = os.getenv(env_key, default)
+    return str(value)
+
+
+def _runtime_float(setting_key: str, env_key: str, default: float) -> float:
+    value = _load_value(setting_key)
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            value = None
+    if not isinstance(value, (int, float)) or value <= 0:
+        try:
+            value = float(os.getenv(env_key, str(default)))
+        except ValueError:
+            value = default
+    return float(value)
+
+
+def _runtime_int(setting_key: str, env_key: str, default: int) -> int:
+    value = _load_value(setting_key)
+    if isinstance(value, str):
+        try:
+            value = int(value)
+        except ValueError:
+            value = None
+    if not isinstance(value, int) or value <= 0:
+        try:
+            value = int(os.getenv(env_key, str(default)))
+        except ValueError:
+            value = default
+    return int(value)
 
 
 def _decrypt_setting_value(setting_key: str, encrypted_value: str) -> str | None:

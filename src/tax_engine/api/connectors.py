@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from tax_engine.admin import resolve_cex_credentials
 from tax_engine.api.wallet_groups import (
     append_wallet_snapshot as _append_wallet_snapshot,
 )
@@ -55,8 +56,8 @@ class StandardResponse(BaseModel):
 
 class CexFullHistoryImportRequest(BaseModel):
     connector_id: str = Field(min_length=1, max_length=40)
-    api_key: str = Field(min_length=1)
-    api_secret: str = Field(min_length=1)
+    api_key: str | None = Field(default=None)
+    api_secret: str | None = Field(default=None)
     passphrase: str | None = Field(default=None)
     timeout_seconds: int = Field(default=20, ge=3, le=90)
     start_time_ms: int | None = Field(default=None, ge=0)
@@ -186,15 +187,41 @@ def _decorate_token_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return decorated
 
 
+def _credentials_from_payload_or_secret(payload: Any) -> dict[str, str]:
+    connector = str(payload.connector_id or "").strip().lower()
+    if payload.api_key and payload.api_secret:
+        return {
+            "connector_id": connector,
+            "api_key": str(payload.api_key).strip(),
+            "api_secret": str(payload.api_secret).strip(),
+            "passphrase": str(payload.passphrase or ""),
+            "source": "payload",
+        }
+    stored = resolve_cex_credentials(connector)
+    api_key = str(stored.get("api_key") or "").strip()
+    api_secret = str(stored.get("api_secret") or "").strip()
+    passphrase = str(payload.passphrase if payload.passphrase is not None else stored.get("passphrase") or "")
+    if not api_key or not api_secret:
+        raise ValueError(f"missing_credentials_for_{connector}")
+    return {
+        "connector_id": connector,
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "passphrase": passphrase,
+        "source": "payload" if payload.api_key and payload.api_secret else "secret_store",
+    }
+
+
 @router.post("/cex/verify", response_model=StandardResponse, tags=["connectors"])
 def connectors_cex_verify(payload: CexVerifyRequest) -> StandardResponse:
     trace_id = str(uuid4())
     try:
+        credentials = _credentials_from_payload_or_secret(payload)
         result = verify_cex_credentials(
-            connector_id=payload.connector_id,
-            api_key=payload.api_key,
-            api_secret=payload.api_secret,
-            passphrase=payload.passphrase,
+            connector_id=credentials["connector_id"],
+            api_key=credentials["api_key"],
+            api_secret=credentials["api_secret"],
+            passphrase=credentials["passphrase"],
             timeout_seconds=payload.timeout_seconds,
         )
     except Exception as exc:
@@ -203,7 +230,7 @@ def connectors_cex_verify(payload: CexVerifyRequest) -> StandardResponse:
             action="connectors.cex.verify",
             payload={
                 "connector_id": payload.connector_id,
-                "api_key_masked": mask_api_key(payload.api_key),
+                "api_key_masked": mask_api_key(str(payload.api_key or "")),
                 "ok": False,
                 "exception": str(exc),
             },
@@ -222,7 +249,8 @@ def connectors_cex_verify(payload: CexVerifyRequest) -> StandardResponse:
         action="connectors.cex.verify",
         payload={
             "connector_id": payload.connector_id,
-            "api_key_masked": mask_api_key(payload.api_key),
+            "api_key_masked": mask_api_key(credentials["api_key"]),
+            "credential_source": credentials["source"],
             "ok": bool(result.get("ok")),
         },
     )
@@ -243,11 +271,12 @@ def connectors_cex_verify(payload: CexVerifyRequest) -> StandardResponse:
 def connectors_cex_balances_preview(payload: CexBalancesPreviewRequest) -> StandardResponse:
     trace_id = str(uuid4())
     try:
+        credentials = _credentials_from_payload_or_secret(payload)
         result = fetch_cex_balance_preview(
-            connector_id=payload.connector_id,
-            api_key=payload.api_key,
-            api_secret=payload.api_secret,
-            passphrase=payload.passphrase,
+            connector_id=credentials["connector_id"],
+            api_key=credentials["api_key"],
+            api_secret=credentials["api_secret"],
+            passphrase=credentials["passphrase"],
             timeout_seconds=payload.timeout_seconds,
             max_rows=payload.max_rows,
         )
@@ -257,7 +286,7 @@ def connectors_cex_balances_preview(payload: CexBalancesPreviewRequest) -> Stand
             action="connectors.cex.balances_preview",
             payload={
                 "connector_id": payload.connector_id,
-                "api_key_masked": mask_api_key(payload.api_key),
+                "api_key_masked": mask_api_key(str(payload.api_key or "")),
                 "ok": False,
                 "exception": str(exc),
             },
@@ -275,7 +304,8 @@ def connectors_cex_balances_preview(payload: CexBalancesPreviewRequest) -> Stand
         action="connectors.cex.balances_preview",
         payload={
             "connector_id": payload.connector_id,
-            "api_key_masked": mask_api_key(payload.api_key),
+            "api_key_masked": mask_api_key(credentials["api_key"]),
+            "credential_source": credentials["source"],
             "ok": True,
             "rows": result.get("count", 0),
         },
@@ -297,11 +327,12 @@ def connectors_cex_balances_preview(payload: CexBalancesPreviewRequest) -> Stand
 def connectors_cex_transactions_preview(payload: CexTransactionsPreviewRequest) -> StandardResponse:
     trace_id = str(uuid4())
     try:
+        credentials = _credentials_from_payload_or_secret(payload)
         result = fetch_cex_transactions_preview(
-            connector_id=payload.connector_id,
-            api_key=payload.api_key,
-            api_secret=payload.api_secret,
-            passphrase=payload.passphrase,
+            connector_id=credentials["connector_id"],
+            api_key=credentials["api_key"],
+            api_secret=credentials["api_secret"],
+            passphrase=credentials["passphrase"],
             timeout_seconds=payload.timeout_seconds,
             max_rows=payload.max_rows,
             start_time_ms=payload.start_time_ms,
@@ -313,7 +344,7 @@ def connectors_cex_transactions_preview(payload: CexTransactionsPreviewRequest) 
             action="connectors.cex.transactions_preview",
             payload={
                 "connector_id": payload.connector_id,
-                "api_key_masked": mask_api_key(payload.api_key),
+                "api_key_masked": mask_api_key(str(payload.api_key or "")),
                 "ok": False,
                 "exception": str(exc),
             },
@@ -331,7 +362,8 @@ def connectors_cex_transactions_preview(payload: CexTransactionsPreviewRequest) 
         action="connectors.cex.transactions_preview",
         payload={
             "connector_id": payload.connector_id,
-            "api_key_masked": mask_api_key(payload.api_key),
+            "api_key_masked": mask_api_key(credentials["api_key"]),
+            "credential_source": credentials["source"],
             "ok": True,
             "rows": result.get("count", 0),
         },
@@ -350,11 +382,12 @@ def connectors_cex_transactions_preview(payload: CexTransactionsPreviewRequest) 
 def connectors_cex_import_confirm(payload: CexImportConfirmRequest) -> StandardResponse:
     trace_id = str(uuid4())
     try:
+        credentials = _credentials_from_payload_or_secret(payload)
         preview = fetch_cex_transactions_preview(
-            connector_id=payload.connector_id,
-            api_key=payload.api_key,
-            api_secret=payload.api_secret,
-            passphrase=payload.passphrase,
+            connector_id=credentials["connector_id"],
+            api_key=credentials["api_key"],
+            api_secret=credentials["api_secret"],
+            passphrase=credentials["passphrase"],
             timeout_seconds=payload.timeout_seconds,
             max_rows=payload.max_rows,
             start_time_ms=payload.start_time_ms,
@@ -366,7 +399,7 @@ def connectors_cex_import_confirm(payload: CexImportConfirmRequest) -> StandardR
             action="connectors.cex.import_confirm",
             payload={
                 "connector_id": payload.connector_id,
-                "api_key_masked": mask_api_key(payload.api_key),
+                "api_key_masked": mask_api_key(str(payload.api_key or "")),
                 "ok": False,
                 "exception": str(exc),
             },
@@ -392,7 +425,8 @@ def connectors_cex_import_confirm(payload: CexImportConfirmRequest) -> StandardR
         action="connectors.cex.import_confirm",
         payload={
             "connector_id": payload.connector_id,
-            "api_key_masked": mask_api_key(payload.api_key),
+            "api_key_masked": mask_api_key(credentials["api_key"]),
+            "credential_source": credentials["source"],
             "source_name": source_name,
             "fetched_rows": len(rows),
             "inserted_events": import_result["inserted_events"],
@@ -418,12 +452,17 @@ def connectors_cex_import_confirm(payload: CexImportConfirmRequest) -> StandardR
 def connectors_cex_import_full_history(payload: CexFullHistoryImportRequest) -> StandardResponse:
     trace_id = str(uuid4())
     connector = payload.connector_id.strip().lower()
-    if connector != "binance":
+    if connector not in {"binance", "bitget"}:
         return StandardResponse(
             trace_id=trace_id,
             status="error",
             data={},
-            errors=[{"code": "connector_not_supported_full_history", "message": "Aktuell nur Binance unterstützt"}],
+            errors=[
+                {
+                    "code": "connector_not_supported_full_history",
+                    "message": "Aktuell nur Binance und Bitget unterstützt",
+                }
+            ],
             warnings=[],
         )
 
@@ -436,6 +475,21 @@ def connectors_cex_import_full_history(payload: CexFullHistoryImportRequest) -> 
             status="error",
             data={},
             errors=[{"code": "invalid_time_window", "message": "start_time_ms muss kleiner als end_time_ms sein"}],
+            warnings=[],
+        )
+    try:
+        credentials = _credentials_from_payload_or_secret(payload)
+    except Exception as exc:
+        write_audit(
+            trace_id=trace_id,
+            action="connectors.cex.import_full_history",
+            payload={"connector_id": connector, "ok": False, "exception": str(exc)},
+        )
+        return StandardResponse(
+            trace_id=trace_id,
+            status="error",
+            data={},
+            errors=[{"code": "missing_cex_credentials", "message": str(exc)}],
             warnings=[],
         )
 
@@ -462,9 +516,9 @@ def connectors_cex_import_full_history(payload: CexFullHistoryImportRequest) -> 
         try:
             preview = fetch_cex_transactions_preview(
                 connector_id=connector,
-                api_key=payload.api_key,
-                api_secret=payload.api_secret,
-                passphrase=payload.passphrase,
+                api_key=credentials["api_key"],
+                api_secret=credentials["api_secret"],
+                passphrase=credentials["passphrase"],
                 timeout_seconds=payload.timeout_seconds,
                 max_rows=payload.max_rows_per_call,
                 start_time_ms=current_start,
@@ -1101,4 +1155,3 @@ def connectors_solana_group_import_confirm(payload: SolanaGroupImportConfirmRequ
         errors=[],
         warnings=warnings,
     )
-

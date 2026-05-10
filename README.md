@@ -29,6 +29,10 @@ Modulare, auditierbare Steuer-Engine für Krypto- und Multi-Depot-Szenarien (CEX
 - `reset_for_tests()` ist hart gesperrt und läuft nur mit `STEUERREPORT_ENV=testing`.
 - Für echte Daten keine manuelle Test-Env setzen und keine Produktiv-DB unter `/tmp` betreiben.
 
+## Regulatorischer Kontext
+- DAC8/CARF-Kontext fuer KI-/Review-Regeln: `docs/20_DAC8_CARF_REGELWERK.md`
+- Grundsatz: DAC8/CARF-Daten sind Referenz-/Plausibilitaetsdaten und ersetzen keine deutsche Steuerberechnung.
+
 ## Developer Commands
 - `make lint` Ruff-Checks
 - `make typecheck` Mypy-Prüfung

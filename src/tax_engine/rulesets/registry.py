@@ -188,7 +188,7 @@ def build_default_registry() -> RulesetRegistry:
                 other_services_exemption_limit=Decimal("256.00"),
                 holding_period_months=12,
                 staking_extension=False,
-                mining_tax_category=MiningTaxCategory.INCOME,
+                mining_tax_category=MiningTaxCategory.BUSINESS,
             )
         )
     return registry

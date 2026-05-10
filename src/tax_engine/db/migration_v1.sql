@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS tax_lines (
     gain_loss_eur TEXT NOT NULL,
     hold_days INTEGER NOT NULL,
     tax_status TEXT NOT NULL,
+    tax_domain TEXT NOT NULL DEFAULT 'private_veraeusserung',
+    lot_domain TEXT NOT NULL DEFAULT 'private',
     source_event_id TEXT NOT NULL,
     lot_source_event_id TEXT NOT NULL DEFAULT '',
     transfer_chain_id TEXT NOT NULL DEFAULT '',
@@ -147,7 +149,72 @@ CREATE TABLE IF NOT EXISTS report_snapshots (
     FOREIGN KEY (job_id) REFERENCES processing_queue(job_id)
 );
 
+CREATE TABLE IF NOT EXISTS solscan_transactions (
+    signature TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL DEFAULT '',
+    endpoint TEXT NOT NULL,
+    http_status INTEGER NOT NULL,
+    success INTEGER NOT NULL DEFAULT 0,
+    block_time_utc TEXT NOT NULL DEFAULT '',
+    slot INTEGER,
+    raw_json TEXT NOT NULL,
+    summary_json TEXT NOT NULL DEFAULT '{}',
+    fetched_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS solscan_account_transactions (
+    wallet_address TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    slot INTEGER,
+    block_time_utc TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT '',
+    raw_json TEXT NOT NULL,
+    discovered_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL,
+    PRIMARY KEY (wallet_address, signature)
+);
+
+CREATE TABLE IF NOT EXISTS solscan_account_transfers (
+    transfer_id TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    block_time_utc TEXT NOT NULL DEFAULT '',
+    flow TEXT NOT NULL DEFAULT '',
+    activity_type TEXT NOT NULL DEFAULT '',
+    token_address TEXT NOT NULL DEFAULT '',
+    token_decimals INTEGER,
+    amount TEXT NOT NULL DEFAULT '',
+    value_usd TEXT NOT NULL DEFAULT '',
+    from_address TEXT NOT NULL DEFAULT '',
+    to_address TEXT NOT NULL DEFAULT '',
+    raw_json TEXT NOT NULL,
+    discovered_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_position_events (
+    event_id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    product_type TEXT NOT NULL,
+    product_id TEXT NOT NULL DEFAULT '',
+    position_id TEXT NOT NULL DEFAULT '',
+    event_type TEXT NOT NULL,
+    tax_treatment TEXT NOT NULL,
+    asset TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    timestamp_utc TEXT NOT NULL,
+    source_ref TEXT NOT NULL DEFAULT '',
+    raw_json TEXT NOT NULL,
+    created_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_raw_events_source_file_id ON raw_events(source_file_id);
+CREATE INDEX IF NOT EXISTS idx_raw_events_payload_day ON raw_events(substr(coalesce(json_extract(payload_json, '$.timestamp_utc'), json_extract(payload_json, '$.timestamp')), 1, 10));
+CREATE INDEX IF NOT EXISTS idx_raw_events_payload_year ON raw_events(substr(coalesce(json_extract(payload_json, '$.timestamp_utc'), json_extract(payload_json, '$.timestamp')), 1, 4));
+CREATE INDEX IF NOT EXISTS idx_raw_events_payload_source_type ON raw_events(json_extract(payload_json, '$.source'), json_extract(payload_json, '$.event_type'));
+CREATE INDEX IF NOT EXISTS idx_raw_events_payload_asset_day ON raw_events(json_extract(payload_json, '$.asset'), substr(coalesce(json_extract(payload_json, '$.timestamp_utc'), json_extract(payload_json, '$.timestamp')), 1, 10));
 CREATE INDEX IF NOT EXISTS idx_audit_trace_id ON audit_trail(trace_id);
 CREATE INDEX IF NOT EXISTS idx_processing_queue_status ON processing_queue(status);
 CREATE INDEX IF NOT EXISTS idx_processing_queue_ruleset ON processing_queue(ruleset_id, ruleset_version);
@@ -158,3 +225,12 @@ CREATE INDEX IF NOT EXISTS idx_fx_cache_pair_date ON fx_cache(base_ccy, quote_cc
 CREATE INDEX IF NOT EXISTS idx_ruleset_catalog_status ON ruleset_catalog(status);
 CREATE INDEX IF NOT EXISTS idx_report_integrity_ruleset ON report_integrity(ruleset_id, ruleset_version);
 CREATE INDEX IF NOT EXISTS idx_report_snapshots_job_id ON report_snapshots(job_id);
+CREATE INDEX IF NOT EXISTS idx_solscan_transactions_wallet ON solscan_transactions(wallet_address);
+CREATE INDEX IF NOT EXISTS idx_solscan_transactions_block_time ON solscan_transactions(block_time_utc);
+CREATE INDEX IF NOT EXISTS idx_solscan_transactions_success ON solscan_transactions(success);
+CREATE INDEX IF NOT EXISTS idx_solscan_account_transactions_wallet_time ON solscan_account_transactions(wallet_address, block_time_utc);
+CREATE INDEX IF NOT EXISTS idx_solscan_account_transfers_wallet_time ON solscan_account_transfers(wallet_address, block_time_utc);
+CREATE INDEX IF NOT EXISTS idx_solscan_account_transfers_signature ON solscan_account_transfers(signature);
+CREATE INDEX IF NOT EXISTS idx_product_position_events_platform_time ON product_position_events(platform, timestamp_utc);
+CREATE INDEX IF NOT EXISTS idx_product_position_events_asset_time ON product_position_events(asset, timestamp_utc);
+CREATE INDEX IF NOT EXISTS idx_product_position_events_tax_treatment ON product_position_events(tax_treatment);
