@@ -10,6 +10,30 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-10 Lokale-KI-Pruefung und Folgeauftrag
+- Report: `docs/218_LOCAL_AI_RESULTS_AND_CODEX_FOLLOWUP_2026-05-10.md`
+- Readonly-KI-Queue:
+  - `done=13`
+  - `failed=2`
+  - `pending=0`
+  - `running=0`
+- Fehlgeschlagene Readonly-KI-Tasks waren LLM-/Servicefehler:
+  - `exports_pdf_wiso_readiness_2025_2026_20260510`: RemoteDisconnected
+  - `mining_rewards_business_private_split_20260510`: HTTP 503
+- Gegen DB verifiziert:
+  - 2025 hat aktuell `0` offene Zeilen in `ai_open_zero_cost_tax_lines`.
+  - Offene Zero-Cost-Reste: 2021 `BNB/HNT/UNKNOWN`, 2022 `HNT/USDT`, 2024 `USDC`.
+  - `ruleset_catalog` ist leer, `report_snapshots` enthaelt `1` Eintrag.
+- Wichtige Korrektur an KI-Befund:
+  - Die Aussage "keine Bitget-API-Daten 2025" ist zu grob.
+  - In `ai_raw_events_flat` existieren 2025 `bitget_tax_api`-Events, inklusive derivative open/close/fee Events.
+  - Belastbarer Befund: `derivative_lines` hat fuer 2025 ueber Join mit `processing_queue` `0` Zeilen, obwohl Bitget-Futures-/Derivative-Rohdaten existieren.
+- Angelegter Codex-Autopilot-Task:
+  - `verify_local_ai_bitget_derivatives_followup_20260510`
+  - `validation_profile=quick`
+  - `allow_push=false`
+  - Ziel: KI-Befunde verifizieren, fragile SQL-Annahmen korrigieren und die Bitget-2025-Derivate-Pipeline deterministisch klaeren.
+
 ## Neuester Stand 2026-05-10 Codex-Autopilot-Dienst vorbereitet
 - Report: `docs/217_CODEX_AUTOPILOT_SERVICE_2026-05-10.md`
 - Skript: `scripts/codex_autopilot_queue.py`
