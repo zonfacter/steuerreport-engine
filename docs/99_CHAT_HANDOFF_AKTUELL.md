@@ -10,6 +10,30 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-10 Codex-Autopilot-Dienst vorbereitet
+- Report: `docs/217_CODEX_AUTOPILOT_SERVICE_2026-05-10.md`
+- Skript: `scripts/codex_autopilot_queue.py`
+- systemd-Vorlage: `deploy/systemd/steuerreport-codex-autopilot.service`
+- Zweck:
+  - Codex kann eine lokale Task-Queue abarbeiten, ohne dass im Terminal wiederholt `weiter` geschrieben werden muss.
+  - Jeder Task laeuft ueber `codex exec -C /workspace/steuerreport --sandbox workspace-write -c approval_policy="never"`.
+  - Der Runner nutzt bewusst nicht `danger-full-access`.
+- Standardverhalten:
+  - Queue unter `var/codex_autopilot_queue/`.
+  - Push ist standardmaessig aus und nur pro Task mit `--allow-push` erlaubt.
+  - Post-Checks pruefen `git diff --check`, verbotene staged Rohdaten und je nach Profil `ruff`, `node --check`, optional `mypy`, `pytest`, `verify_integrity`.
+- Kontrollbefehle:
+  - `python3 scripts/codex_autopilot_queue.py status`
+  - `python3 scripts/codex_autopilot_queue.py init-defaults`
+  - `python3 scripts/codex_autopilot_queue.py run --max-hours 12 --max-tasks 0 --sleep-seconds 10`
+- Aktivierung als Dienst ist vorbereitet, aber nicht automatisch gestartet:
+  - `sudo cp deploy/systemd/steuerreport-codex-autopilot.service /etc/systemd/system/`
+  - `sudo systemctl daemon-reload`
+  - `sudo systemctl enable --now steuerreport-codex-autopilot.service`
+- Grenzen:
+  - Der Autopilot darf keine Anschaffungskosten, Preise, FX-Kurse, Belege oder steuerliche Behandlung erfinden.
+  - Bei Primaerbeleg-, Steuerentscheidungs-, Secret-, Rohdaten- oder Git-Konflikt muss er mit dokumentiertem Blocker stoppen.
+
 ## Neuester Stand 2026-05-10 Autonomer Abschluss-/GitHub-Sync-Abgleich
 - Report: `docs/216_CURRENT_AUTONOMOUS_COMPLETION_AND_GITHUB_SYNC_2026-05-10.md`
 - GitHub Connector:
