@@ -10,6 +10,39 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-11 2025 Derivate neu gerechnet und Readonly-Snapshot aktualisiert
+- Report: `docs/220_2025_DERIVATIVE_RECALC_AND_READONLY_SNAPSHOT_2026-05-11.md`
+- Neuer 2025-Job:
+  - `b7c013f5-d176-4875-bdbe-df614bee4800`
+  - Status `completed`
+  - Tax-Lines `465`
+  - Derivate-Lines `957`
+- Derivate-Ergebnis 2025:
+  - `processed_events=957`
+  - `standalone_cash_settlements=957`
+  - `open_positions_remaining=0`
+  - `unmatched_closes=0`
+  - Termingeschaefte netto `-1708.50463884 EUR`
+  - Derivate Verlustsumme `3647.91700648 EUR`
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `455090176` Bytes
+- Readonly-Gegenprobe:
+  - 2025 neuester Job ist `b7c013f5-d176-4875-bdbe-df614bee4800`.
+  - `derivative_lines` fuer 2025: `957`.
+  - Typen: `close=409`, `fee=546`, `liquidation=2`.
+- Review-Gate:
+  - `allow_export=true`
+  - `issues_open=0`
+  - `issues_open_total=3`
+  - `issues_historical_open=3`
+  - `issues_high_open=0`
+  - `unmatched_total=0`
+- Validierung:
+  - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 scripts/verify_integrity.py --all-years`
+  - `systemctl restart steuerreport-api.service`
+  - `curl -fsS http://127.0.0.1:8000/api/v1/health`
+
 ## Neuester Stand 2026-05-10 Lokale-KI-Pruefung und Folgeauftrag
 - Report: `docs/218_LOCAL_AI_RESULTS_AND_CODEX_FOLLOWUP_2026-05-10.md`
 - Folgefix: `docs/219_BITGET_2025_DERIVATIVE_PIPELINE_FIX_2026-05-10.md`
