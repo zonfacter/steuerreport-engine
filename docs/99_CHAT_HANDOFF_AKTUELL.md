@@ -12,9 +12,38 @@ Stand: 2026-05-09
 
 ## Neuester Stand 2026-05-11 HNT-/USDT-Restbestandsluecken final eingeordnet
 - Report: `docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md`
+- Fairspot-Trace: `docs/230_FAIRSPOT_HNT_LEGACY_TRANSFER_TRACE_2026-05-11.md`
 - Skript: `scripts/hnt_usdt_remaining_inventory_gap_audit_20260511.py`
+- Fairspot-Skript: `scripts/fairspot_hnt_legacy_transfer_trace_20260511.py`
 - Lokaler JSON-Output, nicht committen:
   `var/hnt_usdt_remaining_inventory_gap_audit_2026-05-11.json`
+  und `var/fairspot_hnt_legacy_transfer_trace_2026-05-11.json`
+- Fairspot-Ergaenzung:
+  - Quelle: `https://www.fairspot.host/hnt-export-mining-tax`
+  - Statische CSVs: `https://fairspot.nyc3.digitaloceanspaces.com/accounting-csv/helium-{wallet}-all.csv`
+  - Fairspot bestaetigt fuer Legacy-Helium-Wallets `payer`, `payee`,
+    `transaction_hash`, HNT-Menge, Fee und Oracle-USD-Werte.
+  - Wallets im Trace:
+    - Haupt-Wallet `133rkwoKCfxLTTt1zGjge7c2nGLUSY5sTuG2V61zi6ik269Tf4j`
+    - Staking-Wallet `14eKedP4gCyefaMgjxPULPVecDq6gM5aEJYLDvbiRXZpuq2kYNA`
+    - Counterparty/Payout-Wallet
+      `14aDLshY7p2MJrCgbYrWFZZfjB1MBSqHboo2cJCPCVR9Meorh7w`
+  - `2021-08-14`: `100 HNT` gingen von `133...` an `14e...`,
+    danach `100.40763734 HNT` von `14e...` an `14a...`. Daraus ergibt
+    sich kein zusaetzlicher Binance-Bestand fuer die Verkaeufe am
+    `2021-08-17`.
+  - `2022-07-12`: `14a...` zahlte `254.95946999`, `100.36710733` und
+    `66.01905002 HNT` an `14e...` zurueck; `14e...` leitete
+    `421.30245111 HNT` an `133...` weiter.
+  - Bis zum Rueckfluss am `2022-07-12 01:08:41` hatte `14e...` netto
+    weniger HNT von `14a...` zurueckerhalten als vorher an `14a...`
+    gesendet: `421.34562734 HNT` zurueck vs. `477.39864361 HNT` plus
+    `0.182363194919347751 HNT` Fees gesendet.
+  - Die Fairspot-Daten machen die 2022-Luecke damit wahrscheinlich zu
+    einer nicht modellierten Staking-/Custody-Rueckgabe-Kette, nicht zu
+    einem komplett neuen unbelegten Zufluss. Kein automatisches
+    Steuerurteil daraus ableiten; naechster sicherer Schritt ist ein
+    separater Korrekturpfad fuer `14e...` <-> `14a...`.
 - Ergaenzung Excel-/Staking-Wallet-Pruefung:
   - Gepruefte lokale Excel-Dateien:
     `BINANCE - HNT Transfer Staking Wallet - Deposit_History 07 bis 09-2021.xlsx`,
