@@ -90,7 +90,10 @@ technischen Fehlerklasse entfernt.
 
 ## Verbleibender Fast-Null-Treffer
 
-Der einzige verbleibende Fast-Null-Treffer ist:
+Dieser Abschnitt ist durch `docs/227_BNB_2021_COINMARKETCAP_PRICE_BACKFILL_2026-05-11.md`
+ueberholt.
+
+Der nach diesem Fix noch verbleibende Fast-Null-Treffer war:
 
 - 2021, Line `468`, `BNB`
 - Lot-Event `binance_api/dust_convert_in/in`
@@ -107,6 +110,14 @@ Bewertung:
 Deshalb wurde dieser Punkt nicht automatisch korrigiert. Eine Korrektur braucht
 entweder einen belegten BNB-Preisimport fuer den Tag oder eine vollstaendige
 Bewertung der Dust-Ausgangsassets.
+
+Der belegte BNB-Preisimport wurde danach ueber CoinMarketCap Public Historical
+Data eingebracht:
+
+- `BNB/USD 2021-04-28 = 562.63256836`
+- Source: `coinmarketcap_public_historical:bnb`
+
+Nach der anschliessenden Dust-Convert-Preisanker-Regel ist `fast_null_cost_basis=0`.
 
 ## Validierung
 

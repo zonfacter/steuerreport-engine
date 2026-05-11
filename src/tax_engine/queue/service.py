@@ -535,6 +535,59 @@ def attach_binance_market_quote_value_anchors(
     }
 
 
+def attach_cached_usd_prices_to_binance_dust_convert_in_events(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    price_cache: dict[tuple[str, str], tuple[Decimal, str]] = {}
+    transformed: list[dict[str, Any]] = []
+    attached = 0
+    missing_prices = 0
+
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        if _safe_decimal(payload.get("price_eur")) > Decimal("0") or _safe_decimal(payload.get("price_usd")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        if _payload_value_usd_sum(payload) > Decimal("0") or _safe_decimal(payload.get("value_eur")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        if source != "binance_api" or event_type != "dust_convert_in" or _event_side(payload) != "in":
+            transformed.append(event)
+            continue
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        if not asset or asset in STABLE_ASSETS:
+            transformed.append(event)
+            continue
+        rate_date = _event_date(payload)
+        price_usd, source_rate_date = _lookup_asset_usd_rate(asset, rate_date, price_cache)
+        if price_usd <= Decimal("0"):
+            missing_prices += 1
+            transformed.append(event)
+            continue
+        updated_payload = dict(payload)
+        updated_payload["price_usd"] = price_usd.to_eng_string()
+        updated_payload["valuation_reference_source"] = "fx_cache_asset_usd_binance_dust_convert_in"
+        updated_payload["valuation_reference_asset"] = asset
+        updated_payload["valuation_reference_rate_date"] = source_rate_date or rate_date
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        attached += 1
+
+    return transformed, {
+        "valuation_anchor_source": "fx_cache_asset_usd_binance_dust_convert_in",
+        "attached_price_count": attached,
+        "missing_price_count": missing_prices,
+        "price_cache_key_count": len(price_cache),
+    }
+
+
 def drop_solscan_duplicates_when_solana_rpc_is_active(
     active_events: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -1267,6 +1320,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         raw_events, valuation_anchor_summary = attach_reference_usd_value_anchors(raw_events, all_raw_events)
         raw_events, bitget_spot_anchor_summary = attach_bitget_tax_api_spot_trade_value_anchors(raw_events)
         raw_events, binance_market_anchor_summary = attach_binance_market_quote_value_anchors(raw_events)
+        raw_events, binance_dust_price_summary = attach_cached_usd_prices_to_binance_dust_convert_in_events(raw_events)
         raw_events, reward_price_summary = attach_cached_usd_prices_to_reward_events(raw_events)
         raw_events, swap_in_price_summary = attach_cached_usd_prices_to_swap_in_events(raw_events)
         effective_events, override_count = apply_tax_event_overrides(raw_events)
@@ -1307,6 +1361,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         processing_result["valuation_anchor_summary"] = valuation_anchor_summary
         processing_result["bitget_spot_anchor_summary"] = bitget_spot_anchor_summary
         processing_result["binance_market_anchor_summary"] = binance_market_anchor_summary
+        processing_result["binance_dust_price_summary"] = binance_dust_price_summary
         processing_result["reward_price_summary"] = reward_price_summary
         processing_result["swap_in_price_summary"] = swap_in_price_summary
         tax_lines = processing_result.pop("tax_lines")

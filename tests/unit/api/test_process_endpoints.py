@@ -30,6 +30,7 @@ from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
 from tax_engine.queue.service import (
     attach_binance_market_quote_value_anchors,
     attach_bitget_tax_api_spot_trade_value_anchors,
+    attach_cached_usd_prices_to_binance_dust_convert_in_events,
     attach_cached_usd_prices_to_reward_events,
     attach_cached_usd_prices_to_swap_in_events,
     attach_reference_usd_value_anchors,
@@ -367,6 +368,48 @@ def test_attach_binance_market_quote_value_anchors_from_eur_quote() -> None:
     assert enriched[0]["payload"]["value_eur"] == "62.56642"
     assert enriched[0]["payload"]["price"] == ""
     assert enriched[0]["payload"]["valuation_reference_asset"] == "EUR"
+
+
+def test_attach_cached_usd_prices_to_binance_dust_convert_in_events() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2021-04-28", "BNB", "USD", "562.63256836", "test", "2021-04-28")
+    events = [
+        {
+            "unique_event_id": "dust-bnb-in",
+            "payload": {
+                "timestamp_utc": "2021-04-28T05:14:15+00:00",
+                "source": "binance_api",
+                "event_type": "dust_convert_in",
+                "side": "in",
+                "asset": "BNB",
+                "quantity": "0.27191796",
+                "fee": "0.00543836",
+                "fee_asset": "BNB",
+                "tx_id": "55615425065",
+            },
+        },
+        {
+            "unique_event_id": "dust-sol-out",
+            "payload": {
+                "timestamp_utc": "2021-04-28T05:14:15+00:00",
+                "source": "binance_api",
+                "event_type": "dust_convert_out",
+                "side": "out",
+                "asset": "SOL",
+                "quantity": "0.099",
+                "tx_id": "55615425065",
+            },
+        },
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_binance_dust_convert_in_events(events)
+
+    assert summary["attached_price_count"] == 1
+    assert enriched[0]["payload"]["price_usd"] == "562.63256836"
+    assert enriched[0]["payload"]["valuation_reference_source"] == "fx_cache_asset_usd_binance_dust_convert_in"
+    assert enriched[0]["payload"]["valuation_reference_asset"] == "BNB"
+    assert enriched[0]["payload"]["valuation_reference_rate_date"] == "2021-04-28"
+    assert "price_usd" not in enriched[1]["payload"]
 
 
 def test_attach_cached_usd_prices_to_reward_events() -> None:

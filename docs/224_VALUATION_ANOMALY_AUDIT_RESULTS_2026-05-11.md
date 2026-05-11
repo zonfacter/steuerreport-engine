@@ -9,20 +9,20 @@ Ausgewertet wurden die neuesten abgeschlossenen Jobs je Steuerjahr `2020` bis `2
 | Jahr | Job | Tax-Lines | Derivate-Lines | Aktualisiert |
 | ---: | --- | ---: | ---: | --- |
 | 2020 | `287cc41c-9055-42ca-8b5a-9d5578e07dc6` | 0 | 0 | 2026-05-10T19:38:15.619598+00:00 |
-| 2021 | `3c7b4069-2065-4c5a-a77a-7e52eb545664` | 5494 | 43 | 2026-05-11T19:58:29.691071+00:00 |
-| 2022 | `bee1a279-eb50-47ec-b6ea-96ebbd7a7f81` | 6896 | 630 | 2026-05-11T19:58:38.301108+00:00 |
-| 2023 | `c7e8b073-1750-4703-bd01-e2f3c9e63405` | 9099 | 0 | 2026-05-11T19:58:47.321525+00:00 |
-| 2024 | `690aca3b-59ae-45ee-91e5-e3b9a5812f0b` | 1680 | 36 | 2026-05-11T19:58:55.854418+00:00 |
-| 2025 | `28e7f7e6-1ea8-4e4e-a4b0-93e4cc534480` | 465 | 957 | 2026-05-11T19:59:04.284902+00:00 |
-| 2026 | `5c2d47e8-8dd8-400f-9fdb-86ac9af6c71a` | 1 | 0 | 2026-05-11T19:59:12.710997+00:00 |
+| 2021 | `37d133d7-107f-4397-a8e4-d34f6d9e9066` | 5494 | 43 | 2026-05-11T20:13:25.645807+00:00 |
+| 2022 | `57cc9a54-8002-4e4e-ae1b-801ca2883d1f` | 6896 | 630 | 2026-05-11T20:13:34.367657+00:00 |
+| 2023 | `45c0f99e-8731-461c-bab7-75135a620eee` | 9099 | 0 | 2026-05-11T20:13:43.511099+00:00 |
+| 2024 | `8cd9c465-b531-43e8-a496-334695e4c2de` | 1680 | 36 | 2026-05-11T20:13:52.190304+00:00 |
+| 2025 | `acd47dd6-6a71-4a99-9e11-f05c5dd07674` | 465 | 957 | 2026-05-11T20:14:00.786026+00:00 |
+| 2026 | `99e1c825-b686-4626-b6f6-d10ba5a32f74` | 1 | 0 | 2026-05-11T20:14:09.376352+00:00 |
 
 ## Zusammenfassung
 
 - Tax-Lines im Scope: `23635`
-- Fast-Null-Kostenbasis: `1`
+- Fast-Null-Kostenbasis: `0`
 - FX vorhanden, aber niedrige Kostenbasis: `0`
-- Gleicher `tx_id` mit bepreistem Gegenfluss: `1`
-- Hohe Gewinnquote: `16`
+- Gleicher `tx_id` mit bepreistem Gegenfluss: `0`
+- Hohe Gewinnquote: `15`
 - Solana-Swap-In-Raw-Events ohne Raw-Preisanker: `310`
 - Prioritaet-1-Treffer ueber alle Klassen: `0`
 
@@ -34,13 +34,13 @@ Tax-Lines ebenfalls auffaellig sind.
 
 | Prio | Jahr | Line | Asset | Kostenbasis | Erloes | Quote | Lot-Event | Swap | Gegenfluss |
 | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |
-| priority_2 | 2021 | 468 | `BNB` | 0.005438359999999999999999999999 | 125.7715573590070518871875 | 0.00004323998298340650410708580655 | `binance_api/dust_convert_in/in` | nein | ja |
+| - | - | - | - | - | - | - | - | - | - |
 
 ## Gleicher TX mit bepreistem Gegenfluss
 
 | Prio | Jahr | Line | Asset | Kostenbasis | Erloes | Quote | Lot-Event | Swap | Gegenfluss |
 | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |
-| priority_2 | 2021 | 468 | `BNB` | 0.005438359999999999999999999999 | 125.7715573590070518871875 | 0.00004323998298340650410708580655 | `binance_api/dust_convert_in/in` | nein | ja |
+| - | - | - | - | - | - | - | - | - | - |
 
 ## FX vorhanden, aber niedrige Kostenbasis
 
@@ -63,7 +63,6 @@ Tax-Lines ebenfalls auffaellig sind.
 | priority_2 | 2021 | 1407 | `HNT` | 0 | 290.1121724005967814158276469 | 0 | `binance_api/deposit/in` | nein | nein |
 | priority_2 | 2021 | 1341 | `HNT` | 0 | 276.42080478 | 0 | `//` | nein | nein |
 | priority_2 | 2022 | 442 | `USDT` | 0 | 148.757630271075 | 0 | `//` | nein | nein |
-| priority_2 | 2021 | 468 | `BNB` | 0.005438359999999999999999999999 | 125.7715573590070518871875 | 0.00004323998298340650410708580655 | `binance_api/dust_convert_in/in` | nein | ja |
 | priority_2 | 2021 | 1 | `BNB` | 0 | 94.1209633169256 | 0 | `binance/fiat_crypto_purchase/in` | nein | nein |
 | priority_2 | 2022 | 3579 | `HNT` | 0 | 72.56534656240315993650966628 | 0 | `binance_api/deposit/in` | nein | nein |
 | priority_2 | 2021 | 1577 | `HNT` | 0 | 69.92100578446492383320425294 | 0 | `binance_api/deposit/in` | nein | nein |
@@ -126,16 +125,16 @@ Tax-Lines ebenfalls auffaellig sind.
 
 ## Bewertung
 
-- `priority_1` ist direkt zu pruefen und bei eindeutigem Codepfad deterministisch zu fixen.
-- `priority_2` ist nachgelagert zu pruefen, besonders wenn aktuelle Jahre oder hohe Summen betroffen sind.
+- Es gibt aktuell keine Treffer in den technischen Fehlerklassen
+  Fast-Null-Kostenbasis, FX-vorhanden-aber-niedrig oder gleicher `tx_id` mit
+  bepreistem Gegenfluss.
+- Die verbleibenden `priority_2`-High-Gain-Treffer sind historische
+  Beleg-/Bestands-Themen, nicht automatisch belegte Preisanker-Luecken.
 - `informational` bei Raw-Swaps bedeutet nicht automatisch Fehler, weil Preisanker zur Laufzeit entstehen koennen.
 - Kein Treffer in diesem Bericht ist eine steuerberaterliche Endfreigabe.
 
 ## Naechster Schritt
 
-Es gibt aktuell keine `priority_1`-Treffer.
-
-Der verbleibende Fast-Null-`priority_2`-Treffer ist der BNB-Dust-Convert aus
-2021. Dieser wird nicht automatisch korrigiert, solange kein belegter BNB/USD-
-Preis fuer `2021-04-28` oder eine vollstaendige Bewertung der Dust-Ausgangsassets
-vorliegt.
+Keine weitere automatische Preisanker-Korrektur aus diesem Audit ableiten.
+Die verbleibenden `priority_2`-High-Gain-Zeilen muessen bei Bedarf als
+Beleg-/Bestandspruefung behandelt werden.

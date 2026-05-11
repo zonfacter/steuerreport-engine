@@ -10,6 +10,67 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-11 BNB-Dust-Convert mit CoinMarketCap-Preis korrigiert
+- Report: `docs/227_BNB_2021_COINMARKETCAP_PRICE_BACKFILL_2026-05-11.md`
+- Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Quelle:
+  - CoinMarketCap Public Historical Data
+  - `BNB` CoinMarketCap-ID `1839`
+  - `2021-04-28` USD-Close `562.63256836`
+  - lokaler `fx_cache` Source-String `coinmarketcap_public_historical:bnb`
+- Code/Test:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+- Fix:
+  - Neue Funktion `attach_cached_usd_prices_to_binance_dust_convert_in_events()`.
+  - Bewertet nur `source=binance_api`, `event_type=dust_convert_in`, `side=in`,
+    wenn fuer das Asset ein belegter Asset/USD-Kurs im `fx_cache` existiert.
+  - Keine Preise erfunden; der BNB-Kurs wurde vorher explizit in `fx_cache`
+    gecacht.
+- Neu gerechnete Jobs:
+  - 2021 `37d133d7-107f-4397-a8e4-d34f6d9e9066`, `tax_lines=5494`,
+    `derivative_lines=43`
+  - 2022 `57cc9a54-8002-4e4e-ae1b-801ca2883d1f`, `tax_lines=6896`,
+    `derivative_lines=630`
+  - 2023 `45c0f99e-8731-461c-bab7-75135a620eee`, `tax_lines=9099`,
+    `derivative_lines=0`
+  - 2024 `8cd9c465-b531-43e8-a496-334695e4c2de`, `tax_lines=1680`,
+    `derivative_lines=36`
+  - 2025 `acd47dd6-6a71-4a99-9e11-f05c5dd07674`, `tax_lines=465`,
+    `derivative_lines=957`
+  - 2026 `99e1c825-b686-4626-b6f6-d10ba5a32f74`, `tax_lines=1`,
+    `derivative_lines=0`
+- Korrigierte 2021-Line `468`:
+  - `BNB`, Menge `0.27191796`
+  - Kostenbasis jetzt `126.7575706906227312296000000 EUR`
+  - Erloes `125.771557359007051887187500 EUR`
+  - Ergebnis `-0.9860133316156793424125000 EUR`
+- Audit nach Fix:
+  - `priority_1_total=0`
+  - `fast_null_cost_basis=0`
+  - `fx_available_but_low_cost_basis=0`
+  - `same_tx_priced_counterflow_candidates=0`
+  - `high_gain_ratio=15`
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `501055488` Bytes
+  - neuester 2024-Job `8cd9c465-b531-43e8-a496-334695e4c2de`
+  - neuester 2025-Job `acd47dd6-6a71-4a99-9e11-f05c5dd07674`
+- Review-/Export-Gegenprobe:
+  - 2024 und 2025 job-spezifisch `allow_export=true`, keine aktuellen Issues,
+    `issues_historical_open=3`, `unmatched_total=0`.
+  - 2024 PDF-Seiten: all `63`, tax `61`, derivatives `3`.
+  - 2025 PDF-Seiten: all `52`, tax `18`, derivatives `36`.
+  - `part=2` liefert fuer alle PDF-Scopes korrekt `report_part_not_found`.
+- Validierung:
+  - `ruff` komplett gruen.
+  - `mypy` gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `tests/unit` gruen.
+  - API-Coverage-Gate `81.08%`, gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet und Health-Check gruen.
+
 ## Neuester Stand 2026-05-11 Binance-Legacy-Market-Bewertung korrigiert
 - Report: `docs/226_BINANCE_LEGACY_MARKET_VALUATION_FIX_2026-05-11.md`
 - Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
