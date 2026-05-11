@@ -11,6 +11,12 @@ Stand: 2026-05-09
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
 ## Neuester Stand 2026-05-11 HNT Self-Wallet-Transfers gematcht
+- Lokaler-KI-Folgeauftrag:
+  `docs/233_LOCAL_AI_REMAINING_HNT_USDT_TASKS_2026-05-11.md`
+  - Queue-Task `remaining_2022_usdt_opening_bot_history_20260511`
+  - Queue-Task `remaining_2021_hnt_legacy_evidence_20260511`
+  - Beide Tasks sind read-only angelegt und duerfen keine Cost Basis,
+    FX-Kurse oder steuerliche Behandlung schaetzen.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
