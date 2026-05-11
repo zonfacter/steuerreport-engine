@@ -10,6 +10,49 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-11 SOL-Swap-In Kostenbasis korrigiert
+- Report: `docs/222_SOLANA_SOL_SWAP_IN_VALUATION_FIX_2026-05-11.md`
+- Code/Test:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+- Ursache:
+  - Solana-Swap-In-Preisanker erkannten bisher `swap_in_aggregated` und
+    `token_transfer` mit `defi_label=swap`, aber keinen nativen `sol_transfer`
+    mit `defi_label=swap`.
+  - Die auffaellige 2025-SOL-Line hatte deshalb nur fee-grosse Kostenbasis.
+- Fix:
+  - `attach_cached_usd_prices_to_swap_in_events()` bewertet jetzt auch
+    `sol_transfer` mit `defi_label=swap` und `side=in`.
+  - Normale SOL-Transfers ohne Swap-Label bleiben unveraendert.
+- Neuer 2025-Job:
+  - `d2e5a9cc-d051-49df-b8a6-0b49a5e9d61d`
+  - `tax_lines=465`
+  - `derivative_lines=957`
+  - `derivative_processed_events=957`
+- Korrigierte Nutzerzeile:
+  - Line `101`, `SOL`, Menge `0.286177283`
+  - Kostenbasis vorher rund `0.0004 EUR`
+  - Kostenbasis jetzt `60.50927453911816737483725105 EUR`
+  - Erloes `71.0361802286395714728000 EUR`
+  - Ergebnis `10.52690568952140409796274895 EUR`
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `455602176` Bytes
+  - neuester 2025-Job im Snapshot: `d2e5a9cc-d051-49df-b8a6-0b49a5e9d61d`
+  - `open_zero_cost_2025=0`
+- Export-/Gate-Gegenprobe:
+  - `report_files=11`
+  - Vollreport `1442` Zeilen: `20` Summary, `465` Tax, `957` Derivate
+  - PDF-Seiten: all `52`, tax `18`, derivatives `36`
+  - Job-spezifisches Review-Gate: `allow_export=true`, keine Blocker/Warnungen,
+    historische offene Issues `3`
+- Validierung:
+  - `ruff` fuer geaenderte Dateien gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `mypy` gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet und Health-Check gruen.
+
 ## Neuester Stand 2026-05-11 2025 Export-Paket validiert
 - Report: `docs/221_2025_EXPORT_PACKAGE_VALIDATION_2026-05-11.md`
 - Job: `b7c013f5-d176-4875-bdbe-df614bee4800`

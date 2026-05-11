@@ -440,6 +440,33 @@ def test_attach_cached_usd_prices_to_swap_token_transfer_events() -> None:
     assert payload["valuation_reference_asset"] == "IOT"
 
 
+def test_attach_cached_usd_prices_to_swap_sol_transfer_events() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2025-01-04", "SOL", "USD", "217.76", "test", "2025-01-04")
+    events = [
+        {
+            "unique_event_id": "sol-swap-transfer-in",
+            "payload": {
+                "timestamp_utc": "2025-01-04T08:32:56+00:00",
+                "source": "solana_rpc",
+                "asset": "SOL",
+                "side": "in",
+                "event_type": "sol_transfer",
+                "defi_label": "swap",
+                "quantity": "0.289811571",
+            },
+        }
+    ]
+
+    enriched, summary = attach_cached_usd_prices_to_swap_in_events(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["attached_price_count"] == 1
+    assert payload["price_usd"] == "217.76"
+    assert payload["valuation_reference_source"] == "fx_cache_asset_usd_swap_in"
+    assert payload["valuation_reference_asset"] == "SOL"
+
+
 def test_attach_cached_usd_prices_to_swap_in_events_uses_priced_counterflow() -> None:
     _reset_store()
     STORE.upsert_fx_rate("2024-03-11", "MOBILE", "USD", "0.00411878", "test", "2024-03-11")

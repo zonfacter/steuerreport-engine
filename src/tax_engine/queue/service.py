@@ -554,7 +554,9 @@ def attach_cached_usd_prices_to_swap_in_events(
             continue
         event_type = str(payload.get("event_type") or "").lower().strip()
         defi_label = str(payload.get("defi_label") or "").lower().strip()
-        is_swap_in = event_type == "swap_in_aggregated" or (event_type == "token_transfer" and defi_label == "swap")
+        is_swap_in = event_type == "swap_in_aggregated" or (
+            event_type in {"sol_transfer", "token_transfer"} and defi_label == "swap"
+        )
         if _event_side(payload) != "in" or not is_swap_in:
             transformed.append(event)
             continue
