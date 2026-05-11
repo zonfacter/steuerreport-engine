@@ -120,6 +120,17 @@ def _payload_value_usd_sum(payload: dict[str, Any]) -> Decimal:
     return Decimal("0")
 
 
+def _raw_row_field(payload: dict[str, Any], key: str) -> str:
+    raw_row = payload.get("raw_row")
+    if not isinstance(raw_row, dict):
+        return ""
+    return str(raw_row.get(key) or "").strip()
+
+
+def _bitget_spot_biz_order_id(payload: dict[str, Any]) -> str:
+    return _raw_row_field(payload, "bizOrderId")
+
+
 def _normalized_mint(value: Any) -> str:
     return str(value or "").upper().strip()
 
@@ -335,6 +346,83 @@ def attach_reference_usd_value_anchors(
         "attached_anchor_count": attached,
         "solscan_counterflow_attached_count": counterflow_available,
         "raw_stable_counterflow_attached_count": raw_counterflow_available,
+    }
+
+
+def attach_bitget_tax_api_spot_trade_value_anchors(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    stable_outflows_by_biz_order: dict[str, tuple[str, str, Decimal]] = {}
+    available_counterflows = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        if source != "bitget_tax_api" or event_type != "trade" or _event_side(payload) != "out":
+            continue
+        biz_order_id = _bitget_spot_biz_order_id(payload)
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        quantity = _event_quantity(payload)
+        if not biz_order_id or asset not in STABLE_ASSETS or quantity <= Decimal("0"):
+            continue
+        available_counterflows += 1
+        existing = stable_outflows_by_biz_order.get(biz_order_id)
+        if existing is None:
+            stable_outflows_by_biz_order[biz_order_id] = (str(event.get("unique_event_id") or ""), asset, quantity)
+            continue
+        existing_event_id, existing_asset, existing_quantity = existing
+        stable_outflows_by_biz_order[biz_order_id] = (
+            existing_event_id,
+            existing_asset if existing_asset == asset else f"{existing_asset}+{asset}",
+            existing_quantity + quantity,
+        )
+
+    transformed: list[dict[str, Any]] = []
+    attached = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        if source != "bitget_tax_api" or event_type != "trade" or _event_side(payload) != "in":
+            transformed.append(event)
+            continue
+        if _payload_value_usd_sum(payload) > Decimal("0") or _safe_decimal(payload.get("value_eur")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        if not asset or asset in STABLE_ASSETS:
+            transformed.append(event)
+            continue
+        biz_order_id = _bitget_spot_biz_order_id(payload)
+        counterflow = stable_outflows_by_biz_order.get(biz_order_id)
+        if counterflow is None:
+            transformed.append(event)
+            continue
+        reference_event_id, reference_asset, value_usd_sum = counterflow
+        if value_usd_sum <= Decimal("0"):
+            transformed.append(event)
+            continue
+        updated_payload = dict(payload)
+        updated_payload["value_usd_sum"] = value_usd_sum.to_eng_string()
+        updated_payload["valuation_reference_source"] = "bitget_tax_api_biz_order_stable_counterflow"
+        updated_payload["valuation_reference_source_event_id"] = reference_event_id
+        updated_payload["valuation_reference_asset"] = reference_asset
+        updated_payload["valuation_reference_biz_order_id"] = biz_order_id
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        attached += 1
+
+    return transformed, {
+        "valuation_anchor_source": "bitget_tax_api_biz_order_stable_counterflow",
+        "available_counterflow_count": available_counterflows,
+        "attached_anchor_count": attached,
     }
 
 
@@ -1040,6 +1128,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         raw_events, review_action_summary = apply_review_actions(raw_events)
         raw_events, helium_solana_claim_summary = label_helium_solana_claim_events(raw_events)
         raw_events, valuation_anchor_summary = attach_reference_usd_value_anchors(raw_events, all_raw_events)
+        raw_events, bitget_spot_anchor_summary = attach_bitget_tax_api_spot_trade_value_anchors(raw_events)
         raw_events, reward_price_summary = attach_cached_usd_prices_to_reward_events(raw_events)
         raw_events, swap_in_price_summary = attach_cached_usd_prices_to_swap_in_events(raw_events)
         effective_events, override_count = apply_tax_event_overrides(raw_events)
@@ -1077,6 +1166,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         processing_result["solscan_duplicate_summary"] = solscan_duplicate_summary
         processing_result["helium_solana_claim_summary"] = helium_solana_claim_summary
         processing_result["valuation_anchor_summary"] = valuation_anchor_summary
+        processing_result["bitget_spot_anchor_summary"] = bitget_spot_anchor_summary
         processing_result["reward_price_summary"] = reward_price_summary
         processing_result["swap_in_price_summary"] = swap_in_price_summary
         tax_lines = processing_result.pop("tax_lines")

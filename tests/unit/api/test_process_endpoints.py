@@ -28,6 +28,7 @@ from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
 from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
 from tax_engine.queue.service import (
+    attach_bitget_tax_api_spot_trade_value_anchors,
     attach_cached_usd_prices_to_reward_events,
     attach_cached_usd_prices_to_swap_in_events,
     attach_reference_usd_value_anchors,
@@ -228,6 +229,57 @@ def test_attach_reference_usd_value_anchors_from_raw_stable_counterflow() -> Non
     assert payload["value_usd_sum"] == "902.309402"
     assert payload["valuation_reference_source"] == "raw_stable_counterflow"
     assert payload["valuation_reference_tx_id"] == "same-signature"
+
+
+def test_attach_bitget_tax_api_spot_trade_value_anchors_from_biz_order() -> None:
+    events = [
+        {
+            "unique_event_id": "hnt-buy",
+            "payload": {
+                "timestamp_utc": "2025-01-29T05:58:45.618000+00:00",
+                "source": "bitget_tax_api",
+                "event_type": "trade",
+                "side": "in",
+                "asset": "HNT",
+                "quantity": "845.931",
+                "fee": "0.845931",
+                "fee_asset": "HNT",
+                "tx_id": "1268376005322551306",
+                "raw_row": {
+                    "bizOrderId": "1268376005262102633",
+                    "spotTaxType": "Buy",
+                },
+            },
+        },
+        {
+            "unique_event_id": "usdt-sell",
+            "payload": {
+                "timestamp_utc": "2025-01-29T05:58:45.618000+00:00",
+                "source": "bitget_tax_api",
+                "event_type": "trade",
+                "side": "out",
+                "asset": "USDT",
+                "quantity": "3112.180149",
+                "fee": "0",
+                "tx_id": "1268376005326745601",
+                "raw_row": {
+                    "bizOrderId": "1268376005262102633",
+                    "spotTaxType": "Sell",
+                },
+            },
+        },
+    ]
+
+    enriched, summary = attach_bitget_tax_api_spot_trade_value_anchors(events)
+
+    payload = enriched[0]["payload"]
+    assert summary["available_counterflow_count"] == 1
+    assert summary["attached_anchor_count"] == 1
+    assert payload["value_usd_sum"] == "3112.180149"
+    assert payload["valuation_reference_source"] == "bitget_tax_api_biz_order_stable_counterflow"
+    assert payload["valuation_reference_source_event_id"] == "usdt-sell"
+    assert payload["valuation_reference_asset"] == "USDT"
+    assert payload["valuation_reference_biz_order_id"] == "1268376005262102633"
 
 
 def test_attach_cached_usd_prices_to_reward_events() -> None:

@@ -10,6 +10,71 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-11 Bewertungsanomalie-Audit gestartet und Bitget-Spot-Fix
+- Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Fix-Bericht: `docs/225_BITGET_SPOT_BIZ_ORDER_VALUATION_FIX_2026-05-11.md`
+- Code/Test/Skript:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+  - `scripts/valuation_anomaly_audit_20260511.py`
+- Audit-Skript erzeugt lokal:
+  - `var/valuation_anomaly_audit_2026-05-11.json`
+  - nicht committen.
+- Gefundener technischer Fehler:
+  - Bitget Tax API Spot-Kaeufe haben Inflow und Stablecoin-Outflow mit derselben
+    `raw_row.bizOrderId`, aber unterschiedlichen `tx_id`.
+  - Die bisherige Gegenflusslogik suchte gleiche `tx_id`; HNT/JUP-Kaeufe wurden
+    deshalb nur fee-gross bewertet.
+- Fix:
+  - Neue Funktion `attach_bitget_tax_api_spot_trade_value_anchors()`.
+  - Nur `bitget_tax_api` Spot-Trade-Inflow eines Nicht-Stable-Assets wird
+    bewertet, wenn ein Stablecoin-Outflow mit gleicher `bizOrderId` existiert.
+  - Keine Preise erfunden; verwendet wird der vorhandene Stablecoin-Gegenfluss.
+- Neu gerechnete Jobs:
+  - 2024 `54225c56-f4e7-4ecd-a63a-26b499f2f336`, `tax_lines=1680`,
+    `derivative_lines=36`, Bitget-Spot-Anker `25`.
+  - 2025 `1505480c-23b5-408c-9813-445425e1ef0c`, `tax_lines=465`,
+    `derivative_lines=957`, Bitget-Spot-Anker `25`.
+- Korrigierte Beispiele:
+  - 2025 HNT Line `377`: Kostenbasis jetzt
+    `2405.908843731238530538445382 EUR`, Erloes
+    `1747.101889630951191847321056 EUR`, Ergebnis
+    `-658.806954100287338691124326 EUR`.
+  - 2024 JUP Line `1284`: Kostenbasis jetzt
+    `117.488407101069524 EUR`, Erloes
+    `134.6282704189103867415416482 EUR`, Ergebnis
+    `17.1398633178408627415416482 EUR`.
+- Audit nach Fix:
+  - `priority_1_total=0`
+  - `fast_null_cost_basis=113`
+  - `fx_available_but_low_cost_basis=18`
+  - `high_gain_ratio=98`
+  - verbleibende Treffer sind Prioritaet 2, vor allem historische
+    `2021`/`2022`-Altbestands-/UNKNOWN-Themen.
+- Review-Gates:
+  - 2024 und 2025 job-spezifisch `allow_export=true`, keine Blocker/Warnungen,
+    `issues_open=0`, `issues_historical_open=3`, `unmatched_total=0`.
+- Export-Metriken:
+  - 2024: Vollreport `1736` Zeilen, Tax `1700`, Derivate `36`; PDF-Seiten
+    all `63`, tax `61`, derivatives `3`.
+  - 2025: Vollreport `1442` Zeilen, Tax `485`, Derivate `957`; PDF-Seiten
+    all `52`, tax `18`, derivatives `36`.
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `456892416` Bytes
+  - neuester 2024-Job `54225c56-f4e7-4ecd-a63a-26b499f2f336`
+  - neuester 2025-Job `1505480c-23b5-408c-9813-445425e1ef0c`
+- Validierung:
+  - `ruff` fuer geaenderte Dateien gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `mypy` gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet und Health-Check gruen.
+- Naechster Schritt:
+  - Prioritaet-2-Treffer gruppieren und gegen historische Review-/Closed-Year-
+    Regeln sowie Beleglage abgleichen. Nicht automatisch korrigieren, wenn nur
+    Belegluecke oder Steuerentscheidung vorliegt.
+
 ## Neuester Plan 2026-05-11 Bewertungsanomalien systematisch finden
 - Plan: `docs/223_VALUATION_ANOMALY_AUDIT_AND_FIX_PLAN_2026-05-11.md`
 - Anlass:
