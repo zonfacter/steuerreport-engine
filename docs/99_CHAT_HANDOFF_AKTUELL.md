@@ -17,6 +17,15 @@ Stand: 2026-05-09
   - Queue-Task `remaining_2021_hnt_legacy_evidence_20260511`
   - Beide Tasks sind read-only angelegt und duerfen keine Cost Basis,
     FX-Kurse oder steuerliche Behandlung schaetzen.
+- Validierung der lokalen KI-Ergebnisse:
+  `docs/234_LOCAL_AI_RESULT_VALIDATION_HNT_PIONEX_2026-05-11.md`
+  - Pionex Lines `442` und `514` sind echte `MXC_USDT`-BUY-Zeilen; die
+    offene Frage bleibt die USDT-Herkunft/Cost-Basis vor dem MXC-Kauf.
+  - Die lokale KI-Aussage zu `138bCXPV...` wurde korrigiert: Im 2021-HNT-
+    Match ist das die Binance-Payee-/Deposit-Adresse, nicht die
+    Ursprungs-Wallet.
+  - Offizielle Helium-L1-Archivquelle fuer spaetere Pruefung:
+    `https://docs.helium.com/network-data/legacy-blockchain-data/`.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
