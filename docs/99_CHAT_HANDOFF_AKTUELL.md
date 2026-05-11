@@ -10,6 +10,28 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Plan 2026-05-11 Bewertungsanomalien systematisch finden
+- Plan: `docs/223_VALUATION_ANOMALY_AUDIT_AND_FIX_PLAN_2026-05-11.md`
+- Anlass:
+  - Der SOL-Fix zeigte, dass exakte Zero-Cost-Pruefung nicht ausreicht.
+  - Fast-Null-Kostenbasis, Swap-In ohne Preisanker und bepreister Gegenfluss
+    muessen systematisch geprueft werden.
+- Geplantes erstes Arbeitspaket:
+  - `scripts/valuation_anomaly_audit_20260511.py`
+  - lokaler Output `var/valuation_anomaly_audit_2026-05-11.json`
+  - Bericht `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Befundklassen:
+  - Fast-Null-Kostenbasis mit materiellem Erloes.
+  - `solana_rpc` Swap-Semantik ohne Preisanker.
+  - gleicher `tx_id` mit bepreistem Gegenfluss.
+  - FX-Cache vorhanden, aber Lot unbewertet.
+  - auffaellige Gewinnquote als Suchfilter.
+- Stop-Regeln:
+  - Keine Preise/FX/Cost Basis erfinden.
+  - Keine automatische Korrektur bei Belegluecke oder Steuerentscheidung.
+  - Deterministische Fixes einzeln testen, neu rechnen, dokumentieren und
+    Snapshot aktualisieren.
+
 ## Neuester Stand 2026-05-11 SOL-Swap-In Kostenbasis korrigiert
 - Report: `docs/222_SOLANA_SOL_SWAP_IN_VALUATION_FIX_2026-05-11.md`
 - Code/Test:
