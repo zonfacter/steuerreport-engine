@@ -10,6 +10,72 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-11 Binance-Fiatkauf und High-Gain-Restpruefung
+- Report: `docs/228_BINANCE_FIAT_PURCHASE_AND_REMAINING_HIGH_GAIN_REVIEW_2026-05-11.md`
+- Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Code/Test:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+- Fix:
+  - Neue Funktion `attach_binance_fiat_purchase_value_anchors()`.
+  - Bewertet nur `source=binance`, `event_type=fiat_crypto_purchase`,
+    `side=in` fuer Nicht-EUR-Assets, wenn in derselben Binance-Account-
+    Statement-Gruppe ein belegter EUR-Abfluss vorhanden ist.
+  - Haertet Mehr-Inflow-Gruppen ab: ein EUR-Abfluss wird nur angehaengt, wenn
+    die Gruppe genau einen Krypto-Inflow enthaelt.
+  - Keine Preise erfunden; verwendet wird der vorhandene EUR-Gegenfluss.
+- Korrigierte 2021-Line `1`:
+  - `BNB`, Menge `1.6`
+  - Kaufzeit `2021-02-06T21:18:15+00:00`
+  - Kostenbasis jetzt `96.59076923076923076923076923 EUR`
+  - Erloes `94.120963316925600000000 EUR`
+  - Ergebnis `-2.46980591384363076923076923 EUR`
+- Neu gerechnete Jobs:
+  - 2021 `01504a89-9b31-4e87-97f4-953f70164a9f`, `tax_lines=5494`,
+    `derivative_lines=43`
+  - 2022 `a2523d34-68b5-4983-b08f-c44dbf7816a8`, `tax_lines=6896`,
+    `derivative_lines=630`
+  - 2023 `210d8066-3bb0-4947-b45b-ceb2962e15d6`, `tax_lines=9099`,
+    `derivative_lines=0`
+  - 2024 `aeb1b44b-8b45-4dcb-8479-12c5b470c379`, `tax_lines=1680`,
+    `derivative_lines=36`
+  - 2025 `cc781fa5-1987-411a-ba69-e2653129cf88`, `tax_lines=465`,
+    `derivative_lines=957`
+  - 2026 `b59704da-a6b6-442d-b64d-b8024a74bab5`, `tax_lines=1`,
+    `derivative_lines=0`
+- Audit nach Fix:
+  - `priority_1_total=0`
+  - `fast_null_cost_basis=0`
+  - `fx_available_but_low_cost_basis=0`
+  - `same_tx_priced_counterflow_candidates=0`
+  - `high_gain_ratio=14`
+- Restbefund:
+  - Die verbleibenden 14 High-Gain-Treffer sind historische HNT-/USDT-
+    Beleg- und Bestandsluecken.
+  - HNT-Transfer-Matches fuer die auffaelligen Binance-Deposits existieren
+    bereits; es fehlt vor den Legacy-Outflows ausreichender bewerteter Bestand.
+  - Keine weitere automatische Preisanker-Korrektur aus diesem Audit ableiten.
+  - Naechster fachlicher Schritt waere eine separate HNT-/USDT-
+    Bestandslueckenanalyse.
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `523128832` Bytes
+- Review-/Export-Gegenprobe:
+  - 2024 und 2025 job-spezifisch `allow_export=true`, keine aktuellen Issues,
+    `issues_historical_open=3`, `unmatched_total=0`.
+  - 2024 PDF-Seiten: all `63`, tax `61`, derivatives `3`.
+  - 2025 PDF-Seiten: all `52`, tax `18`, derivatives `36`.
+  - `part=2` liefert fuer alle PDF-Scopes den Standard-Response-Code
+    `report_part_not_found`.
+- Validierung:
+  - `ruff` komplett gruen.
+  - `mypy` gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `tests/unit` gruen.
+  - API-Coverage-Gate `81.08%`, gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet, `/api/v1/health` und `/app` gruen.
+
 ## Neuester Stand 2026-05-11 BNB-Dust-Convert mit CoinMarketCap-Preis korrigiert
 - Report: `docs/227_BNB_2021_COINMARKETCAP_PRICE_BACKFILL_2026-05-11.md`
 - Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`

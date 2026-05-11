@@ -133,6 +133,17 @@ def _bitget_spot_biz_order_id(payload: dict[str, Any]) -> str:
     return _raw_row_field(payload, "bizOrderId")
 
 
+def _binance_account_statement_group_id(payload: dict[str, Any]) -> str:
+    raw_row = payload.get("raw_row")
+    remark = str(raw_row.get("Remark") or raw_row.get("remark") or "").strip() if isinstance(raw_row, dict) else ""
+    if remark:
+        return remark
+    tx_id = _event_tx_id(payload)
+    if ":" in tx_id:
+        return tx_id.split(":", 1)[0]
+    return tx_id
+
+
 def _split_binance_market_symbol(market: str) -> tuple[str, str]:
     normalized = str(market or "").upper().strip()
     for quote in BINANCE_MARKET_QUOTE_ASSETS:
@@ -532,6 +543,93 @@ def attach_binance_market_quote_value_anchors(
         "attached_eur_value_count": attached_eur,
         "missing_quote_rate_count": missing_quote_rates,
         "quote_usd_cache_key_count": len(quote_usd_cache),
+    }
+
+
+def attach_binance_fiat_purchase_value_anchors(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    eur_outflows_by_group: dict[str, tuple[str, Decimal]] = {}
+    crypto_inflow_counts_by_group: dict[str, int] = {}
+    available_counterflows = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        if source == "binance" and event_type == "fiat_crypto_purchase" and _event_side(payload) == "in":
+            asset = _asset_price_symbol(payload.get("asset"), aliases)
+            group_id = _binance_account_statement_group_id(payload)
+            if asset and asset != "EUR" and group_id:
+                crypto_inflow_counts_by_group[group_id] = crypto_inflow_counts_by_group.get(group_id, 0) + 1
+            continue
+        if source != "binance" or event_type != "fiat_crypto_purchase" or _event_side(payload) != "out":
+            continue
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        quantity = _event_quantity(payload)
+        group_id = _binance_account_statement_group_id(payload)
+        if asset != "EUR" or quantity <= Decimal("0") or not group_id:
+            continue
+        available_counterflows += 1
+        existing = eur_outflows_by_group.get(group_id)
+        if existing is None:
+            eur_outflows_by_group[group_id] = (str(event.get("unique_event_id") or ""), quantity)
+        else:
+            reference_event_id, existing_quantity = existing
+            eur_outflows_by_group[group_id] = (reference_event_id, existing_quantity + quantity)
+
+    transformed: list[dict[str, Any]] = []
+    attached = 0
+    ambiguous_groups: set[str] = set()
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        if source != "binance" or event_type != "fiat_crypto_purchase" or _event_side(payload) != "in":
+            transformed.append(event)
+            continue
+        if _payload_value_usd_sum(payload) > Decimal("0") or _safe_decimal(payload.get("value_eur")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        if not asset or asset == "EUR":
+            transformed.append(event)
+            continue
+        group_id = _binance_account_statement_group_id(payload)
+        if crypto_inflow_counts_by_group.get(group_id, 0) != 1:
+            if group_id:
+                ambiguous_groups.add(group_id)
+            transformed.append(event)
+            continue
+        counterflow = eur_outflows_by_group.get(group_id)
+        if counterflow is None:
+            transformed.append(event)
+            continue
+        reference_event_id, value_eur = counterflow
+        if value_eur <= Decimal("0"):
+            transformed.append(event)
+            continue
+        updated_payload = dict(payload)
+        updated_payload["value_eur"] = value_eur.to_eng_string()
+        updated_payload["valuation_reference_source"] = "binance_fiat_purchase_eur_counterflow"
+        updated_payload["valuation_reference_source_event_id"] = reference_event_id
+        updated_payload["valuation_reference_asset"] = "EUR"
+        updated_payload["valuation_reference_group_id"] = group_id
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        attached += 1
+
+    return transformed, {
+        "valuation_anchor_source": "binance_fiat_purchase_eur_counterflow",
+        "available_counterflow_count": available_counterflows,
+        "attached_anchor_count": attached,
+        "ambiguous_inflow_group_count": len(ambiguous_groups),
     }
 
 
@@ -1320,6 +1418,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         raw_events, valuation_anchor_summary = attach_reference_usd_value_anchors(raw_events, all_raw_events)
         raw_events, bitget_spot_anchor_summary = attach_bitget_tax_api_spot_trade_value_anchors(raw_events)
         raw_events, binance_market_anchor_summary = attach_binance_market_quote_value_anchors(raw_events)
+        raw_events, binance_fiat_purchase_summary = attach_binance_fiat_purchase_value_anchors(raw_events)
         raw_events, binance_dust_price_summary = attach_cached_usd_prices_to_binance_dust_convert_in_events(raw_events)
         raw_events, reward_price_summary = attach_cached_usd_prices_to_reward_events(raw_events)
         raw_events, swap_in_price_summary = attach_cached_usd_prices_to_swap_in_events(raw_events)
@@ -1361,6 +1460,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         processing_result["valuation_anchor_summary"] = valuation_anchor_summary
         processing_result["bitget_spot_anchor_summary"] = bitget_spot_anchor_summary
         processing_result["binance_market_anchor_summary"] = binance_market_anchor_summary
+        processing_result["binance_fiat_purchase_summary"] = binance_fiat_purchase_summary
         processing_result["binance_dust_price_summary"] = binance_dust_price_summary
         processing_result["reward_price_summary"] = reward_price_summary
         processing_result["swap_in_price_summary"] = swap_in_price_summary

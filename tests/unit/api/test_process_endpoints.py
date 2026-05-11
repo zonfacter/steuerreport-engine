@@ -28,6 +28,7 @@ from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
 from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
 from tax_engine.queue.service import (
+    attach_binance_fiat_purchase_value_anchors,
     attach_binance_market_quote_value_anchors,
     attach_bitget_tax_api_spot_trade_value_anchors,
     attach_cached_usd_prices_to_binance_dust_convert_in_events,
@@ -410,6 +411,91 @@ def test_attach_cached_usd_prices_to_binance_dust_convert_in_events() -> None:
     assert enriched[0]["payload"]["valuation_reference_asset"] == "BNB"
     assert enriched[0]["payload"]["valuation_reference_rate_date"] == "2021-04-28"
     assert "price_usd" not in enriched[1]["payload"]
+
+
+def test_attach_binance_fiat_purchase_value_anchors_from_eur_counterflow() -> None:
+    events = [
+        {
+            "unique_event_id": "eur-out",
+            "payload": {
+                "timestamp_utc": "2021-02-06T21:18:15+00:00",
+                "source": "binance",
+                "event_type": "fiat_crypto_purchase",
+                "side": "out",
+                "asset": "EUR",
+                "quantity": "98.1",
+                "tx_id": "2ae01da3bd9f4522a103b8c54f0eb1c6:0:EUR",
+                "raw_row": {"Remark": "2ae01da3bd9f4522a103b8c54f0eb1c6"},
+            },
+        },
+        {
+            "unique_event_id": "bnb-in",
+            "payload": {
+                "timestamp_utc": "2021-02-06T21:18:15+00:00",
+                "source": "binance",
+                "event_type": "fiat_crypto_purchase",
+                "side": "in",
+                "asset": "BNB",
+                "quantity": "1.625",
+                "tx_id": "2ae01da3bd9f4522a103b8c54f0eb1c6:2:BNB",
+                "raw_row": {"Remark": "2ae01da3bd9f4522a103b8c54f0eb1c6"},
+            },
+        },
+    ]
+
+    enriched, summary = attach_binance_fiat_purchase_value_anchors(events)
+
+    assert summary["available_counterflow_count"] == 1
+    assert summary["attached_anchor_count"] == 1
+    assert enriched[1]["payload"]["value_eur"] == "98.1"
+    assert enriched[1]["payload"]["valuation_reference_source"] == "binance_fiat_purchase_eur_counterflow"
+    assert enriched[1]["payload"]["valuation_reference_source_event_id"] == "eur-out"
+    assert enriched[1]["payload"]["valuation_reference_asset"] == "EUR"
+
+
+def test_attach_binance_fiat_purchase_value_anchors_skips_ambiguous_group() -> None:
+    events = [
+        {
+            "unique_event_id": "eur-out",
+            "payload": {
+                "source": "binance",
+                "event_type": "fiat_crypto_purchase",
+                "side": "out",
+                "asset": "EUR",
+                "quantity": "100",
+                "tx_id": "group-1:0:EUR",
+            },
+        },
+        {
+            "unique_event_id": "bnb-in",
+            "payload": {
+                "source": "binance",
+                "event_type": "fiat_crypto_purchase",
+                "side": "in",
+                "asset": "BNB",
+                "quantity": "1",
+                "tx_id": "group-1:1:BNB",
+            },
+        },
+        {
+            "unique_event_id": "eth-in",
+            "payload": {
+                "source": "binance",
+                "event_type": "fiat_crypto_purchase",
+                "side": "in",
+                "asset": "ETH",
+                "quantity": "0.01",
+                "tx_id": "group-1:2:ETH",
+            },
+        },
+    ]
+
+    enriched, summary = attach_binance_fiat_purchase_value_anchors(events)
+
+    assert summary["attached_anchor_count"] == 0
+    assert summary["ambiguous_inflow_group_count"] == 1
+    assert "value_eur" not in enriched[1]["payload"]
+    assert "value_eur" not in enriched[2]["payload"]
 
 
 def test_attach_cached_usd_prices_to_reward_events() -> None:
