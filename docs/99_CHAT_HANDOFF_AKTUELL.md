@@ -10,6 +10,38 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-11 2025 Export-Paket validiert
+- Report: `docs/221_2025_EXPORT_PACKAGE_VALIDATION_2026-05-11.md`
+- Job: `b7c013f5-d176-4875-bdbe-df614bee4800`
+- Lokale Export-Artefakte:
+  - `var/export_validation_2025_derivatives_2026-05-11/`
+  - Nicht committen, nur lokaler Validierungsoutput.
+- Report-API liefert `11` Dateien.
+- Vollreport:
+  - `1442` Exportzeilen
+  - `20` Tax-Domain-Summary-Zeilen
+  - `465` Tax-Lines
+  - `957` Derivate-Lines
+- CSV-Zeilen inklusive Header:
+  - `all.csv=1443`
+  - `tax.csv=486`
+  - `derivatives.csv=958`
+  - `wiso.csv=409`
+- PDF-Seiten:
+  - `all`: `52` Seiten, `1/1` Teile
+  - `tax`: `18` Seiten, `1/1` Teile
+  - `derivatives`: `36` Seiten, `1/1` Teile
+  - Alle unter der harten Grenze `100` Seiten je Datei.
+  - `part=2` liefert fuer alle PDF-Scopes korrekt `report_part_not_found`.
+- Job-spezifisches Review-Gate:
+  - `allow_export=true`
+  - `blocking_reasons=[]`
+  - `warning_reasons=[]`
+  - `issues_open=0`
+  - `issues_historical_open=3`
+  - `issues_high_open=0`
+  - `unmatched_total=0`
+
 ## Neuester Stand 2026-05-11 2025 Derivate neu gerechnet und Readonly-Snapshot aktualisiert
 - Report: `docs/220_2025_DERIVATIVE_RECALC_AND_READONLY_SNAPSHOT_2026-05-11.md`
 - Neuer 2025-Job:
