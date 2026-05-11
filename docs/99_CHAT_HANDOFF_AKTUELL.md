@@ -12,6 +12,27 @@ Stand: 2026-05-09
 
 ## Neuester Stand 2026-05-10 Lokale-KI-Pruefung und Folgeauftrag
 - Report: `docs/218_LOCAL_AI_RESULTS_AND_CODEX_FOLLOWUP_2026-05-10.md`
+- Folgefix: `docs/219_BITGET_2025_DERIVATIVE_PIPELINE_FIX_2026-05-10.md`
+- Code/Test:
+  - `src/tax_engine/core/derivatives.py`
+  - `tests/unit/core/test_derivatives_manager.py`
+- Verifizierte Ursache fuer `derivative_lines=0` im 2025-Job
+  `f4342b4b-a502-47cf-a5dc-255eda49d94c`:
+  - Bitget-Tax-API-Derivatevents tragen `timestamp_utc`.
+  - DerivativesManager las bisher nur `timestamp/datetime/date/time` und filterte
+    diese Events dadurch vor der Klassifikation aus.
+  - Bitget-Futures-Bills ohne stabile Position-ID werden jetzt eng als
+    Cash-Settlement-Lines aus `raw_row.amount + raw_row.fee` verarbeitet.
+- Gegenprobe auf Readonly-DB-Raw-Events:
+  - `processed_events=1047`
+  - `standalone_cash_settlements=1047`
+  - `line_count=1047`
+  - `derivative_gain_loss_total_eur=-2110.92099932`
+  - `open_positions_remaining=0`
+- Wichtig:
+  - Der gespeicherte 2025-Job in der Readonly-DB bleibt bis zur Neuberechnung bei
+    `derivative_lines=0`.
+  - Danach Projekt-DB neu rechnen und AI-Readonly-Snapshot neu bauen.
 - Readonly-KI-Queue:
   - `done=13`
   - `failed=2`
