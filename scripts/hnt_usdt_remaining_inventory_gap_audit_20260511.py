@@ -27,6 +27,20 @@ HNT_CONTEXT_SOURCES = (
     "heliumgeek",
 )
 HELIUMTRACKER_PATTERN = "heliumtracker-report-advanced-*.csv"
+BINANCE_STAKING_DEPOSIT_FILES = (
+    "BINANCE - HNT Transfer Staking Wallet - Deposit_History 07 bis 09-2021.xlsx",
+    "BINANCE - HNT Transfer Staking Wallet - deposit_history 11-2021.xlsx",
+)
+STAKING_TRANSFER_WORKBOOK = "Heliumtracker 2021.xlsx"
+DAILY_REWARD_WORKBOOK = "daily_hotspot_rewards_2022-03-21T17_52_18.702901-04_00.xlsx"
+BINANCE_HISTORY_WORKBOOK = "Binance Export History Daten 2021 2022.xlsx"
+STAKING_WALLET_SOURCE_NAME = (
+    "manual_legacy_import:helium_legacy_raw:"
+    "helium-Staking Wallet 14eKedP4gCyefaMgjxPULPVecDq6gM5aEJYLDvbiRXZpuq2kYNA-all-raw.csv"
+)
+MAIN_HELIUM_WALLET = "133rkwoKCfxLTTt1zGjge7c2nGLUSY5sTuG2V61zi6ik269Tf4j"
+STAKING_WALLET = "14eKedP4gCyefaMgjxPULPVecDq6gM5aEJYLDvbiRXZpuq2kYNA"
+BINANCE_HNT_WALLET = "138bCXPV"
 
 
 def dec(value: Any) -> Decimal:
@@ -40,6 +54,43 @@ def plain(value: Any) -> str:
     value_dec = dec(value)
     text = format(value_dec, "f")
     return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def clean_text(value: Any) -> str:
+    return str(value or "").replace("\xa0", " ").strip()
+
+
+def load_workbook(path: Path) -> Any:
+    try:
+        from openpyxl import load_workbook as openpyxl_load_workbook
+    except ImportError as exc:  # pragma: no cover - environment guard for standalone script
+        raise RuntimeError("openpyxl is required for the local XLSX audit") from exc
+    return openpyxl_load_workbook(path, data_only=True, read_only=True)
+
+
+def find_local_workbooks(filename: str) -> list[Path]:
+    return sorted({path for path in ROOT.rglob(filename) if path.is_file()})
+
+
+def first_local_workbook(filename: str) -> Path | None:
+    paths = find_local_workbooks(filename)
+    return paths[0] if paths else None
+
+
+def sheet_records(path: Path, sheet_name: str | None = None) -> list[dict[str, Any]]:
+    workbook = load_workbook(path)
+    sheet = workbook[sheet_name] if sheet_name else workbook[workbook.sheetnames[0]]
+    rows_iter = sheet.iter_rows(values_only=True)
+    try:
+        headers = [str(value or "").strip() for value in next(rows_iter)]
+    except StopIteration:
+        return []
+    records: list[dict[str, Any]] = []
+    for row in rows_iter:
+        record = {headers[index]: row[index] if index < len(row) else None for index in range(len(headers))}
+        if any(value not in (None, "") for value in record.values()):
+            records.append(record)
+    return records
 
 
 def rows(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -332,6 +383,295 @@ def imported_hnt_reward_months(conn: sqlite3.Connection) -> list[dict[str, Any]]
     )
 
 
+def base_tx_id(tx_id: str) -> str:
+    return str(tx_id or "").split("+", 1)[0].strip()
+
+
+def source_file_import_status(conn: sqlite3.Connection, filename: str) -> list[dict[str, Any]]:
+    return rows(
+        conn,
+        """
+        SELECT source_file_id, source_name, row_count
+        FROM source_files
+        WHERE source_name LIKE ?
+        ORDER BY source_name
+        """,
+        (f"%{filename}",),
+    )
+
+
+def binance_staking_deposit_workbook_audit(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for filename in BINANCE_STAKING_DEPOSIT_FILES:
+        paths = find_local_workbooks(filename)
+        selected = paths[0] if paths else None
+        records = sheet_records(selected) if selected else []
+        hnt_rows = [row for row in records if str(row.get("Coin") or "").upper() == "HNT"]
+        imported_rows = source_file_import_status(conn, filename)
+        output.append(
+            {
+                "filename": filename,
+                "local_path_count": len(paths),
+                "selected_path": str(selected.relative_to(ROOT)) if selected else "",
+                "xlsx_row_count": len(records),
+                "hnt_row_count": len(hnt_rows),
+                "hnt_quantity": plain(sum((dec(row.get("Amount")) for row in hnt_rows), Decimal("0"))),
+                "imported": bool(imported_rows),
+                "store_sources": [
+                    {
+                        "source_file_id": str(row.get("source_file_id") or ""),
+                        "source_name": str(row.get("source_name") or ""),
+                        "row_count": int(row.get("row_count") or 0),
+                    }
+                    for row in imported_rows
+                ],
+                "hnt_rows": [
+                    {
+                        "date_utc": str(row.get("Date(UTC)") or ""),
+                        "amount": plain(row.get("Amount")),
+                        "tx_id": str(row.get("TXID") or ""),
+                        "status": str(row.get("Status") or ""),
+                    }
+                    for row in hnt_rows
+                ],
+            }
+        )
+    return output
+
+
+def staking_transfer_workbook_audit() -> dict[str, Any]:
+    path = first_local_workbook(STAKING_TRANSFER_WORKBOOK)
+    if not path:
+        return {"found": False, "filename": STAKING_TRANSFER_WORKBOOK}
+    records = sheet_records(path)
+    transfers: list[dict[str, Any]] = []
+    outbound_from_main = Decimal("0")
+    outbound_to_binance = Decimal("0")
+    outbound_to_staking_wallet = Decimal("0")
+    for row in records:
+        sender = clean_text(row.get("Sender"))
+        receiver = clean_text(row.get("Receiver"))
+        amount = dec(row.get("Amount"))
+        time = clean_text(row.get("Time"))
+        if MAIN_HELIUM_WALLET[:10] not in sender and not sender.startswith("133"):
+            continue
+        outbound_from_main += amount
+        receiver_lower = receiver.lower()
+        if BINANCE_HNT_WALLET in receiver or "138bCXPV" in receiver or "binance" in receiver_lower:
+            outbound_to_binance += amount
+        if STAKING_WALLET[:8] in receiver or "14eKedP4g" in receiver:
+            outbound_to_staking_wallet += amount
+        transfers.append(
+            {
+                "time": time,
+                "sender": sender,
+                "receiver": receiver,
+                "amount_hnt": plain(amount),
+                "target": (
+                    "binance"
+                    if "138bCXPV" in receiver or "binance" in receiver_lower
+                    else "staking_wallet_14e"
+                    if "14eKedP4g" in receiver
+                    else "other"
+                ),
+            }
+        )
+    return {
+        "found": True,
+        "filename": STAKING_TRANSFER_WORKBOOK,
+        "selected_path": str(path.relative_to(ROOT)),
+        "row_count": len(records),
+        "main_wallet_out_count": len(transfers),
+        "main_wallet_out_hnt": plain(outbound_from_main),
+        "main_wallet_to_binance_hnt": plain(outbound_to_binance),
+        "main_wallet_to_staking_wallet_hnt": plain(outbound_to_staking_wallet),
+        "critical_rows": [
+            row
+            for row in transfers
+            if row["time"].startswith(("2021-08-10", "2021-08-14", "2021-08-17", "2021-08-20", "2022-07-12"))
+        ],
+        "sample_rows": transfers[:40],
+    }
+
+
+def daily_reward_workbook_audit() -> dict[str, Any]:
+    path = first_local_workbook(DAILY_REWARD_WORKBOOK)
+    if not path:
+        return {"found": False, "filename": DAILY_REWARD_WORKBOOK}
+    records = sheet_records(path, "Abfrageergebnis")
+    cutoffs = {
+        "2021-08-17": Decimal("0"),
+        "2021-08-20": Decimal("0"),
+        "2022-07-12": Decimal("0"),
+    }
+    month_totals: dict[str, Decimal] = {}
+    for row in records:
+        date_text = str(row.get("date") or row.get("Datum") or "")
+        amount = dec(row.get("total_hnt"))
+        month = date_text[:7]
+        if month:
+            month_totals[month] = month_totals.get(month, Decimal("0")) + amount
+        for cutoff in cutoffs:
+            if date_text[:10] <= cutoff:
+                cutoffs[cutoff] += amount
+    return {
+        "found": True,
+        "filename": DAILY_REWARD_WORKBOOK,
+        "selected_path": str(path.relative_to(ROOT)),
+        "row_count": len(records),
+        "cutoff_hnt": {cutoff: plain(value) for cutoff, value in cutoffs.items()},
+        "month_hnt_2021": {
+            month: plain(value)
+            for month, value in sorted(month_totals.items())
+            if month.startswith("2021-")
+        },
+    }
+
+
+def binance_history_workbook_audit() -> dict[str, Any]:
+    path = first_local_workbook(BINANCE_HISTORY_WORKBOOK)
+    if not path:
+        return {"found": False, "filename": BINANCE_HISTORY_WORKBOOK}
+    records = sheet_records(path, "Binance Rohdaten")
+    critical: list[dict[str, Any]] = []
+    for row in records:
+        asset = str(row.get("Coin") or row.get("Asset") or "").upper()
+        if asset != "HNT":
+            continue
+        timestamp = str(row.get("UTC_Time") or row.get("Date(UTC)") or row.get("Time") or "")
+        if not ("2021-08-01" <= timestamp[:10] <= "2021-08-21"):
+            continue
+        critical.append(
+            {
+                "time": timestamp,
+                "operation": str(row.get("Operation") or ""),
+                "change": plain(row.get("Change") or row.get("Amount")),
+            }
+        )
+    return {
+        "found": True,
+        "filename": BINANCE_HISTORY_WORKBOOK,
+        "selected_path": str(path.relative_to(ROOT)),
+        "row_count": len(records),
+        "critical_hnt_rows": critical,
+    }
+
+
+def staking_wallet_db_audit(conn: sqlite3.Connection) -> dict[str, Any]:
+    raw_events = rows(
+        conn,
+        """
+        SELECT r.unique_event_id, r.row_index, r.payload_json, sf.source_name
+        FROM raw_events r
+        LEFT JOIN source_files sf ON sf.source_file_id = r.source_file_id
+        WHERE sf.source_name = ?
+        ORDER BY COALESCE(json_extract(r.payload_json, '$.timestamp_utc'), json_extract(r.payload_json, '$.timestamp')),
+                 r.row_index
+        """,
+        (STAKING_WALLET_SOURCE_NAME,),
+    )
+    inbound = Decimal("0")
+    outbound = Decimal("0")
+    event_rows: list[dict[str, Any]] = []
+    for row in raw_events:
+        data = payload(row)
+        qty = dec(data.get("quantity"))
+        side = str(data.get("side") or "").lower()
+        if side == "in":
+            inbound += qty
+        elif side == "out":
+            outbound += qty
+        event_rows.append(
+            {
+                "event_id": str(row.get("unique_event_id") or ""),
+                "timestamp_utc": str(data.get("timestamp_utc") or ""),
+                "side": side,
+                "quantity_hnt": plain(qty),
+                "tx_id": str(data.get("tx_id") or ""),
+            }
+        )
+
+    candidate_rows: list[dict[str, Any]] = []
+    for row in raw_events:
+        data = payload(row)
+        tx = base_tx_id(str(data.get("tx_id") or ""))
+        if not tx:
+            continue
+        counterparts = rows(
+            conn,
+            """
+            SELECT r.unique_event_id, r.payload_json, sf.source_name
+            FROM raw_events r
+            LEFT JOIN source_files sf ON sf.source_file_id = r.source_file_id
+            WHERE r.unique_event_id != ?
+              AND json_extract(r.payload_json, '$.asset') = 'HNT'
+              AND json_extract(r.payload_json, '$.tx_id') LIKE ?
+            ORDER BY COALESCE(json_extract(r.payload_json, '$.timestamp_utc'), json_extract(r.payload_json, '$.timestamp'))
+            """,
+            (str(row.get("unique_event_id") or ""), f"{tx}%"),
+        )
+        for counterpart in counterparts:
+            other = payload(counterpart)
+            if str(other.get("side") or "").lower() == str(data.get("side") or "").lower():
+                continue
+            outbound_event_id = (
+                str(row.get("unique_event_id") or "")
+                if str(data.get("side") or "").lower() == "out"
+                else str(counterpart.get("unique_event_id") or "")
+            )
+            inbound_event_id = (
+                str(row.get("unique_event_id") or "")
+                if str(data.get("side") or "").lower() == "in"
+                else str(counterpart.get("unique_event_id") or "")
+            )
+            existing = rows(
+                conn,
+                """
+                SELECT match_id, status, method
+                FROM transfer_matches
+                WHERE outbound_event_id = ? AND inbound_event_id = ?
+                """,
+                (outbound_event_id, inbound_event_id),
+            )
+            amount_diff = abs(dec(data.get("quantity")) - dec(other.get("quantity")))
+            candidate = {
+                "base_tx_id": tx,
+                "outbound_event_id": outbound_event_id,
+                "inbound_event_id": inbound_event_id,
+                "outbound_source": str(payload(row if outbound_event_id == row.get("unique_event_id") else counterpart).get("source") or ""),
+                "inbound_source": str(payload(row if inbound_event_id == row.get("unique_event_id") else counterpart).get("source") or ""),
+                "timestamp_utc": str(data.get("timestamp_utc") or other.get("timestamp_utc") or ""),
+                "amount_diff_hnt": plain(amount_diff),
+                "match_exists": bool(existing),
+                "existing_match_id": str(existing[0].get("match_id") or "") if existing else "",
+            }
+            if candidate not in candidate_rows:
+                candidate_rows.append(candidate)
+
+    return {
+        "source_name": STAKING_WALLET_SOURCE_NAME,
+        "event_count": len(event_rows),
+        "inbound_hnt": plain(inbound),
+        "outbound_hnt": plain(outbound),
+        "balance_hnt": plain(inbound - outbound),
+        "events": event_rows,
+        "self_transfer_pair_candidates": sorted(
+            candidate_rows,
+            key=lambda item: (str(item["timestamp_utc"]), str(item["outbound_event_id"]), str(item["inbound_event_id"])),
+        ),
+    }
+
+
+def local_excel_staking_wallet_audit(conn: sqlite3.Connection) -> dict[str, Any]:
+    return {
+        "binance_staking_deposit_workbooks": binance_staking_deposit_workbook_audit(conn),
+        "staking_transfer_workbook": staking_transfer_workbook_audit(),
+        "daily_reward_workbook": daily_reward_workbook_audit(),
+        "binance_history_workbook": binance_history_workbook_audit(),
+        "staking_wallet_db": staking_wallet_db_audit(conn),
+    }
+
+
 def build_audit(conn: sqlite3.Connection) -> dict[str, Any]:
     lines = remaining_lines(conn)
     detail_rows: list[dict[str, Any]] = []
@@ -416,6 +756,7 @@ def build_audit(conn: sqlite3.Connection) -> dict[str, Any]:
         "hnt_source_balance_context": hnt_source_balance_context(conn),
         "local_heliumtracker_file_coverage": local_heliumtracker_file_coverage(conn),
         "imported_hnt_reward_months": imported_hnt_reward_months(conn),
+        "local_excel_staking_wallet_audit": local_excel_staking_wallet_audit(conn),
     }
 
 
@@ -526,6 +867,113 @@ def render_md(audit: dict[str, Any]) -> str:
             f"{item['store_reward_event_count']} | {item['store_hnt']} |"
         )
 
+    excel_audit = audit["local_excel_staking_wallet_audit"]
+    staking_workbook = excel_audit["staking_transfer_workbook"]
+    daily_workbook = excel_audit["daily_reward_workbook"]
+    staking_db = excel_audit["staking_wallet_db"]
+    lines.extend(
+        [
+            "",
+            "## Lokale Excel-Pruefung Staking-Wallet",
+            "",
+            "Die vom Nutzer vermutete Staking-Wallet-Spur ist lokal vorhanden. Rohdaten bleiben lokal; diese Sektion dokumentiert nur abgeleitete Pruefergebnisse.",
+            "",
+            "### Binance-HNT-Deposit-Excel",
+            "",
+            "| Datei | Lokale Kopien | Zeilen | HNT-Zeilen | HNT-Menge | Importiert |",
+            "| --- | ---: | ---: | ---: | ---: | --- |",
+        ]
+    )
+    for item in excel_audit["binance_staking_deposit_workbooks"]:
+        lines.append(
+            f"| `{item['filename']}` | {item['local_path_count']} | {item['xlsx_row_count']} | "
+            f"{item['hnt_row_count']} | {item['hnt_quantity']} | {'ja' if item['imported'] else 'nein'} |"
+        )
+
+    if staking_workbook.get("found"):
+        lines.extend(
+            [
+                "",
+                "### Heliumtracker-Transferliste 2021",
+                "",
+                f"- Datei: `{staking_workbook['selected_path']}`",
+                f"- Zeilen: `{staking_workbook['row_count']}`",
+                f"- Abgaenge aus der Haupt-Wallet `{MAIN_HELIUM_WALLET[:8]}...`: `{staking_workbook['main_wallet_out_count']}` mit `{staking_workbook['main_wallet_out_hnt']} HNT`.",
+                f"- Davon zu Binance: `{staking_workbook['main_wallet_to_binance_hnt']} HNT`.",
+                f"- Davon zur Staking-Wallet `{STAKING_WALLET[:8]}...`: `{staking_workbook['main_wallet_to_staking_wallet_hnt']} HNT`.",
+                "",
+                "Kritische Zeilen aus der Excel-Transferliste:",
+                "",
+                "| Zeit | Ziel | Menge HNT | Empfaenger |",
+                "| --- | --- | ---: | --- |",
+            ]
+        )
+        for row in staking_workbook["critical_rows"]:
+            lines.append(
+                f"| `{row['time']}` | `{row['target']}` | {row['amount_hnt']} | `{row['receiver']}` |"
+            )
+
+    if daily_workbook.get("found"):
+        lines.extend(
+            [
+                "",
+                "### Daily-Hotspot-Rewards-Excel",
+                "",
+                f"- Datei: `{daily_workbook['selected_path']}`",
+                f"- Zeilen: `{daily_workbook['row_count']}`",
+                f"- HNT bis `2021-08-17`: `{daily_workbook['cutoff_hnt']['2021-08-17']}`",
+                f"- HNT bis `2021-08-20`: `{daily_workbook['cutoff_hnt']['2021-08-20']}`",
+                f"- HNT bis `2022-07-12`: `{daily_workbook['cutoff_hnt']['2022-07-12']}`",
+                "",
+                "Monatssummen 2021 aus der Excel-Datei:",
+                "",
+                "| Monat | HNT |",
+                "| --- | ---: |",
+            ]
+        )
+        for month, value in daily_workbook["month_hnt_2021"].items():
+            lines.append(f"| `{month}` | {value} |")
+
+    lines.extend(
+        [
+            "",
+            "### Staking-Wallet in der Datenbank",
+            "",
+            f"- Importierte Quelle: `{staking_db['source_name']}`",
+            f"- Events: `{staking_db['event_count']}`",
+            f"- Inbound: `{staking_db['inbound_hnt']} HNT`",
+            f"- Outbound: `{staking_db['outbound_hnt']} HNT`",
+            f"- Saldo: `{staking_db['balance_hnt']} HNT`",
+            f"- Nicht gematchte Self-Transfer-Kandidaten mit gleicher Helium-Transaktion: `{sum(1 for row in staking_db['self_transfer_pair_candidates'] if not row['match_exists'])}`",
+            "",
+            "| Zeit | Out-Quelle | In-Quelle | Delta HNT | Match vorhanden |",
+            "| --- | --- | --- | ---: | --- |",
+        ]
+    )
+    for row in staking_db["self_transfer_pair_candidates"]:
+        lines.append(
+            f"| `{row['timestamp_utc']}` | `{row['outbound_source']}` | `{row['inbound_source']}` | "
+            f"{row['amount_diff_hnt']} | {'ja' if row['match_exists'] else 'nein'} |"
+        )
+
+    binance_history = excel_audit["binance_history_workbook"]
+    if binance_history.get("found"):
+        lines.extend(
+            [
+                "",
+                "### Binance-Historie 2021-08",
+                "",
+                f"- Datei: `{binance_history['selected_path']}`",
+                f"- Gepruefte Rohzeilen: `{binance_history['row_count']}`",
+                "- Der Auszug bestaetigt HNT-Deposits am `2021-08-06`, `2021-08-10` und `2021-08-20`; zwischen `2021-08-10` und den HNT-Verkaeufen am `2021-08-17` ist kein zusaetzlicher Binance-HNT-Deposit sichtbar.",
+                "",
+                "| Zeit | Operation | HNT-Aenderung |",
+                "| --- | --- | ---: |",
+            ]
+        )
+        for row in binance_history["critical_hnt_rows"]:
+            lines.append(f"| `{row['time']}` | `{row['operation']}` | {row['change']} |")
+
     lines.extend(
         [
             "",
@@ -534,6 +982,9 @@ def render_md(audit: dict[str, Any]) -> str:
             "- Die im Workspace vorhandenen HeliumTracker-Dateien sind importiert; die HNT-Summen aus CSV und Store stimmen je Datei ueberein.",
             "- Lokal vorhanden ist fuer `2021` nur `heliumtracker-report-advanced-2021-12.csv`; fuer die kritischen Binance-Verkaeufe am `2021-08-17` gibt es damit keine zusaetzliche lokale HeliumTracker-Quelle.",
             "- Fuer `2022-02` bis `2022-07` sind HeliumTracker-Rewards importiert; sie reichen zusammen mit dem Legacy-Cointracking-Saldo aber nicht aus, um den `450.0398803021218`-HNT-Legacy-Outflow am `2022-07-12` belegbar zu decken.",
+            "- Die Excel-Dateien bestaetigen eine eigene Staking-Wallet `14eKed...`; dort fehlen aktuell Self-Transfer-Matches zur Haupt-Wallet `133...`.",
+            "- Diese Self-Transfer-Matches verbessern die Kettenbelegung, erzeugen aber keine Anschaffungskosten. Fuer die grossen 2022-Zufluesse in die Staking-Wallet bleibt die Herkunft vor der Staking-/Return-Wallet ungeklaert.",
+            "- Fuer `2021-08-17` zeigt die Excel-Spur keine zusaetzliche Binance-Einzahlung; die `100 HNT` am `2021-08-14` gingen zur Staking-Wallet und verliessen diese kurz danach wieder.",
             "",
             "Quellen:",
             "",
@@ -563,6 +1014,8 @@ def render_md(audit: dict[str, Any]) -> str:
             "- Fuer die konkreten Restzeilen reicht der belegte Legacy-Bestand vor den Outflows aber nicht aus; vorhandene Mining-Rewards wurden bereits vorher durch andere Outflows/Transfers verbraucht.",
             "- Die 2021-HNT-Zeilen ohne Lot-Quelle liegen auf Binance-Verkaeufen am `2021-08-17`; "
             "fuer diese Verkaufsmenge gibt es im aktiven Datenstand keinen belegten vorherigen Binance-Deposit.",
+            "- Die Excel-Pruefung stuetzt diese Einordnung: Zwischen den bekannten Binance-Deposits am `2021-08-10` und den Verkaeufen am `2021-08-17` wurde kein weiterer Binance-HNT-Zufluss gefunden.",
+            "- Fuer den `2022-07-12`-Komplex ist die Luecke enger eingegrenzt: die Staking-Wallet erhielt kurz vorher `421.34562734 HNT` aus drei Legacy-Transfers und leitete `421.30245111 HNT` an die Haupt-Wallet zurueck; fuer diese drei Zufluesse fehlt weiterhin eine bewertete Primaerherkunft.",
             "- Die 2022-USDT-Zeilen decken sich mit dem bereits dokumentierten Pionex-/Binance-"
             "Opening- und Bot-Historienproblem.",
             "- Deshalb: keine neue automatische RAW-/FX-/Cost-Basis-Korrektur aus diesem Audit.",

@@ -15,6 +15,37 @@ Stand: 2026-05-09
 - Skript: `scripts/hnt_usdt_remaining_inventory_gap_audit_20260511.py`
 - Lokaler JSON-Output, nicht committen:
   `var/hnt_usdt_remaining_inventory_gap_audit_2026-05-11.json`
+- Ergaenzung Excel-/Staking-Wallet-Pruefung:
+  - Gepruefte lokale Excel-Dateien:
+    `BINANCE - HNT Transfer Staking Wallet - Deposit_History 07 bis 09-2021.xlsx`,
+    `BINANCE - HNT Transfer Staking Wallet - deposit_history 11-2021.xlsx`,
+    `usertransfer/legacy_daten/Heliumtracker/advance/Heliumtracker 2021.xlsx`,
+    `daily_hotspot_rewards_2022-03-21T17_52_18.702901-04_00.xlsx` und
+    `Binance Export History Daten 2021 2022.xlsx`.
+  - Die Excel-Dateien bestaetigen die eigene Staking-Wallet
+    `14eKedP4...` und die Haupt-Wallet `133rkwoK...`.
+  - Binance-HNT-Deposit-Excel `07 bis 09-2021`: `9` HNT-Deposits,
+    `366.22656046 HNT`, bereits importiert.
+  - Binance-HNT-Deposit-Excel `11-2021`: lokal vorhanden und importiert,
+    aber `0` Datenzeilen.
+  - Heliumtracker-Transferliste: `30` Abgaenge aus der Haupt-Wallet mit
+    `1204.55 HNT`, davon `950.62 HNT` zu Binance und `221.1 HNT` zur
+    Staking-Wallet.
+  - Kritisch fuer `2021-08-17`: kein weiterer Binance-HNT-Deposit zwischen
+    den bekannten Deposits am `2021-08-10` und den Verkaeufen am
+    `2021-08-17`. Die `100 HNT` am `2021-08-14` gingen zur Staking-Wallet
+    und verliessen diese kurz danach wieder.
+  - Kritisch fuer `2022-07-12`: Die Staking-Wallet erhielt kurz vorher
+    `421.34562734 HNT` aus drei Legacy-Transfers und leitete
+    `421.30245111 HNT` an die Haupt-Wallet zurueck; fuer diese drei
+    Zufluesse fehlt weiterhin eine bewertete Primaerherkunft.
+  - In der Datenbank existiert die Staking-Wallet-Quelle mit `27` Events,
+    `973.08856161 HNT` inbound, `972.63568422 HNT` outbound und
+    `0.45287739 HNT` Saldo.
+  - Es gibt `9` nicht gematchte Self-Transfer-Kandidaten mit gleicher
+    Helium-Transaktion zwischen Haupt- und Staking-Wallet. Diese Matches
+    wuerden die Kettenbelegung verbessern, aber keine Anschaffungskosten
+    erzeugen.
 - Ergebnis:
   - Aktuelle Restzeilen: `14`
   - Erloes dieser Restzeilen: `5442.131645572294372978223086 EUR`
