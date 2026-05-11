@@ -52,6 +52,16 @@ Stand: 2026-05-09
   - Beispiel: vor `2022-07-12T06:59:57+00:00` steht
     `helium_legacy_cointracking` bei `33.85902329177388847810946` HNT Saldo,
     waehrend der gematchte Transfer `450.0398803021218` HNT outbound umfasst.
+- Lokale HeliumTracker-Quellenabdeckung:
+  - Alle im Workspace vorhandenen `heliumtracker-report-advanced-*.csv` sind
+    als `manual_legacy_import:heliumtracker` im Store vorhanden.
+  - Die HNT-Summen aus CSV und Store stimmen je Datei ueberein.
+  - Fuer `2021` liegt lokal nur `heliumtracker-report-advanced-2021-12.csv`
+    vor; fuer die kritischen Binance-HNT-Verkaeufe am `2021-08-17` gibt es
+    damit keine zusaetzliche lokale HeliumTracker-Quelle.
+  - Fuer `2022-02` bis `2022-07` sind HeliumTracker-Rewards importiert, aber
+    nicht ausreichend, um den `450.0398803021218`-HNT-Legacy-Outflow vom
+    `2022-07-12` belegbar zu decken.
 - Naechste sichere Aktion:
   - Keine automatische RAW-/FX-/Cost-Basis-Korrektur.
   - HNT nur mit Primaerbelegen fuer Anschaffung/Mining-Bestand vor den

@@ -70,6 +70,40 @@ Stand: 2026-05-11
 - BMF 2025, Randnummern 43, 51 und 91, stuetzen Marktkurs/Tageskurs und Abzug individueller bzw. fortgefuehrter Anschaffungskosten bei Betriebsvermoegen.
 - Projektlogik: `mining_reward` wird als Reward/Business-Lot verarbeitet. Der Restbefund ist deshalb keine falsche Mining-Klassifikation, sondern fehlender belegter Vorbestand vor den konkreten Outflows.
 
+## Lokale HeliumTracker-Quellenabdeckung
+
+| Datei | CSV-Zeilen | CSV-HNT | Importiert | Store-Zeilen | Reward-Events | Store-HNT |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| `heliumtracker-report-advanced-2021-12.csv` | 465 | 29.72700061 | ja | 198 | 168 | 29.72700061 |
+| `heliumtracker-report-advanced-2022-10.csv` | 465 | 43.79330734 | ja | 326 | 295 | 43.79330734 |
+| `heliumtracker-report-advanced-2022-11.csv` | 450 | 46.88791189 | ja | 317 | 287 | 46.88791189 |
+| `heliumtracker-report-advanced-2022-12.csv` | 465 | 51.51530276 | ja | 328 | 297 | 51.51530276 |
+| `heliumtracker-report-advanced-2022-2.csv` | 420 | 56.68281011 | ja | 460 | 405 | 56.68281011 |
+| `heliumtracker-report-advanced-2022-3.csv` | 465 | 47.74723842 | ja | 493 | 433 | 47.74723842 |
+| `heliumtracker-report-advanced-2022-4.csv` | 450 | 27.56826777 | ja | 414 | 359 | 27.56826777 |
+| `heliumtracker-report-advanced-2022-5.csv` | 465 | 27.92735477 | ja | 268 | 239 | 27.92735477 |
+| `heliumtracker-report-advanced-2022-6.csv` | 450 | 34.4279603 | ja | 278 | 253 | 34.4279603 |
+| `heliumtracker-report-advanced-2022-7.csv` | 465 | 32.3470546 | ja | 292 | 265 | 32.3470546 |
+| `heliumtracker-report-advanced-2022-8.csv` | 465 | 44.79597753 | ja | 333 | 302 | 44.79597753 |
+| `heliumtracker-report-advanced-2022-9.csv` | 450 | 41.12615909 | ja | 326 | 298 | 41.12615909 |
+| `heliumtracker-report-advanced-2023-1.csv` | 465 | 46.70469617 | ja | 308 | 277 | 46.70469617 |
+| `heliumtracker-report-advanced-2023-10.csv` | 465 | 0 | ja | 247 | 0 | 0 |
+| `heliumtracker-report-advanced-2023-11.csv` | 450 | 0 | ja | 271 | 0 | 0 |
+| `heliumtracker-report-advanced-2023-12.csv` | 465 | 0 | ja | 121 | 0 | 0 |
+| `heliumtracker-report-advanced-2023-2.csv` | 420 | 39.81611834 | ja | 271 | 244 | 39.81611834 |
+| `heliumtracker-report-advanced-2023-3.csv` | 465 | 42.69473516 | ja | 270 | 259 | 42.69473516 |
+| `heliumtracker-report-advanced-2023-5.csv` | 465 | 0 | ja | 303 | 0 | 0 |
+| `heliumtracker-report-advanced-2023-6.csv` | 450 | 0 | ja | 299 | 0 | 0 |
+| `heliumtracker-report-advanced-2023-7.csv` | 465 | 0 | ja | 310 | 0 | 0 |
+| `heliumtracker-report-advanced-2023-8.csv` | 465 | 0 | ja | 310 | 0 | 0 |
+| `heliumtracker-report-advanced-2023-9.csv` | 450 | 0 | ja | 294 | 0 | 0 |
+
+Abdeckungsschluss:
+
+- Die im Workspace vorhandenen HeliumTracker-Dateien sind importiert; die HNT-Summen aus CSV und Store stimmen je Datei ueberein.
+- Lokal vorhanden ist fuer `2021` nur `heliumtracker-report-advanced-2021-12.csv`; fuer die kritischen Binance-Verkaeufe am `2021-08-17` gibt es damit keine zusaetzliche lokale HeliumTracker-Quelle.
+- Fuer `2022-02` bis `2022-07` sind HeliumTracker-Rewards importiert; sie reichen zusammen mit dem Legacy-Cointracking-Saldo aber nicht aus, um den `450.0398803021218`-HNT-Legacy-Outflow am `2022-07-12` belegbar zu decken.
+
 Quellen:
 
 - BMF 2025: `https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Einkommensteuer/2025-03-06-einzelfragen-kryptowerte-bmf-schreiben.pdf?__blob=publicationFile&v=3`

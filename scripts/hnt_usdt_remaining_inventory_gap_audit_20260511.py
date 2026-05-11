@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import csv
 import json
 import sqlite3
 from datetime import datetime
@@ -25,6 +26,7 @@ HNT_CONTEXT_SOURCES = (
     "heliumtracker",
     "heliumgeek",
 )
+HELIUMTRACKER_PATTERN = "heliumtracker-report-advanced-*.csv"
 
 
 def dec(value: Any) -> Decimal:
@@ -260,6 +262,76 @@ def hnt_source_balance_context(conn: sqlite3.Connection) -> list[dict[str, Any]]
     return output
 
 
+def local_heliumtracker_file_coverage(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for path in sorted(ROOT.glob(HELIUMTRACKER_PATTERN)):
+        fs_rows = 0
+        fs_hnt = Decimal("0")
+        with path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                fs_rows += 1
+                fs_hnt += dec(row.get("Mining Rewards HNT"))
+
+        source_file = rows(
+            conn,
+            """
+            SELECT source_file_id, row_count
+            FROM source_files
+            WHERE source_name LIKE ?
+            ORDER BY created_at_utc DESC
+            LIMIT 1
+            """,
+            (f"%{path.name}",),
+        )
+        source_file_id = str(source_file[0]["source_file_id"]) if source_file else ""
+        imported = bool(source_file_id)
+        imported_rows = int(source_file[0]["row_count"] or 0) if source_file else 0
+        imported_reward_rows = rows(
+            conn,
+            """
+            SELECT payload_json
+            FROM raw_events
+            WHERE source_file_id = ?
+              AND json_extract(payload_json, '$.asset') = 'HNT'
+              AND json_extract(payload_json, '$.event_type') = 'mining_reward'
+            """,
+            (source_file_id,),
+        ) if imported else []
+        imported_hnt = Decimal("0")
+        for row in imported_reward_rows:
+            imported_hnt += dec(payload(row).get("quantity"))
+        output.append(
+            {
+                "file": path.name,
+                "fs_rows": fs_rows,
+                "fs_hnt": plain(fs_hnt),
+                "imported": imported,
+                "store_row_count": imported_rows,
+                "store_reward_event_count": len(imported_reward_rows),
+                "store_hnt": plain(imported_hnt),
+            }
+        )
+    return output
+
+
+def imported_hnt_reward_months(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    return rows(
+        conn,
+        """
+        SELECT substr(timestamp_utc, 1, 7) AS month,
+               source,
+               count(*) AS event_count,
+               sum(CAST(quantity AS REAL)) AS hnt
+        FROM ai_raw_events_flat
+        WHERE asset = 'HNT'
+          AND event_type = 'mining_reward'
+          AND source IN ('helium_legacy_cointracking', 'heliumtracker')
+        GROUP BY month, source
+        ORDER BY month, source
+        """,
+    )
+
+
 def build_audit(conn: sqlite3.Connection) -> dict[str, Any]:
     lines = remaining_lines(conn)
     detail_rows: list[dict[str, Any]] = []
@@ -342,6 +414,8 @@ def build_audit(conn: sqlite3.Connection) -> dict[str, Any]:
         "groups": serializable_groups,
         "lines": detail_rows,
         "hnt_source_balance_context": hnt_source_balance_context(conn),
+        "local_heliumtracker_file_coverage": local_heliumtracker_file_coverage(conn),
+        "imported_hnt_reward_months": imported_hnt_reward_months(conn),
     }
 
 
@@ -438,6 +512,28 @@ def render_md(audit: dict[str, Any]) -> str:
             "- BMF 2025, Randnummern 38 bis 44, ordnet Blockerstellung nicht als private Vermoegensverwaltung ein und behandelt den Zugang im Betriebsvermoegen mit Marktkurs/Anschaffungskostenlogik.",
             "- BMF 2025, Randnummern 43, 51 und 91, stuetzen Marktkurs/Tageskurs und Abzug individueller bzw. fortgefuehrter Anschaffungskosten bei Betriebsvermoegen.",
             "- Projektlogik: `mining_reward` wird als Reward/Business-Lot verarbeitet. Der Restbefund ist deshalb keine falsche Mining-Klassifikation, sondern fehlender belegter Vorbestand vor den konkreten Outflows.",
+            "",
+            "## Lokale HeliumTracker-Quellenabdeckung",
+            "",
+            "| Datei | CSV-Zeilen | CSV-HNT | Importiert | Store-Zeilen | Reward-Events | Store-HNT |",
+            "| --- | ---: | ---: | --- | ---: | ---: | ---: |",
+        ]
+    )
+    for item in audit["local_heliumtracker_file_coverage"]:
+        lines.append(
+            f"| `{item['file']}` | {item['fs_rows']} | {item['fs_hnt']} | "
+            f"{'ja' if item['imported'] else 'nein'} | {item['store_row_count']} | "
+            f"{item['store_reward_event_count']} | {item['store_hnt']} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "Abdeckungsschluss:",
+            "",
+            "- Die im Workspace vorhandenen HeliumTracker-Dateien sind importiert; die HNT-Summen aus CSV und Store stimmen je Datei ueberein.",
+            "- Lokal vorhanden ist fuer `2021` nur `heliumtracker-report-advanced-2021-12.csv`; fuer die kritischen Binance-Verkaeufe am `2021-08-17` gibt es damit keine zusaetzliche lokale HeliumTracker-Quelle.",
+            "- Fuer `2022-02` bis `2022-07` sind HeliumTracker-Rewards importiert; sie reichen zusammen mit dem Legacy-Cointracking-Saldo aber nicht aus, um den `450.0398803021218`-HNT-Legacy-Outflow am `2022-07-12` belegbar zu decken.",
             "",
             "Quellen:",
             "",
