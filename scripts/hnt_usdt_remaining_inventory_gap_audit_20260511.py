@@ -14,6 +14,17 @@ DEFAULT_DB = Path("/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_r
 OUT_JSON = ROOT / "var" / "hnt_usdt_remaining_inventory_gap_audit_2026-05-11.json"
 OUT_MD = ROOT / "docs" / "229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md"
 MATERIAL_PROCEEDS_EUR = Decimal("50")
+HNT_CONTEXT_CUTOFFS = (
+    ("2021-08-17T16:10:05+00:00", "Vor den Binance-HNT-Verkaeufen ohne Lot-Quelle"),
+    ("2021-08-20T08:01:13+00:00", "Vor Legacy-Outflow zum Binance-Deposit 2021-08-20"),
+    ("2022-07-12T06:59:57+00:00", "Vor Legacy-Outflow zum Binance-Deposit 2022-07-12"),
+)
+HNT_CONTEXT_SOURCES = (
+    "helium_legacy_cointracking",
+    "helium_legacy_raw",
+    "heliumtracker",
+    "heliumgeek",
+)
 
 
 def dec(value: Any) -> Decimal:
@@ -206,6 +217,49 @@ def classify(line: dict[str, Any], lot_event: dict[str, Any], matches: list[dict
     return "unclassified_inventory_gap"
 
 
+def hnt_source_balance_context(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for cutoff, label in HNT_CONTEXT_CUTOFFS:
+        for source in HNT_CONTEXT_SOURCES:
+            source_rows = rows(
+                conn,
+                """
+                SELECT side, event_type, quantity
+                FROM ai_raw_events_flat
+                WHERE source = ?
+                  AND asset = 'HNT'
+                  AND timestamp_utc <= ?
+                """,
+                (source, cutoff),
+            )
+            inbound = Decimal("0")
+            outbound = Decimal("0")
+            rewards = Decimal("0")
+            for row in source_rows:
+                qty = dec(row.get("quantity"))
+                side = str(row.get("side") or "").lower().strip()
+                if side == "in":
+                    inbound += qty
+                elif side == "out":
+                    outbound += qty
+                if str(row.get("event_type") or "") == "mining_reward":
+                    rewards += qty
+            balance = inbound - outbound
+            output.append(
+                {
+                    "cutoff": cutoff,
+                    "label": label,
+                    "source": source,
+                    "event_count": len(source_rows),
+                    "inbound_hnt": plain(inbound),
+                    "outbound_hnt": plain(outbound),
+                    "mining_reward_hnt": plain(rewards),
+                    "balance_hnt": plain(balance),
+                }
+            )
+    return output
+
+
 def build_audit(conn: sqlite3.Connection) -> dict[str, Any]:
     lines = remaining_lines(conn)
     detail_rows: list[dict[str, Any]] = []
@@ -287,6 +341,7 @@ def build_audit(conn: sqlite3.Connection) -> dict[str, Any]:
         },
         "groups": serializable_groups,
         "lines": detail_rows,
+        "hnt_source_balance_context": hnt_source_balance_context(conn),
     }
 
 
@@ -377,10 +432,39 @@ def render_md(audit: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Mining-Reward-Kontext",
+            "",
+            "- BMF 2025, Randnummern 7 bis 11, beschreibt Block-Rewards/Mining als Erwerb von Kryptowerten im Rahmen der Blockerstellung.",
+            "- BMF 2025, Randnummern 38 bis 44, ordnet Blockerstellung nicht als private Vermoegensverwaltung ein und behandelt den Zugang im Betriebsvermoegen mit Marktkurs/Anschaffungskostenlogik.",
+            "- BMF 2025, Randnummern 43, 51 und 91, stuetzen Marktkurs/Tageskurs und Abzug individueller bzw. fortgefuehrter Anschaffungskosten bei Betriebsvermoegen.",
+            "- Projektlogik: `mining_reward` wird als Reward/Business-Lot verarbeitet. Der Restbefund ist deshalb keine falsche Mining-Klassifikation, sondern fehlender belegter Vorbestand vor den konkreten Outflows.",
+            "",
+            "Quellen:",
+            "",
+            "- BMF 2025: `https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Einkommensteuer/2025-03-06-einzelfragen-kryptowerte-bmf-schreiben.pdf?__blob=publicationFile&v=3`",
+            "- BMF-Erlaeuterungsseite 2025: `https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Einkommensteuer/2025-03-06-einzelfragen-kryptowerte.html`",
+            "",
+            "## HNT-Bestandsschnitte",
+            "",
+            "| Zeitpunkt | Kontext | Quelle | Events | Mining-Rewards HNT | In HNT | Out HNT | Saldo HNT |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for item in audit["hnt_source_balance_context"]:
+        lines.append(
+            f"| `{item['cutoff']}` | {item['label']} | `{item['source']}` | {item['event_count']} | "
+            f"{item['mining_reward_hnt']} | {item['inbound_hnt']} | {item['outbound_hnt']} | {item['balance_hnt']} |"
+        )
+
+    lines.extend(
+        [
+            "",
             "## Bewertung",
             "",
             "- Eine automatische Bewertung der HNT-Deposits mit dem Legacy-Transferwert waere fachlich falsch, "
             "weil Transferwert nicht gleich Anschaffungskosten ist.",
+            "- Dass HNT im Legacy-Kontext aus Mining-Rewards stammt, hilft fachlich: Rewards koennen Anschaffungskosten tragen, wenn sie als bewertete Lots vorhanden sind.",
+            "- Fuer die konkreten Restzeilen reicht der belegte Legacy-Bestand vor den Outflows aber nicht aus; vorhandene Mining-Rewards wurden bereits vorher durch andere Outflows/Transfers verbraucht.",
             "- Die 2021-HNT-Zeilen ohne Lot-Quelle liegen auf Binance-Verkaeufen am `2021-08-17`; "
             "fuer diese Verkaufsmenge gibt es im aktiven Datenstand keinen belegten vorherigen Binance-Deposit.",
             "- Die 2022-USDT-Zeilen decken sich mit dem bereits dokumentierten Pionex-/Binance-"

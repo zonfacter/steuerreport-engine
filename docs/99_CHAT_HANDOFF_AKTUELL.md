@@ -39,6 +39,19 @@ Stand: 2026-05-09
     ist per Match `728264aa-94fe-43ec-a49f-ed9a3a5af447` belegt.
   - Die Legacy-Transferwerte `value_usd=403.42` und `value_usd=3949.67`
     sind Transferwerte, keine belegten Anschaffungskosten.
+- Mining-Reward-Pruefung:
+  - BMF 2025 beschreibt Block-Rewards/Mining als Erwerb von Kryptowerten und
+    ordnet Blockerstellung nicht als private Vermoegensverwaltung ein.
+  - Projektlogik behandelt `mining_reward` bereits als Reward-/Business-Lot.
+  - Der Restbefund ist deshalb keine falsche Mining-Klassifikation.
+  - HNT-Bestandsschnitte zeigen aber, dass vor den konkreten Binance-Verkaeufen
+    und Legacy-Outflows nicht ausreichend belegter HNT-Bestand vorhanden ist.
+  - Beispiel: vor `2021-08-20T08:01:13+00:00` steht
+    `helium_legacy_cointracking` trotz `558.8505043200000073041147` geminter
+    HNT nur bei `-0.0020030355676380698853` HNT Saldo.
+  - Beispiel: vor `2022-07-12T06:59:57+00:00` steht
+    `helium_legacy_cointracking` bei `33.85902329177388847810946` HNT Saldo,
+    waehrend der gematchte Transfer `450.0398803021218` HNT outbound umfasst.
 - Naechste sichere Aktion:
   - Keine automatische RAW-/FX-/Cost-Basis-Korrektur.
   - HNT nur mit Primaerbelegen fuer Anschaffung/Mining-Bestand vor den

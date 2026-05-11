@@ -63,9 +63,40 @@ Stand: 2026-05-11
   - Delta `0.0398803021218`, Zeitdifferenz `484` Sekunden.
   - Legacy-Transfer-Wert `value_usd=3949.67` ist ein Transferwert, keine belegte Anschaffungskostenbasis.
 
+## Mining-Reward-Kontext
+
+- BMF 2025, Randnummern 7 bis 11, beschreibt Block-Rewards/Mining als Erwerb von Kryptowerten im Rahmen der Blockerstellung.
+- BMF 2025, Randnummern 38 bis 44, ordnet Blockerstellung nicht als private Vermoegensverwaltung ein und behandelt den Zugang im Betriebsvermoegen mit Marktkurs/Anschaffungskostenlogik.
+- BMF 2025, Randnummern 43, 51 und 91, stuetzen Marktkurs/Tageskurs und Abzug individueller bzw. fortgefuehrter Anschaffungskosten bei Betriebsvermoegen.
+- Projektlogik: `mining_reward` wird als Reward/Business-Lot verarbeitet. Der Restbefund ist deshalb keine falsche Mining-Klassifikation, sondern fehlender belegter Vorbestand vor den konkreten Outflows.
+
+Quellen:
+
+- BMF 2025: `https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Einkommensteuer/2025-03-06-einzelfragen-kryptowerte-bmf-schreiben.pdf?__blob=publicationFile&v=3`
+- BMF-Erlaeuterungsseite 2025: `https://www.bundesfinanzministerium.de/Content/DE/Downloads/BMF_Schreiben/Steuerarten/Einkommensteuer/2025-03-06-einzelfragen-kryptowerte.html`
+
+## HNT-Bestandsschnitte
+
+| Zeitpunkt | Kontext | Quelle | Events | Mining-Rewards HNT | In HNT | Out HNT | Saldo HNT |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `2021-08-17T16:10:05+00:00` | Vor den Binance-HNT-Verkaeufen ohne Lot-Quelle | `helium_legacy_cointracking` | 1471 | 555.1998127300000072746127 | 751.4291867300000072746127 | 736.763428275192399374 | 14.6657584548076079006127 |
+| `2021-08-17T16:10:05+00:00` | Vor den Binance-HNT-Verkaeufen ohne Lot-Quelle | `helium_legacy_raw` | 7 | 0 | 356.48613564 | 356.36682102 | 0.11931462 |
+| `2021-08-17T16:10:05+00:00` | Vor den Binance-HNT-Verkaeufen ohne Lot-Quelle | `heliumtracker` | 0 | 0 | 0 | 0 | 0 |
+| `2021-08-17T16:10:05+00:00` | Vor den Binance-HNT-Verkaeufen ohne Lot-Quelle | `heliumgeek` | 0 | 0 | 0 | 0 | 0 |
+| `2021-08-20T08:01:13+00:00` | Vor Legacy-Outflow zum Binance-Deposit 2021-08-20 | `helium_legacy_cointracking` | 1528 | 558.8505043200000073041147 | 755.0798783200000073041147 | 755.081881355567645374 | -0.0020030355676380698853 |
+| `2021-08-20T08:01:13+00:00` | Vor Legacy-Outflow zum Binance-Deposit 2021-08-20 | `helium_legacy_raw` | 7 | 0 | 356.48613564 | 356.36682102 | 0.11931462 |
+| `2021-08-20T08:01:13+00:00` | Vor Legacy-Outflow zum Binance-Deposit 2021-08-20 | `heliumtracker` | 0 | 0 | 0 | 0 | 0 |
+| `2021-08-20T08:01:13+00:00` | Vor Legacy-Outflow zum Binance-Deposit 2021-08-20 | `heliumgeek` | 0 | 0 | 0 | 0 | 0 |
+| `2022-07-12T06:59:57+00:00` | Vor Legacy-Outflow zum Binance-Deposit 2022-07-12 | `helium_legacy_cointracking` | 11997 | 999.45286711000001344810946 | 1616.98469222000001344810946 | 1583.12566892822612497 | 33.85902329177388847810946 |
+| `2022-07-12T06:59:57+00:00` | Vor Legacy-Outflow zum Binance-Deposit 2022-07-12 | `helium_legacy_raw` | 19 | 0 | 898.93176298 | 898.70109472 | 0.23066826 |
+| `2022-07-12T06:59:57+00:00` | Vor Legacy-Outflow zum Binance-Deposit 2022-07-12 | `heliumtracker` | 2228 | 238.59785864 | 238.59785864 | 30.837336935 | 207.760521705 |
+| `2022-07-12T06:59:57+00:00` | Vor Legacy-Outflow zum Binance-Deposit 2022-07-12 | `heliumgeek` | 0 | 0 | 0 | 0 | 0 |
+
 ## Bewertung
 
 - Eine automatische Bewertung der HNT-Deposits mit dem Legacy-Transferwert waere fachlich falsch, weil Transferwert nicht gleich Anschaffungskosten ist.
+- Dass HNT im Legacy-Kontext aus Mining-Rewards stammt, hilft fachlich: Rewards koennen Anschaffungskosten tragen, wenn sie als bewertete Lots vorhanden sind.
+- Fuer die konkreten Restzeilen reicht der belegte Legacy-Bestand vor den Outflows aber nicht aus; vorhandene Mining-Rewards wurden bereits vorher durch andere Outflows/Transfers verbraucht.
 - Die 2021-HNT-Zeilen ohne Lot-Quelle liegen auf Binance-Verkaeufen am `2021-08-17`; fuer diese Verkaufsmenge gibt es im aktiven Datenstand keinen belegten vorherigen Binance-Deposit.
 - Die 2022-USDT-Zeilen decken sich mit dem bereits dokumentierten Pionex-/Binance-Opening- und Bot-Historienproblem.
 - Deshalb: keine neue automatische RAW-/FX-/Cost-Basis-Korrektur aus diesem Audit.
