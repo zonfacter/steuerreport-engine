@@ -60,6 +60,11 @@ def _extract_position_id(payload: dict[str, Any], unique_event_id: str) -> str:
     return f"fallback-{unique_event_id}"
 
 
+def _raw_row(payload: dict[str, Any]) -> dict[str, Any]:
+    raw = payload.get("raw_row")
+    return raw if isinstance(raw, dict) else {}
+
+
 def _explicit_position_id(payload: dict[str, Any]) -> str:
     for key in ("position_id", "trade_id", "order_id"):
         value = payload.get(key)
@@ -69,7 +74,7 @@ def _explicit_position_id(payload: dict[str, Any]) -> str:
 
 
 def _event_type(payload: dict[str, Any]) -> str:
-    raw_row = payload.get("raw_row") if isinstance(payload.get("raw_row"), dict) else {}
+    raw_row = _raw_row(payload)
     text = " ".join(
         str(value).lower()
         for value in (
@@ -96,7 +101,7 @@ def _event_type(payload: dict[str, Any]) -> str:
 
 
 def _signed_quantity(payload: dict[str, Any]) -> Decimal:
-    raw_row = payload.get("raw_row") if isinstance(payload.get("raw_row"), dict) else {}
+    raw_row = _raw_row(payload)
     if "amount" in raw_row:
         return _parse_decimal(raw_row.get("amount"))
     amount = _parse_decimal(payload.get("quantity", payload.get("amount", 0)))
@@ -107,7 +112,7 @@ def _signed_quantity(payload: dict[str, Any]) -> Decimal:
 
 
 def _signed_fee(payload: dict[str, Any]) -> Decimal:
-    raw_row = payload.get("raw_row") if isinstance(payload.get("raw_row"), dict) else {}
+    raw_row = _raw_row(payload)
     if "fee" in raw_row:
         return _parse_decimal(raw_row.get("fee"))
     fee = _parse_decimal(payload.get("fee_eur", payload.get("fees_eur", payload.get("fee", 0))))
@@ -125,7 +130,7 @@ def _is_bitget_tax_derivative_cash_event(payload: dict[str, Any], ev_type: str) 
         return False
     if ev_type in {"close", "fee", "liquidation"}:
         return True
-    raw_row = payload.get("raw_row") if isinstance(payload.get("raw_row"), dict) else {}
+    raw_row = _raw_row(payload)
     return ev_type == "open" and _parse_decimal(raw_row.get("amount", payload.get("quantity", 0))) == Decimal("0")
 
 
