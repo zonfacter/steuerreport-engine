@@ -10,7 +10,48 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
-## Neuester Stand 2026-05-11 HNT-/USDT-Restbestandsluecken final eingeordnet
+## Neuester Stand 2026-05-11 HNT Self-Wallet-Transfers gematcht
+- Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
+- Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
+- Lokaler JSON-Output, nicht committen:
+  `var/hnt_legacy_self_wallet_transfer_match_2026-05-11.json`
+- Fix:
+  - `9` direkte HNT-Legacy-Transfers zwischen eigener Haupt-Wallet
+    `133rkwoKC...` und eigener Staking-Wallet `14eKedP4...` wurden ueber
+    identische Helium-Transaktions-IDs als Transfer-Matches gespeichert.
+  - Match-Methode: `txid_verified_hnt_legacy_self_wallet`.
+  - Die Fairspot-Counterparty `14aDLshY...` wurde bewusst nicht automatisch
+    gematcht, weil diese Kette eine mehrteilige Staking-/Custody-/Pool-
+    Rueckgabe ist und fachlich separat bewertet werden muss.
+  - Die Matches erzeugen keine neuen Anschaffungskosten; sie erhalten nur
+    belegte Lot-Continuity zwischen eigenen Wallets.
+- Neu gerechnete Jobs:
+  - 2021 `155b1abc-cd34-44d1-9497-f072afd8cf1c`, `tax_lines=5434`,
+    `derivative_lines=43`
+  - 2022 `a4c8d845-bef8-41e9-b520-b6eff6a7b781`, `tax_lines=11765`,
+    `derivative_lines=630`
+- Ergebnis nach Neuberechnung:
+  - HNT-/USDT-Restzeilen insgesamt: `8`
+  - Erloes dieser Restzeilen: `2501.557499756668497643145881 EUR`
+  - 2021 HNT: `3` Zero-Cost-Zeilen, `40.9633640723911826493873 HNT`,
+    `805.2140123327466767853450105 EUR` Erloes.
+  - 2022 HNT: `5` Zero-Cost-Zeilen, `17.46753047183752349899927 HNT`,
+    `351.9188545425587338155117614 EUR` Erloes.
+  - Die vormals grosse 2022-HNT-Luecke aus dem `2022-07-12`-Ruecktransfer ist
+    damit weitgehend technisch als eigene Wallet-Kontinuitaet abgebildet.
+- Audit nach Readonly-Rebuild:
+  - `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`:
+    `priority_1_total=0`, `high_gain_ratio=8`.
+  - `docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md`:
+    verbleibend sind HNT-Teilreste ohne Primarherkunft/Cost-Basis und USDT-
+    Pionex-/Binance-Opening- bzw. Bot-Historie.
+- Validierung:
+  - AI-Readonly-DB neu gebaut:
+    `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 scripts/verify_integrity.py --all-years`
+    gruen fuer die geprueften Exportjahre `2024`, `2025`, `2026`.
+
+## Stand 2026-05-11 HNT-/USDT-Restbestandsluecken nach Fairspot und Excel eingeordnet
 - Report: `docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md`
 - Fairspot-Trace: `docs/230_FAIRSPOT_HNT_LEGACY_TRANSFER_TRACE_2026-05-11.md`
 - Skript: `scripts/hnt_usdt_remaining_inventory_gap_audit_20260511.py`
@@ -71,25 +112,26 @@ Stand: 2026-05-09
   - In der Datenbank existiert die Staking-Wallet-Quelle mit `27` Events,
     `973.08856161 HNT` inbound, `972.63568422 HNT` outbound und
     `0.45287739 HNT` Saldo.
-  - Es gibt `9` nicht gematchte Self-Transfer-Kandidaten mit gleicher
-    Helium-Transaktion zwischen Haupt- und Staking-Wallet. Diese Matches
-    wuerden die Kettenbelegung verbessern, aber keine Anschaffungskosten
-    erzeugen.
+  - Die `9` Self-Transfer-Kandidaten mit gleicher Helium-Transaktion zwischen
+    Haupt- und Staking-Wallet wurden im Folgefix als Transfer-Matches
+    gespeichert. Sie verbessern die Kettenbelegung, erzeugen aber keine
+    Anschaffungskosten.
 - Ergebnis:
-  - Aktuelle Restzeilen: `14`
-  - Erloes dieser Restzeilen: `5442.131645572294372978223086 EUR`
+  - Aktuelle Restzeilen nach Folgefix: `8`
+  - Erloes dieser Restzeilen nach Folgefix:
+    `2501.557499756668497643145881 EUR`
   - Keine Restzeile ist ein belegbarer Preisanker- oder FX-Backfill.
   - HNT-Transfer-Matches fuer die Binance-Deposits existieren bereits; die
     Luecke liegt vor dem Legacy-Outflow.
   - USDT-Reste bleiben Pionex-/Binance-Opening- bzw. Bot-Historie ohne
     Primaerbeleg.
-- Gruppierung:
-  - 2021 HNT, 4 Zeilen ohne Lot-Quelle, `1398.08775436293029859268152 EUR`
-    Erloes.
+- Gruppierung nach Folgefix:
+  - 2021 HNT, 1 Zeile ohne Lot-Quelle,
+    `445.1808341476849715363131107 EUR` Erloes.
   - 2021 HNT, 2 Zeilen aus gematchtem Binance-HNT-Deposit, aber unbewerteter
     Legacy-Herkunft, `360.0331781850617052490318998 EUR` Erloes.
-  - 2022 HNT, 5 Zeilen aus gematchtem Binance-HNT-Deposit, aber unbewerteter
-    Legacy-Herkunft, `2300.134050729099355136509666 EUR` Erloes.
+  - 2022 HNT, 2 Zeilen aus Pionex/Binance-Kette mit noch unklassifizierter
+    Primarherkunft, `312.4668251287188068578008705 EUR` Erloes.
   - 2022 USDT, 3 Zeilen ohne Lot-Quelle, `1383.876662295203014 EUR`
     Erloes.
 - Wichtige HNT-Belege:
