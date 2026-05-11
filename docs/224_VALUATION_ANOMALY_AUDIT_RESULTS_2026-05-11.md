@@ -138,5 +138,8 @@ Tax-Lines ebenfalls auffaellig sind.
 ## Naechster Schritt
 
 Keine weitere automatische Preisanker-Korrektur aus diesem Audit ableiten.
-Die verbleibenden `priority_2`-High-Gain-Zeilen muessen bei Bedarf als
-separate historische HNT-/USDT-Bestandslueckenanalyse behandelt werden.
+Die verbleibenden `priority_2`-High-Gain-Zeilen wurden separat in
+`docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md` geprueft.
+Ergebnis: HNT benoetigt Primaerbelege fuer die Anschaffungskette vor den
+Legacy-Outflows; USDT benoetigt Pionex-Opening-/Bot-Historie oder eine
+explizite Review-Entscheidung.

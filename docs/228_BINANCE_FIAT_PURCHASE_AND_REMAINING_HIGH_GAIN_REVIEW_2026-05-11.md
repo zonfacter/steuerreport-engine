@@ -112,8 +112,11 @@ Gepruefte HNT-Belege:
 Schlussfolgerung:
 
 - Keine weitere automatische Preisanker-Korrektur aus dem aktuellen Audit.
-- Naechster sinnvoller Schritt waere eine separate historische HNT-/USDT-
-  Bestandslueckenanalyse, nicht ein weiterer Kurs-Backfill.
+- Die separate historische HNT-/USDT-Bestandslueckenanalyse liegt in
+  `docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md`.
+- Ergebnis dort: HNT braucht Primaerbelege fuer die Anschaffungskette vor den
+  Legacy-Outflows; USDT braucht Pionex-Opening-/Bot-Historie oder explizite
+  Review-Entscheidung. Kein weiterer Kurs-Backfill.
 
 ## Validierung
 

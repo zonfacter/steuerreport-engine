@@ -10,6 +10,42 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-11 HNT-/USDT-Restbestandsluecken final eingeordnet
+- Report: `docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md`
+- Skript: `scripts/hnt_usdt_remaining_inventory_gap_audit_20260511.py`
+- Lokaler JSON-Output, nicht committen:
+  `var/hnt_usdt_remaining_inventory_gap_audit_2026-05-11.json`
+- Ergebnis:
+  - Aktuelle Restzeilen: `14`
+  - Erloes dieser Restzeilen: `5442.131645572294372978223086 EUR`
+  - Keine Restzeile ist ein belegbarer Preisanker- oder FX-Backfill.
+  - HNT-Transfer-Matches fuer die Binance-Deposits existieren bereits; die
+    Luecke liegt vor dem Legacy-Outflow.
+  - USDT-Reste bleiben Pionex-/Binance-Opening- bzw. Bot-Historie ohne
+    Primaerbeleg.
+- Gruppierung:
+  - 2021 HNT, 4 Zeilen ohne Lot-Quelle, `1398.08775436293029859268152 EUR`
+    Erloes.
+  - 2021 HNT, 2 Zeilen aus gematchtem Binance-HNT-Deposit, aber unbewerteter
+    Legacy-Herkunft, `360.0331781850617052490318998 EUR` Erloes.
+  - 2022 HNT, 5 Zeilen aus gematchtem Binance-HNT-Deposit, aber unbewerteter
+    Legacy-Herkunft, `2300.134050729099355136509666 EUR` Erloes.
+  - 2022 USDT, 3 Zeilen ohne Lot-Quelle, `1383.876662295203014 EUR`
+    Erloes.
+- Wichtige HNT-Belege:
+  - `dd5353eedbee68d33a5c687e013b67f468dac6a769af6b56b60dfd7c1e40fa2f`
+    ist per Match `ddec12db-878f-4285-b40a-16df945a301a` belegt.
+  - `9dd85d203cebbe23d40ff09ddd91b30758c3d255c6f80dadbb27581ab152bcba`
+    ist per Match `728264aa-94fe-43ec-a49f-ed9a3a5af447` belegt.
+  - Die Legacy-Transferwerte `value_usd=403.42` und `value_usd=3949.67`
+    sind Transferwerte, keine belegten Anschaffungskosten.
+- Naechste sichere Aktion:
+  - Keine automatische RAW-/FX-/Cost-Basis-Korrektur.
+  - HNT nur mit Primaerbelegen fuer Anschaffung/Mining-Bestand vor den
+    Legacy-Outflows weiter korrigieren.
+  - USDT nur mit Pionex-Opening-/Bot-Historie oder expliziter
+    Review-Entscheidung weiter behandeln.
+
 ## Neuester Stand 2026-05-11 Binance-Fiatkauf und High-Gain-Restpruefung
 - Report: `docs/228_BINANCE_FIAT_PURCHASE_AND_REMAINING_HIGH_GAIN_REVIEW_2026-05-11.md`
 - Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
