@@ -10,6 +10,72 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-11 Binance-Legacy-Market-Bewertung korrigiert
+- Report: `docs/226_BINANCE_LEGACY_MARKET_VALUATION_FIX_2026-05-11.md`
+- Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Code/Test:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+- Fix 1:
+  - `drop_malformed_binance_market_summary_events()` entfernt fehlerhafte
+    Binance-Summary-Zeilen mit leerem Asset, wenn `raw_row.Market` existiert.
+  - Die korrekten normalisierten Legs bleiben erhalten.
+  - Je neuem Job wurden `403` solche Zeilen entfernt.
+- Fix 2:
+  - `attach_binance_market_quote_value_anchors()` bewertet Binance-Legacy-Trades
+    aus `raw_row.Market` und `raw_row.Total`.
+  - Crypto/Crypto-Preise wie `HNTBTC`, `DOGEBTC` oder `HOTETH` werden nicht mehr
+    als EUR-Stueckpreis interpretiert.
+  - `EUR`-Quotes setzen `value_eur`; USD-Stable-Quotes setzen `value_usd_sum`;
+    Crypto-Quotes nutzen vorhandene Quote/USD-FX-Cachekurse.
+  - Je neuem Job wurden `826` Binance-Market-Legs bewertet:
+    `108` EUR-Werte und `718` USD-Werte, `missing_quote_rate_count=0`.
+- Neu gerechnete Jobs:
+  - 2021 `3c7b4069-2065-4c5a-a77a-7e52eb545664`, `tax_lines=5494`,
+    `derivative_lines=43`
+  - 2022 `bee1a279-eb50-47ec-b6ea-96ebbd7a7f81`, `tax_lines=6896`,
+    `derivative_lines=630`
+  - 2023 `c7e8b073-1750-4703-bd01-e2f3c9e63405`, `tax_lines=9099`,
+    `derivative_lines=0`
+  - 2024 `690aca3b-59ae-45ee-91e5-e3b9a5812f0b`, `tax_lines=1680`,
+    `derivative_lines=36`
+  - 2025 `28e7f7e6-1ea8-4e4e-a4b0-93e4cc534480`, `tax_lines=465`,
+    `derivative_lines=957`
+  - 2026 `5c2d47e8-8dd8-400f-9fdb-86ac9af6c71a`, `tax_lines=1`,
+    `derivative_lines=0`
+- Audit nach Fix:
+  - `priority_1_total=0`
+  - `fast_null_cost_basis=1`
+  - `fx_available_but_low_cost_basis=0`
+  - `same_tx_priced_counterflow_candidates=1`
+  - `high_gain_ratio=16`
+- Verbleibender Fast-Null-Treffer:
+  - 2021 BNB Dust-Convert, `tx_id=55615425065`.
+  - Nicht automatisch korrigiert, weil kein lokaler BNB/USD-FX-Kurs fuer
+    `2021-04-28` vorhanden ist und der bepreiste Gegenfluss nur einen kleinen
+    Teil der Dust-Ausgangsassets deckt.
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `478978048` Bytes
+  - neuester 2024-Job `690aca3b-59ae-45ee-91e5-e3b9a5812f0b`
+  - neuester 2025-Job `28e7f7e6-1ea8-4e4e-a4b0-93e4cc534480`
+- Review-/Export-Gegenprobe:
+  - 2024 und 2025 job-spezifisch `allow_export=true`, keine aktuellen Issues,
+    `issues_historical_open=3`, `unmatched_total=0`.
+  - 2024 PDF-Seiten: all `63`, tax `61`, derivatives `3`.
+  - 2025 PDF-Seiten: all `52`, tax `18`, derivatives `36`.
+  - `part=2` liefert fuer alle PDF-Scopes korrekt `report_part_not_found`.
+- Validierung:
+  - `ruff` komplett gruen.
+  - `mypy` gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `tests/unit` gruen.
+  - API-Coverage-Gate `81.08%`, gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet und Health-Check gruen.
+  - Hinweis: Ein erster paralleler Pytest-Lauf gegen denselben Test-Store zeigte
+    Cross-Test-Kollisionen; sequenzielle Wiederholung war gruen.
+
 ## Neuester Stand 2026-05-11 Bewertungsanomalie-Audit gestartet und Bitget-Spot-Fix
 - Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
 - Fix-Bericht: `docs/225_BITGET_SPOT_BIZ_ORDER_VALUATION_FIX_2026-05-11.md`

@@ -28,11 +28,13 @@ from tax_engine.ingestion.models import ConfirmImportRequest
 from tax_engine.ingestion.store import STORE
 from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
 from tax_engine.queue.service import (
+    attach_binance_market_quote_value_anchors,
     attach_bitget_tax_api_spot_trade_value_anchors,
     attach_cached_usd_prices_to_reward_events,
     attach_cached_usd_prices_to_swap_in_events,
     attach_reference_usd_value_anchors,
     drop_exact_pionex_duplicate_events,
+    drop_malformed_binance_market_summary_events,
     drop_solscan_duplicates_when_solana_rpc_is_active,
     label_helium_solana_claim_events,
 )
@@ -280,6 +282,91 @@ def test_attach_bitget_tax_api_spot_trade_value_anchors_from_biz_order() -> None
     assert payload["valuation_reference_source_event_id"] == "usdt-sell"
     assert payload["valuation_reference_asset"] == "USDT"
     assert payload["valuation_reference_biz_order_id"] == "1268376005262102633"
+
+
+def test_attach_binance_market_quote_value_anchors_from_crypto_quote() -> None:
+    _reset_store()
+    STORE.upsert_fx_rate("2021-02-06", "BTC", "USD", "39266.01171875", "test", "2021-02-06")
+    events = [
+        {
+            "unique_event_id": "hnt-in",
+            "payload": {
+                "timestamp_utc": "2021-02-06T21:23:58+00:00",
+                "source": "binance",
+                "event_type": "trade",
+                "side": "in",
+                "asset": "HNT",
+                "quantity": "30",
+                "price": "0.000092",
+                "raw_row": {
+                    "Market": "HNTBTC",
+                    "Type": "BUY",
+                    "Amount": "30",
+                    "Total": "0.00276",
+                },
+            },
+        },
+        {
+            "unique_event_id": "btc-out",
+            "payload": {
+                "timestamp_utc": "2021-02-06T21:23:58+00:00",
+                "source": "binance",
+                "event_type": "trade",
+                "side": "out",
+                "asset": "BTC",
+                "quantity": "0.00276",
+                "price": "0.000092",
+                "raw_row": {
+                    "Market": "HNTBTC",
+                    "Type": "BUY",
+                    "Amount": "30",
+                    "Total": "0.00276",
+                },
+            },
+        },
+    ]
+
+    enriched, summary = attach_binance_market_quote_value_anchors(events)
+
+    assert summary["available_market_row_count"] == 2
+    assert summary["attached_usd_value_count"] == 2
+    assert enriched[0]["payload"]["value_usd_sum"] == "108.3741923437500"
+    assert enriched[0]["payload"]["price"] == ""
+    assert enriched[0]["payload"]["binance_market_quote_unit_price"] == "0.000092"
+    assert enriched[0]["payload"]["valuation_reference_source"] == "binance_market_quote_total"
+    assert enriched[0]["payload"]["valuation_reference_asset"] == "BTC"
+    assert enriched[0]["payload"]["valuation_reference_rate_date"] == "2021-02-06"
+    assert enriched[1]["payload"]["value_usd_sum"] == "108.3741923437500"
+
+
+def test_attach_binance_market_quote_value_anchors_from_eur_quote() -> None:
+    events = [
+        {
+            "unique_event_id": "win-in",
+            "payload": {
+                "timestamp_utc": "2021-05-01T18:40:17+00:00",
+                "source": "binance",
+                "event_type": "trade",
+                "side": "in",
+                "asset": "WIN",
+                "quantity": "56570",
+                "price": "0.001106",
+                "raw_row": {
+                    "Market": "WINEUR",
+                    "Type": "BUY",
+                    "Amount": "56570",
+                    "Total": "62.56642",
+                },
+            },
+        }
+    ]
+
+    enriched, summary = attach_binance_market_quote_value_anchors(events)
+
+    assert summary["attached_eur_value_count"] == 1
+    assert enriched[0]["payload"]["value_eur"] == "62.56642"
+    assert enriched[0]["payload"]["price"] == ""
+    assert enriched[0]["payload"]["valuation_reference_asset"] == "EUR"
 
 
 def test_attach_cached_usd_prices_to_reward_events() -> None:
@@ -642,6 +729,62 @@ def test_drop_solscan_duplicate_when_solana_rpc_is_active() -> None:
 
     assert [event["unique_event_id"] for event in filtered] == ["solana-rpc-out", "solscan-missing-primary"]
     assert summary["dropped_solscan_duplicate_count"] == 1
+
+
+def test_drop_malformed_binance_market_summary_events() -> None:
+    events = [
+        {
+            "unique_event_id": "malformed-summary",
+            "payload": {
+                "timestamp_utc": "2021-05-01T18:40:17+00:00",
+                "source": "binance",
+                "event_type": "buy",
+                "side": "buy",
+                "asset": "",
+                "quantity": "56570",
+                "price": "0.001106",
+                "fee": "0.00009036",
+                "fee_asset": "BNB",
+                "raw_row": {
+                    "Market": "WINEUR",
+                    "Type": "BUY",
+                    "Amount": "56570",
+                    "Total": "62.56642",
+                },
+            },
+        },
+        {
+            "unique_event_id": "win-in",
+            "payload": {
+                "timestamp_utc": "2021-05-01T18:40:17+00:00",
+                "source": "binance",
+                "event_type": "trade",
+                "side": "in",
+                "asset": "WIN",
+                "quantity": "56570",
+                "price": "0.001106",
+                "fee": "0.00009036",
+                "fee_asset": "BNB",
+            },
+        },
+        {
+            "unique_event_id": "eur-out",
+            "payload": {
+                "timestamp_utc": "2021-05-01T18:40:17+00:00",
+                "source": "binance",
+                "event_type": "trade",
+                "side": "out",
+                "asset": "EUR",
+                "quantity": "62.56642",
+                "price": "0.001106",
+            },
+        },
+    ]
+
+    filtered, summary = drop_malformed_binance_market_summary_events(events)
+
+    assert [event["unique_event_id"] for event in filtered] == ["win-in", "eur-out"]
+    assert summary["dropped_malformed_binance_market_summary_count"] == 1
 
 
 def test_drop_exact_pionex_duplicate_events_keeps_first_copy() -> None:

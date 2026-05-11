@@ -9,20 +9,20 @@ Ausgewertet wurden die neuesten abgeschlossenen Jobs je Steuerjahr `2020` bis `2
 | Jahr | Job | Tax-Lines | Derivate-Lines | Aktualisiert |
 | ---: | --- | ---: | ---: | --- |
 | 2020 | `287cc41c-9055-42ca-8b5a-9d5578e07dc6` | 0 | 0 | 2026-05-10T19:38:15.619598+00:00 |
-| 2021 | `5ab77c28-68f9-42f2-8a97-47f1d4f57f13` | 5812 | 0 | 2026-05-10T19:38:23.927746+00:00 |
-| 2022 | `c4d8719c-4041-443a-b182-d9f6ccf06407` | 6896 | 0 | 2026-05-10T19:38:32.791187+00:00 |
-| 2023 | `bf4e3974-5e7e-4bfe-9e15-6992ad4812bb` | 9099 | 0 | 2026-05-10T19:38:42.006834+00:00 |
-| 2024 | `54225c56-f4e7-4ecd-a63a-26b499f2f336` | 1680 | 36 | 2026-05-11T19:41:52.497920+00:00 |
-| 2025 | `1505480c-23b5-408c-9813-445425e1ef0c` | 465 | 957 | 2026-05-11T19:42:01.050148+00:00 |
-| 2026 | `924d49e7-b215-480f-ae35-9dddc8d99648` | 1 | 0 | 2026-05-10T19:39:07.952392+00:00 |
+| 2021 | `3c7b4069-2065-4c5a-a77a-7e52eb545664` | 5494 | 43 | 2026-05-11T19:58:29.691071+00:00 |
+| 2022 | `bee1a279-eb50-47ec-b6ea-96ebbd7a7f81` | 6896 | 630 | 2026-05-11T19:58:38.301108+00:00 |
+| 2023 | `c7e8b073-1750-4703-bd01-e2f3c9e63405` | 9099 | 0 | 2026-05-11T19:58:47.321525+00:00 |
+| 2024 | `690aca3b-59ae-45ee-91e5-e3b9a5812f0b` | 1680 | 36 | 2026-05-11T19:58:55.854418+00:00 |
+| 2025 | `28e7f7e6-1ea8-4e4e-a4b0-93e4cc534480` | 465 | 957 | 2026-05-11T19:59:04.284902+00:00 |
+| 2026 | `5c2d47e8-8dd8-400f-9fdb-86ac9af6c71a` | 1 | 0 | 2026-05-11T19:59:12.710997+00:00 |
 
 ## Zusammenfassung
 
-- Tax-Lines im Scope: `23953`
-- Fast-Null-Kostenbasis: `113`
-- FX vorhanden, aber niedrige Kostenbasis: `18`
-- Gleicher `tx_id` mit bepreistem Gegenfluss: `0`
-- Hohe Gewinnquote: `98`
+- Tax-Lines im Scope: `23635`
+- Fast-Null-Kostenbasis: `1`
+- FX vorhanden, aber niedrige Kostenbasis: `0`
+- Gleicher `tx_id` mit bepreistem Gegenfluss: `1`
+- Hohe Gewinnquote: `16`
 - Solana-Swap-In-Raw-Events ohne Raw-Preisanker: `310`
 - Prioritaet-1-Treffer ueber alle Klassen: `0`
 
@@ -34,90 +34,40 @@ Tax-Lines ebenfalls auffaellig sind.
 
 | Prio | Jahr | Line | Asset | Kostenbasis | Erloes | Quote | Lot-Event | Swap | Gegenfluss |
 | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |
-| priority_2 | 2021 | 5620 | `UNKNOWN` | 0.06004482671812621530846738554 | 1640.59920467388 | 0.00003659932696972261901092005348 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5616 | `UNKNOWN` | 0.05055533301318013081138412586 | 1381.31865252612 | 0.00003659932696972261901092005348 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1110 | `UNKNOWN` | 0.1250854626513155382711684638 | 1338.6472294795272 | 0.00009344169240162652676775923015 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 3971 | `UNKNOWN` | 0.04722626820526780979317659537 | 1275.57385365564 | 0.00003702354675107446844263758273 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 806 | `UNKNOWN` | 0.000406278626756980731836662542 | 1074.7427978489364 | 0.0000003780240514941198107400108016 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 2270 | `UNKNOWN` | 0.05336457707035531200282835425 | 875.527664856075 | 0.00006095133165109949142579389374 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 3099 | `UNKNOWN` | 0.02073752994961993989747215839 | 865.55622735 | 0.00002395861677653255913285199286 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 953 | `UNKNOWN` | 0.0005584533865312851334629662365 | 801.0748048287272 | 0.0000006971301346204298156447251992 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 703 | `DOGE` | 0.01410683369500195118259224219 | 631.2149925198208 | 0.00002234869871941291396847565008 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 4969 | `UNKNOWN` | 0.02333663370330563903128866891 | 630.13265135523 | 0.00003703447782481260675632008571 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5751 | `UNKNOWN` | 0.01990802875163514230157327205 | 609.9953965974 | 0.00003263635899989347040094203077 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5771 | `UNKNOWN` | 0.01824902635566554710977549938 | 603.8530576848 | 0.00003022097201202084081847022526 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 3972 | `UNKNOWN` | 0.02046102955029167403217252961 | 552.6490935042 | 0.00003702354675107446844263758273 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1111 | `UNKNOWN` | 0.05031090666017394378645925402 | 538.3818390406152000000000001 | 0.00009344837253393779400184942665 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1707 | `UNKNOWN` | 0.02987310314342584408697189323 | 533.54728930932 | 0.00005598960718570371892994478113 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5633 | `UNKNOWN` | 0.01717620480627187555241293972 | 526.290472730979 | 0.00003263635899989347040094203077 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 853 | `UNKNOWN` | 1.36768157523733427611808379 | 493.2768780311598 | 0.002772644808928058489700478669 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 878 | `UNKNOWN` | 1.291256864863001590949266396 | 484.138072492812 | 0.002667125223625483176716465258 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 870 | `UNKNOWN` | 1.291256864863001590949266396 | 484.0703689864392000000000001 | 0.002667498255608318387473784167 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 883 | `UNKNOWN` | 1.295902071571716457486300159 | 465.6703282686864 | 0.002782874477722780594290057586 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1629 | `UNKNOWN` | 0.0262631139297960049496199399 | 463.67731168686 | 0.00005664092951680272339594555082 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 859 | `UNKNOWN` | 1.253763410714088739614636733 | 451.8992925989568 | 0.002774431009846159307849530027 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 4968 | `UNKNOWN` | 0.01662320400761534382181368216 | 448.725000063762 | 0.00003704541535518024190302898117 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5770 | `UNKNOWN` | 0.01333837926359554534205409227 | 441.255183235884 | 0.00003022826647786974761084736023 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1632 | `UNKNOWN` | 0.02442825727985363266749160332 | 431.28277534017 | 0.00005664092951680272339594555081 | `binance/buy/buy` | nein | nein |
+| priority_2 | 2021 | 468 | `BNB` | 0.005438359999999999999999999999 | 125.7715573590070518871875 | 0.00004323998298340650410708580655 | `binance_api/dust_convert_in/in` | nein | ja |
 
 ## Gleicher TX mit bepreistem Gegenfluss
 
 | Prio | Jahr | Line | Asset | Kostenbasis | Erloes | Quote | Lot-Event | Swap | Gegenfluss |
 | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |
-| - | - | - | - | - | - | - | - | - | - |
+| priority_2 | 2021 | 468 | `BNB` | 0.005438359999999999999999999999 | 125.7715573590070518871875 | 0.00004323998298340650410708580655 | `binance_api/dust_convert_in/in` | nein | ja |
 
 ## FX vorhanden, aber niedrige Kostenbasis
 
 | Prio | Jahr | Line | Asset | Kostenbasis | Erloes | Quote | Lot-Event | Swap | Gegenfluss |
 | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |
-| priority_2 | 2021 | 703 | `DOGE` | 0.01410683369500195118259224219 | 631.2149925198208 | 0.00002234869871941291396847565008 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 704 | `DOGE` | 1.007958879592704 | 301.9870044801792 | 0.003337755812796444326511658761 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 770 | `DOGE` | 0.562573530407296 | 283.5285617423872 | 0.001984186450035491758025080842 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 749 | `DOGE` | 0.37655746 | 150.413432 | 0.002503482933625236341924569609 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 385 | `HNT` | 0.0212520536 | 124.28374715848 | 0.0001709962411488970935413042271 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 8 | `HNT` | 0.002387858462 | 59.80264674417 | 0.00003992897625777384061321368675 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 156 | `HNT` | 0.0186472 | 55.46707232 | 0.0003361850413236304735255945811 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 701 | `DOGE` | 0.000913253864536365482233502538 | 42.7366615198208 | 0.00002136933096921499698704555866 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 7 | `HNT` | 0.001528161538 | 38.27199395583 | 0.00003992897625777384061321368675 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 760 | `DOGE` | 0.070441 | 37.492 | 0.001878827483196415235250186706 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 163 | `HNT` | 0.0124268755 | 36.9643915478 | 0.0003361850413236304735255945811 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 952 | `ETH` | 0.00002127582931322120368951893035 | 33.6866658115456 | 0.0000006315801460508220423309023174 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 157 | `HNT` | 0.0090279995 | 26.8542570022 | 0.0003361850413236304735255945811 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 757 | `DOGE` | 0.04759799 | 22.955636 | 0.002073477293332234402044012198 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 752 | `DOGE` | 0.04578665 | 20.00362 | 0.00228891820580474934036939314 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 698 | `DOGE` | 0.0003559461354636345177664974619 | 16.6568684801792 | 0.00002136933096921499698704555866 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 754 | `DOGE` | 0.02445309 | 10.969506 | 0.002229187895972708342563466395 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 394 | `HNT` | 0.0015372964 | 10.48477833754 | 0.0001466217358640592367759665697 | `binance/trade/in` | nein | nein |
+| - | - | - | - | - | - | - | - | - | - |
 
 ## Hohe Gewinnquote
 
 | Prio | Jahr | Line | Asset | Kostenbasis | Erloes | Quote | Lot-Event | Swap | Gegenfluss |
 | --- | ---: | ---: | --- | ---: | ---: | ---: | --- | --- | --- |
-| priority_2 | 2021 | 5620 | `UNKNOWN` | 0.06004482671812621530846738554 | 1640.59920467388 | 0.00003659932696972261901092005348 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5616 | `UNKNOWN` | 0.05055533301318013081138412586 | 1381.31865252612 | 0.00003659932696972261901092005348 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1110 | `UNKNOWN` | 0.1250854626513155382711684638 | 1338.6472294795272 | 0.00009344169240162652676775923015 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 3971 | `UNKNOWN` | 0.04722626820526780979317659537 | 1275.57385365564 | 0.00003702354675107446844263758273 | `binance/buy/buy` | nein | nein |
 | priority_2 | 2022 | 514 | `USDT` | 0 | 1168.7663514436165 | 0 | `//` | nein | nein |
 | priority_2 | 2022 | 3572 | `HNT` | 0 | 1146.1874646034960896 | 0 | `binance_api/deposit/in` | nein | nein |
-| priority_2 | 2021 | 806 | `UNKNOWN` | 0.000406278626756980731836662542 | 1074.7427978489364 | 0.0000003780240514941198107400108016 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 705 | `UNKNOWN` | 6.25064696282 | 932.2687949999999999999999999 | 0.006704769049810360755451436086 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 2270 | `UNKNOWN` | 0.05336457707035531200282835425 | 875.527664856075 | 0.00006095133165109949142579389374 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 3099 | `UNKNOWN` | 0.02073752994961993989747215839 | 865.55622735 | 0.00002395861677653255913285199286 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 953 | `UNKNOWN` | 0.0005584533865312851334629662365 | 801.0748048287272 | 0.0000006971301346204298156447251992 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 703 | `DOGE` | 0.01410683369500195118259224219 | 631.2149925198208 | 0.00002234869871941291396847565008 | `binance/trade/in` | nein | nein |
-| priority_2 | 2021 | 4969 | `UNKNOWN` | 0.02333663370330563903128866891 | 630.13265135523 | 0.00003703447782481260675632008571 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 362 | `UNKNOWN` | 4.5867285373335 | 622.4121412621614 | 0.007369278703388209739516572494 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5751 | `UNKNOWN` | 0.01990802875163514230157327205 | 609.9953965974 | 0.00003263635899989347040094203077 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5771 | `UNKNOWN` | 0.01824902635566554710977549938 | 603.8530576848 | 0.00003022097201202084081847022526 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 3972 | `UNKNOWN` | 0.02046102955029167403217252961 | 552.6490935042 | 0.00003702354675107446844263758273 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1111 | `UNKNOWN` | 0.05031090666017394378645925402 | 538.3818390406152000000000001 | 0.00009344837253393779400184942665 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1707 | `UNKNOWN` | 0.02987310314342584408697189323 | 533.54728930932 | 0.00005598960718570371892994478113 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 5633 | `UNKNOWN` | 0.01717620480627187555241293972 | 526.290472730979 | 0.00003263635899989347040094203077 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 853 | `UNKNOWN` | 1.36768157523733427611808379 | 493.2768780311598 | 0.002772644808928058489700478669 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 878 | `UNKNOWN` | 1.291256864863001590949266396 | 484.138072492812 | 0.002667125223625483176716465258 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 870 | `UNKNOWN` | 1.291256864863001590949266396 | 484.0703689864392000000000001 | 0.002667498255608318387473784167 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 883 | `UNKNOWN` | 1.295902071571716457486300159 | 465.6703282686864 | 0.002782874477722780594290057586 | `binance/buy/buy` | nein | nein |
-| priority_2 | 2021 | 1634 | `HNT` | 0 | 464.14145314 | 0 | `//` | nein | nein |
+| priority_2 | 2021 | 1345 | `HNT` | 0 | 464.14145314 | 0 | `//` | nein | nein |
+| priority_2 | 2022 | 3456 | `HNT` | 0 | 414.0965341866616704 | 0 | `binance_api/deposit/in` | nein | nein |
+| priority_2 | 2022 | 3439 | `HNT` | 0 | 355.6905058882184352 | 0 | `binance_api/deposit/in` | nein | nein |
+| priority_2 | 2021 | 1344 | `HNT` | 0 | 340.21924254 | 0 | `//` | nein | nein |
+| priority_2 | 2021 | 1340 | `HNT` | 0 | 317.30625390293029859268152 | 0 | `//` | nein | nein |
+| priority_2 | 2022 | 3576 | `HNT` | 0 | 311.59419948832 | 0 | `binance_api/deposit/in` | nein | nein |
+| priority_2 | 2021 | 1407 | `HNT` | 0 | 290.1121724005967814158276469 | 0 | `binance_api/deposit/in` | nein | nein |
+| priority_2 | 2021 | 1341 | `HNT` | 0 | 276.42080478 | 0 | `//` | nein | nein |
+| priority_2 | 2022 | 442 | `USDT` | 0 | 148.757630271075 | 0 | `//` | nein | nein |
+| priority_2 | 2021 | 468 | `BNB` | 0.005438359999999999999999999999 | 125.7715573590070518871875 | 0.00004323998298340650410708580655 | `binance_api/dust_convert_in/in` | nein | ja |
+| priority_2 | 2021 | 1 | `BNB` | 0 | 94.1209633169256 | 0 | `binance/fiat_crypto_purchase/in` | nein | nein |
+| priority_2 | 2022 | 3579 | `HNT` | 0 | 72.56534656240315993650966628 | 0 | `binance_api/deposit/in` | nein | nein |
+| priority_2 | 2021 | 1577 | `HNT` | 0 | 69.92100578446492383320425294 | 0 | `binance_api/deposit/in` | nein | nein |
+| priority_2 | 2022 | 412 | `USDT` | 0 | 66.352680580511514 | 0 | `//` | nein | nein |
 
 ## Solana-Swap-In-Raw-Events ohne Raw-Preisanker
 
@@ -183,5 +133,9 @@ Tax-Lines ebenfalls auffaellig sind.
 
 ## Naechster Schritt
 
-Die `priority_1`-Treffer werden einzeln gegen Rohereignis, FX-Cache und Gegenfluss geprueft.
-Nur belegbare technische Luecken werden automatisch korrigiert.
+Es gibt aktuell keine `priority_1`-Treffer.
+
+Der verbleibende Fast-Null-`priority_2`-Treffer ist der BNB-Dust-Convert aus
+2021. Dieser wird nicht automatisch korrigiert, solange kein belegter BNB/USD-
+Preis fuer `2021-04-28` oder eine vollstaendige Bewertung der Dust-Ausgangsassets
+vorliegt.

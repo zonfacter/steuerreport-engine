@@ -26,6 +26,8 @@ from tax_engine.rulesets import build_default_registry
 from .models import ProcessRunRequest
 
 STABLE_ASSETS = {"USD", "USDT", "USDC", "BUSD", "FDUSD", "DAI", "TUSD", "USDP"}
+USD_STABLE_ASSETS = {"USD", "USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP"}
+BINANCE_MARKET_QUOTE_ASSETS = ("USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "EUR", "BTC", "ETH", "BNB")
 SOLSCAN_STABLE_MINTS = {
     "EPJFWDDAUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTD1V": "USDC",
     "ES9VMFRZACERMJFRF4H2FYD4KCONKY11MCCE8BENWNYB": "USDT",
@@ -129,6 +131,28 @@ def _raw_row_field(payload: dict[str, Any], key: str) -> str:
 
 def _bitget_spot_biz_order_id(payload: dict[str, Any]) -> str:
     return _raw_row_field(payload, "bizOrderId")
+
+
+def _split_binance_market_symbol(market: str) -> tuple[str, str]:
+    normalized = str(market or "").upper().strip()
+    for quote in BINANCE_MARKET_QUOTE_ASSETS:
+        if normalized.endswith(quote) and len(normalized) > len(quote):
+            return normalized[: -len(quote)], quote
+    return "", ""
+
+
+def _lookup_asset_usd_rate(asset: str, rate_date: str, cache: dict[tuple[str, str], tuple[Decimal, str]]) -> tuple[Decimal, str]:
+    key = (asset, rate_date)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    row = STORE.get_fx_rate(rate_date=rate_date, base_ccy=asset, quote_ccy="USD") if rate_date else None
+    if row is None and rate_date:
+        row = STORE.get_fx_rate_on_or_before(rate_date=rate_date, base_ccy=asset, quote_ccy="USD")
+    rate = _safe_decimal(row.get("rate")) if isinstance(row, dict) else Decimal("0")
+    source_rate_date = str(row.get("source_rate_date") or row.get("rate_date") or rate_date) if isinstance(row, dict) else ""
+    cache[key] = (rate, source_rate_date)
+    return rate, source_rate_date
 
 
 def _normalized_mint(value: Any) -> str:
@@ -426,6 +450,91 @@ def attach_bitget_tax_api_spot_trade_value_anchors(
     }
 
 
+def attach_binance_market_quote_value_anchors(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    quote_usd_cache: dict[tuple[str, str], tuple[Decimal, str]] = {}
+    transformed: list[dict[str, Any]] = []
+    available_market_rows = 0
+    attached_usd = 0
+    attached_eur = 0
+    missing_quote_rates = 0
+
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        side = _event_side(payload)
+        raw_row = payload.get("raw_row")
+        if source != "binance" or event_type != "trade" or side not in {"in", "out"} or not isinstance(raw_row, dict):
+            transformed.append(event)
+            continue
+        if _payload_value_usd_sum(payload) > Decimal("0") or _safe_decimal(payload.get("value_eur")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        market = str(raw_row.get("Market") or raw_row.get("market") or "").upper().strip()
+        total = _safe_decimal(raw_row.get("Total") or raw_row.get("total"))
+        base_asset, quote_asset = _split_binance_market_symbol(market)
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        quantity = _event_quantity(payload)
+        if not market or not base_asset or not quote_asset or asset not in {base_asset, quote_asset} or total <= 0 or quantity <= 0:
+            transformed.append(event)
+            continue
+
+        available_market_rows += 1
+        updated_payload = dict(payload)
+        updated_payload["valuation_reference_source"] = "binance_market_quote_total"
+        updated_payload["valuation_reference_market"] = market
+        updated_payload["valuation_reference_asset"] = quote_asset
+        updated_payload["binance_market_quote_unit_price"] = str(payload.get("price") or "")
+        updated_payload["price"] = ""
+
+        if quote_asset == "EUR":
+            updated_payload["value_eur"] = total.to_eng_string()
+            updated_payload["valuation_reference_rate_date"] = _event_date(payload)
+            updated_event = dict(event)
+            updated_event["payload"] = updated_payload
+            transformed.append(updated_event)
+            attached_eur += 1
+            continue
+
+        if quote_asset in USD_STABLE_ASSETS:
+            updated_payload["value_usd_sum"] = total.to_eng_string()
+            updated_payload["valuation_reference_rate_date"] = _event_date(payload)
+            updated_event = dict(event)
+            updated_event["payload"] = updated_payload
+            transformed.append(updated_event)
+            attached_usd += 1
+            continue
+
+        rate_date = _event_date(payload)
+        quote_usd_rate, source_rate_date = _lookup_asset_usd_rate(quote_asset, rate_date, quote_usd_cache)
+        if quote_usd_rate <= Decimal("0"):
+            missing_quote_rates += 1
+            transformed.append(event)
+            continue
+        updated_payload["value_usd_sum"] = (total * quote_usd_rate).to_eng_string()
+        updated_payload["valuation_reference_quote_usd_rate"] = quote_usd_rate.to_eng_string()
+        updated_payload["valuation_reference_rate_date"] = source_rate_date or rate_date
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        attached_usd += 1
+
+    return transformed, {
+        "valuation_anchor_source": "binance_market_quote_total",
+        "available_market_row_count": available_market_rows,
+        "attached_usd_value_count": attached_usd,
+        "attached_eur_value_count": attached_eur,
+        "missing_quote_rate_count": missing_quote_rates,
+        "quote_usd_cache_key_count": len(quote_usd_cache),
+    }
+
+
 def drop_solscan_duplicates_when_solana_rpc_is_active(
     active_events: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -461,6 +570,33 @@ def drop_solscan_duplicates_when_solana_rpc_is_active(
         "dedupe_rule": "drop_solscan_wallet_discovery_when_matching_solana_rpc_active",
         "solana_rpc_key_count": len(solana_rpc_keys),
         "dropped_solscan_duplicate_count": dropped,
+    }
+
+
+def drop_malformed_binance_market_summary_events(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    transformed: list[dict[str, Any]] = []
+    dropped = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        source = str(payload.get("source") or "").lower().strip()
+        event_type = str(payload.get("event_type") or "").lower().strip()
+        side = _event_side(payload)
+        asset = str(payload.get("asset") or "").strip()
+        raw_row = payload.get("raw_row")
+        market = str(raw_row.get("Market") or raw_row.get("market") or "").strip() if isinstance(raw_row, dict) else ""
+        if source == "binance" and event_type in {"buy", "sell"} and side in {"buy", "sell"} and not asset and market:
+            dropped += 1
+            continue
+        transformed.append(event)
+
+    return transformed, {
+        "dedupe_rule": "drop_malformed_binance_market_summary_events",
+        "dropped_malformed_binance_market_summary_count": dropped,
     }
 
 
@@ -1123,12 +1259,14 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         job_config = claimed.get("config", {}) if isinstance(claimed.get("config"), dict) else {}
         all_raw_events = STORE.list_raw_events()
         raw_events, integration_filter_summary = filter_events_for_processing(all_raw_events, job_config)
+        raw_events, malformed_binance_summary = drop_malformed_binance_market_summary_events(raw_events)
         raw_events, pionex_duplicate_summary = drop_exact_pionex_duplicate_events(raw_events)
         raw_events, solscan_duplicate_summary = drop_solscan_duplicates_when_solana_rpc_is_active(raw_events)
         raw_events, review_action_summary = apply_review_actions(raw_events)
         raw_events, helium_solana_claim_summary = label_helium_solana_claim_events(raw_events)
         raw_events, valuation_anchor_summary = attach_reference_usd_value_anchors(raw_events, all_raw_events)
         raw_events, bitget_spot_anchor_summary = attach_bitget_tax_api_spot_trade_value_anchors(raw_events)
+        raw_events, binance_market_anchor_summary = attach_binance_market_quote_value_anchors(raw_events)
         raw_events, reward_price_summary = attach_cached_usd_prices_to_reward_events(raw_events)
         raw_events, swap_in_price_summary = attach_cached_usd_prices_to_swap_in_events(raw_events)
         effective_events, override_count = apply_tax_event_overrides(raw_events)
@@ -1162,11 +1300,13 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
             transfer_matches=STORE.list_transfer_matches(),
         )
         processing_result["integration_filter_summary"] = integration_filter_summary
+        processing_result["malformed_binance_summary"] = malformed_binance_summary
         processing_result["pionex_duplicate_summary"] = pionex_duplicate_summary
         processing_result["solscan_duplicate_summary"] = solscan_duplicate_summary
         processing_result["helium_solana_claim_summary"] = helium_solana_claim_summary
         processing_result["valuation_anchor_summary"] = valuation_anchor_summary
         processing_result["bitget_spot_anchor_summary"] = bitget_spot_anchor_summary
+        processing_result["binance_market_anchor_summary"] = binance_market_anchor_summary
         processing_result["reward_price_summary"] = reward_price_summary
         processing_result["swap_in_price_summary"] = swap_in_price_summary
         tax_lines = processing_result.pop("tax_lines")
