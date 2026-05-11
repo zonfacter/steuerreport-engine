@@ -30,6 +30,7 @@ from tax_engine.queue.models import ProcessRunRequest, WorkerRunNextRequest
 from tax_engine.queue.service import (
     attach_binance_fiat_purchase_value_anchors,
     attach_binance_market_quote_value_anchors,
+    attach_binance_transaction_history_stable_counterflow_value_anchors,
     attach_bitget_tax_api_spot_trade_value_anchors,
     attach_cached_usd_prices_to_binance_dust_convert_in_events,
     attach_cached_usd_prices_to_reward_events,
@@ -961,6 +962,59 @@ def test_drop_exact_pionex_duplicate_events_keeps_first_copy() -> None:
 
     assert [event["unique_event_id"] for event in filtered] == ["pionex-a", "binance-same-shape"]
     assert summary["dropped_pionex_duplicate_count"] == 1
+
+
+def test_attach_binance_transaction_history_stable_counterflow_value_anchors() -> None:
+    events = [
+        {
+            "unique_event_id": "hnt-a",
+            "source_file_id": "binance-txhist",
+            "payload": {
+                "source": "binance",
+                "timestamp_utc": "2022-01-05T15:36:46+00:00",
+                "event_type": "trade",
+                "side": "in",
+                "asset": "HNT",
+                "quantity": "10",
+                "tx_id": "binance-txhist-jan2022:20220105T173646:1:Transaction Buy:HNT",
+            },
+        },
+        {
+            "unique_event_id": "hnt-b",
+            "source_file_id": "binance-txhist",
+            "payload": {
+                "source": "binance",
+                "timestamp_utc": "2022-01-05T15:36:46+00:00",
+                "event_type": "trade",
+                "side": "in",
+                "asset": "HNT",
+                "quantity": "30",
+                "tx_id": "binance-txhist-jan2022:20220105T173646:2:Transaction Buy:HNT",
+            },
+        },
+        {
+            "unique_event_id": "usdt-out",
+            "source_file_id": "binance-txhist",
+            "payload": {
+                "source": "binance",
+                "timestamp_utc": "2022-01-05T15:36:46+00:00",
+                "event_type": "trade",
+                "side": "out",
+                "asset": "USDT",
+                "quantity": "800",
+                "tx_id": "binance-txhist-jan2022:20220105T173646:3:Transaction Spend:USDT",
+            },
+        },
+    ]
+
+    anchored, summary = attach_binance_transaction_history_stable_counterflow_value_anchors(events)
+
+    payloads = {event["unique_event_id"]: event["payload"] for event in anchored}
+    assert payloads["hnt-a"]["value_usd_sum"] == "200"
+    assert payloads["hnt-b"]["value_usd_sum"] == "600"
+    assert "value_usd_sum" not in payloads["usdt-out"]
+    assert summary["available_group_count"] == 1
+    assert summary["attached_anchor_count"] == 2
 
 
 def test_process_run_normalizes_de_alias_and_version_from_ui() -> None:

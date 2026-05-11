@@ -10,7 +10,7 @@ Ausgewertet wurden die neuesten abgeschlossenen Jobs je Steuerjahr `2020` bis `2
 | ---: | --- | ---: | ---: | --- |
 | 2020 | `0b3a4d22-6574-4e54-8685-92d40dbaf100` | 0 | 0 | 2026-05-11T20:33:22.138080+00:00 |
 | 2021 | `155b1abc-cd34-44d1-9497-f072afd8cf1c` | 5434 | 43 | 2026-05-11T21:18:51.763033+00:00 |
-| 2022 | `a4c8d845-bef8-41e9-b520-b6eff6a7b781` | 11765 | 630 | 2026-05-11T21:19:00.650245+00:00 |
+| 2022 | `d1c40860-d286-4ff7-a7e7-1a173f99ad4e` | 11765 | 630 | 2026-05-11T21:29:04.737184+00:00 |
 | 2023 | `210d8066-3bb0-4947-b45b-ceb2962e15d6` | 9099 | 0 | 2026-05-11T20:33:49.504534+00:00 |
 | 2024 | `aeb1b44b-8b45-4dcb-8479-12c5b470c379` | 1680 | 36 | 2026-05-11T20:33:58.836379+00:00 |
 | 2025 | `cc781fa5-1987-411a-ba69-e2653129cf88` | 465 | 957 | 2026-05-11T20:34:07.563410+00:00 |
@@ -22,7 +22,7 @@ Ausgewertet wurden die neuesten abgeschlossenen Jobs je Steuerjahr `2020` bis `2
 - Fast-Null-Kostenbasis: `0`
 - FX vorhanden, aber niedrige Kostenbasis: `0`
 - Gleicher `tx_id` mit bepreistem Gegenfluss: `0`
-- Hohe Gewinnquote: `8`
+- Hohe Gewinnquote: `6`
 - Solana-Swap-In-Raw-Events ohne Raw-Preisanker: `310`
 - Prioritaet-1-Treffer ueber alle Klassen: `0`
 
@@ -55,9 +55,7 @@ Tax-Lines ebenfalls auffaellig sind.
 | priority_2 | 2022 | 514 | `USDT` | 0 | 1168.7663514436165 | 0 | `//` | nein | nein |
 | priority_2 | 2021 | 1285 | `HNT` | 0 | 445.1808341476849715363131107 | 0 | `//` | nein | nein |
 | priority_2 | 2021 | 1347 | `HNT` | 0 | 290.1121724005967814158276469 | 0 | `binance_api/deposit/in` | nein | nein |
-| priority_2 | 2022 | 957 | `HNT` | 0 | 171.6573822489 | 0 | `binance/trade/in` | nein | nein |
 | priority_2 | 2022 | 442 | `USDT` | 0 | 148.757630271075 | 0 | `//` | nein | nein |
-| priority_2 | 2022 | 2760 | `HNT` | 0 | 140.8094428798188068578008705 | 0 | `binance/trade/in` | nein | nein |
 | priority_2 | 2021 | 1517 | `HNT` | 0 | 69.92100578446492383320425294 | 0 | `binance_api/deposit/in` | nein | nein |
 | priority_2 | 2022 | 412 | `USDT` | 0 | 66.352680580511514 | 0 | `//` | nein | nein |
 
@@ -121,8 +119,8 @@ Tax-Lines ebenfalls auffaellig sind.
 - Es gibt aktuell keine Treffer in den technischen Fehlerklassen
   Fast-Null-Kostenbasis, FX-vorhanden-aber-niedrig oder gleicher `tx_id` mit
   bepreistem Gegenfluss.
-- Die HNT-Self-Wallet-Transfer-Matches haben die verbleibenden
-  `priority_2`-High-Gain-Treffer von `14` auf `8` reduziert.
+- Der Binance-Transaction-History-Stable-Counterflow-Fix hat die
+  `priority_2`-High-Gain-Treffer von `8` auf `6` reduziert.
 - Die restlichen `priority_2`-Treffer sind historische HNT-/USDT-Beleg- und
   Bestandsluecken, nicht automatisch belegte Preisanker-Luecken.
 - `informational` bei Raw-Swaps bedeutet nicht automatisch Fehler, weil Preisanker zur Laufzeit entstehen koennen.

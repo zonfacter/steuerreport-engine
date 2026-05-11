@@ -11,6 +11,7 @@ Stand: 2026-05-09
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
 ## Neuester Stand 2026-05-11 HNT Self-Wallet-Transfers gematcht
+- Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
 - Lokaler JSON-Output, nicht committen:
@@ -31,17 +32,28 @@ Stand: 2026-05-09
   - 2022 `a4c8d845-bef8-41e9-b520-b6eff6a7b781`, `tax_lines=11765`,
     `derivative_lines=630`
 - Ergebnis nach Neuberechnung:
-  - HNT-/USDT-Restzeilen insgesamt: `8`
-  - Erloes dieser Restzeilen: `2501.557499756668497643145881 EUR`
+  - HNT-/USDT-Restzeilen insgesamt nach Folgefix: `6`
+  - Erloes dieser Restzeilen nach Folgefix:
+    `2189.09067462794969078534501 EUR`
   - 2021 HNT: `3` Zero-Cost-Zeilen, `40.9633640723911826493873 HNT`,
     `805.2140123327466767853450105 EUR` Erloes.
-  - 2022 HNT: `5` Zero-Cost-Zeilen, `17.46753047183752349899927 HNT`,
-    `351.9188545425587338155117614 EUR` Erloes.
+  - 2022 HNT: `0` Zero-Cost-Zeilen ueber `50 EUR` Erloes.
+  - 2022 USDT: `3` Zero-Cost-Zeilen,
+    `1383.876662295203014 EUR` Erloes.
   - Die vormals grosse 2022-HNT-Luecke aus dem `2022-07-12`-Ruecktransfer ist
     damit weitgehend technisch als eigene Wallet-Kontinuitaet abgebildet.
+- Binance-Transaction-History-Folgefix:
+  - Neue Funktion `attach_binance_transaction_history_stable_counterflow_value_anchors()`.
+  - Bewertet nur `binance-txhist-*`-Gruppen mit gleichem Source-File und
+    Timestamp, wenn Stable-Outflows genau einem Nicht-Stable-Inflow-Asset
+    gegenueberstehen.
+  - 2022 Job `d1c40860-d286-4ff7-a7e7-1a173f99ad4e`:
+    `2` Gruppen, `9` Bewertungsanker.
+  - Dadurch verschwanden die verbliebenen 2022-HNT-Zero-Cost-Zeilen aus
+    Binance-HNT-Kaeufen mit USDT-Gegenfluss.
 - Audit nach Readonly-Rebuild:
   - `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`:
-    `priority_1_total=0`, `high_gain_ratio=8`.
+    `priority_1_total=0`, `high_gain_ratio=6`.
   - `docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md`:
     verbleibend sind HNT-Teilreste ohne Primarherkunft/Cost-Basis und USDT-
     Pionex-/Binance-Opening- bzw. Bot-Historie.
@@ -117,9 +129,9 @@ Stand: 2026-05-09
     gespeichert. Sie verbessern die Kettenbelegung, erzeugen aber keine
     Anschaffungskosten.
 - Ergebnis:
-  - Aktuelle Restzeilen nach Folgefix: `8`
+  - Aktuelle Restzeilen nach Folgefixes: `6`
   - Erloes dieser Restzeilen nach Folgefix:
-    `2501.557499756668497643145881 EUR`
+    `2189.09067462794969078534501 EUR`
   - Keine Restzeile ist ein belegbarer Preisanker- oder FX-Backfill.
   - HNT-Transfer-Matches fuer die Binance-Deposits existieren bereits; die
     Luecke liegt vor dem Legacy-Outflow.
@@ -130,8 +142,8 @@ Stand: 2026-05-09
     `445.1808341476849715363131107 EUR` Erloes.
   - 2021 HNT, 2 Zeilen aus gematchtem Binance-HNT-Deposit, aber unbewerteter
     Legacy-Herkunft, `360.0331781850617052490318998 EUR` Erloes.
-  - 2022 HNT, 2 Zeilen aus Pionex/Binance-Kette mit noch unklassifizierter
-    Primarherkunft, `312.4668251287188068578008705 EUR` Erloes.
+  - 2022 HNT, `0` Zeilen ueber `50 EUR` Erloes nach Binance-
+    Transaction-History-Stable-Counterflow-Fix.
   - 2022 USDT, 3 Zeilen ohne Lot-Quelle, `1383.876662295203014 EUR`
     Erloes.
 - Wichtige HNT-Belege:

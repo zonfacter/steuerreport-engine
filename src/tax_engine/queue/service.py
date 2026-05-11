@@ -633,6 +633,120 @@ def attach_binance_fiat_purchase_value_anchors(
     }
 
 
+def _binance_transaction_history_group_key(event: dict[str, Any], payload: dict[str, Any]) -> tuple[str, str] | None:
+    source = str(payload.get("source") or "").lower().strip()
+    event_type = str(payload.get("event_type") or "").lower().strip()
+    tx_id = _event_tx_id(payload)
+    timestamp = str(payload.get("timestamp_utc") or payload.get("timestamp") or "").strip()
+    source_file_id = str(event.get("source_file_id") or "").strip()
+    if source != "binance" or event_type != "trade" or not tx_id.startswith("binance-txhist-"):
+        return None
+    if not timestamp or not source_file_id:
+        return None
+    return source_file_id, timestamp
+
+
+def attach_binance_transaction_history_stable_counterflow_value_anchors(
+    active_events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    aliases = _load_token_alias_symbols()
+    grouped: dict[tuple[str, str], list[tuple[dict[str, Any], dict[str, Any]]]] = {}
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+        key = _binance_transaction_history_group_key(event, payload)
+        if key is None:
+            continue
+        grouped.setdefault(key, []).append((event, payload))
+
+    group_values: dict[tuple[str, str], tuple[str, Decimal, Decimal, str]] = {}
+    usable_groups = 0
+    ambiguous_groups = 0
+    for key, group in grouped.items():
+        stable_out_total = Decimal("0")
+        stable_assets: set[str] = set()
+        non_stable_in_total = Decimal("0")
+        non_stable_in_assets: set[str] = set()
+        non_stable_out_count = 0
+        reference_event_id = ""
+
+        for event, payload in group:
+            side = _event_side(payload)
+            asset = _asset_price_symbol(payload.get("asset"), aliases)
+            quantity = _event_quantity(payload)
+            if quantity <= Decimal("0") or not asset:
+                continue
+            if side == "out" and asset in USD_STABLE_ASSETS:
+                stable_out_total += quantity
+                stable_assets.add(asset)
+                if not reference_event_id:
+                    reference_event_id = str(event.get("unique_event_id") or "")
+                continue
+            if side == "in" and asset not in STABLE_ASSETS:
+                non_stable_in_total += quantity
+                non_stable_in_assets.add(asset)
+                continue
+            if side == "out" and asset not in STABLE_ASSETS:
+                non_stable_out_count += 1
+
+        if stable_out_total <= Decimal("0") or non_stable_in_total <= Decimal("0") or len(non_stable_in_assets) != 1:
+            ambiguous_groups += 1
+            continue
+        if non_stable_out_count > 0:
+            ambiguous_groups += 1
+            continue
+        usable_groups += 1
+        group_values[key] = (
+            reference_event_id,
+            stable_out_total,
+            non_stable_in_total,
+            "+".join(sorted(stable_assets)),
+        )
+
+    transformed: list[dict[str, Any]] = []
+    attached = 0
+    for event in active_events:
+        payload = event.get("payload", {})
+        if not isinstance(payload, dict):
+            transformed.append(event)
+            continue
+        key = _binance_transaction_history_group_key(event, payload)
+        group_value = group_values.get(key) if key is not None else None
+        if group_value is None:
+            transformed.append(event)
+            continue
+        if _payload_value_usd_sum(payload) > Decimal("0") or _safe_decimal(payload.get("value_eur")) > Decimal("0"):
+            transformed.append(event)
+            continue
+        side = _event_side(payload)
+        asset = _asset_price_symbol(payload.get("asset"), aliases)
+        quantity = _event_quantity(payload)
+        if side != "in" or asset in STABLE_ASSETS or quantity <= Decimal("0"):
+            transformed.append(event)
+            continue
+
+        reference_event_id, stable_out_total, non_stable_in_total, reference_asset = group_value
+        value_usd_sum = stable_out_total * quantity / non_stable_in_total
+        updated_payload = dict(payload)
+        updated_payload["value_usd_sum"] = value_usd_sum.to_eng_string()
+        updated_payload["valuation_reference_source"] = "binance_transaction_history_stable_counterflow"
+        updated_payload["valuation_reference_source_event_id"] = reference_event_id
+        updated_payload["valuation_reference_asset"] = reference_asset
+        updated_payload["valuation_reference_group_key"] = ":".join(key or ("", ""))
+        updated_event = dict(event)
+        updated_event["payload"] = updated_payload
+        transformed.append(updated_event)
+        attached += 1
+
+    return transformed, {
+        "valuation_anchor_source": "binance_transaction_history_stable_counterflow",
+        "available_group_count": usable_groups,
+        "ambiguous_group_count": ambiguous_groups,
+        "attached_anchor_count": attached,
+    }
+
+
 def attach_cached_usd_prices_to_binance_dust_convert_in_events(
     active_events: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -1419,6 +1533,9 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         raw_events, bitget_spot_anchor_summary = attach_bitget_tax_api_spot_trade_value_anchors(raw_events)
         raw_events, binance_market_anchor_summary = attach_binance_market_quote_value_anchors(raw_events)
         raw_events, binance_fiat_purchase_summary = attach_binance_fiat_purchase_value_anchors(raw_events)
+        raw_events, binance_txhist_anchor_summary = (
+            attach_binance_transaction_history_stable_counterflow_value_anchors(raw_events)
+        )
         raw_events, binance_dust_price_summary = attach_cached_usd_prices_to_binance_dust_convert_in_events(raw_events)
         raw_events, reward_price_summary = attach_cached_usd_prices_to_reward_events(raw_events)
         raw_events, swap_in_price_summary = attach_cached_usd_prices_to_swap_in_events(raw_events)
@@ -1461,6 +1578,7 @@ def run_next_queued_job(simulate_fail: bool = False) -> dict[str, Any] | None:
         processing_result["bitget_spot_anchor_summary"] = bitget_spot_anchor_summary
         processing_result["binance_market_anchor_summary"] = binance_market_anchor_summary
         processing_result["binance_fiat_purchase_summary"] = binance_fiat_purchase_summary
+        processing_result["binance_transaction_history_anchor_summary"] = binance_txhist_anchor_summary
         processing_result["binance_dust_price_summary"] = binance_dust_price_summary
         processing_result["reward_price_summary"] = reward_price_summary
         processing_result["swap_in_price_summary"] = swap_in_price_summary

@@ -4,8 +4,8 @@ Stand: 2026-05-11
 
 ## Ergebnis
 
-- Aktuelle Restzeilen: `8`
-- Erloes dieser Restzeilen: `2501.557499756668497643145881 EUR`
+- Aktuelle Restzeilen: `6`
+- Erloes dieser Restzeilen: `2189.09067462794969078534501 EUR`
 - Keine Restzeile ist ein belegbarer Preisanker- oder FX-Backfill.
 - HNT-Transfer-Matches fuer die Binance-Deposits existieren bereits; die Luecke liegt vor dem Legacy-Outflow.
 - USDT-Reste bleiben Pionex-/Binance-Opening- bzw. Bot-Historie ohne Primaerbeleg.
@@ -16,7 +16,7 @@ Stand: 2026-05-11
 | ---: | --- | ---: | ---: | --- |
 | 2020 | `0b3a4d22-6574-4e54-8685-92d40dbaf100` | 0 | 0 | 2026-05-11T20:33:22.138080+00:00 |
 | 2021 | `155b1abc-cd34-44d1-9497-f072afd8cf1c` | 5434 | 43 | 2026-05-11T21:18:51.763033+00:00 |
-| 2022 | `a4c8d845-bef8-41e9-b520-b6eff6a7b781` | 11765 | 630 | 2026-05-11T21:19:00.650245+00:00 |
+| 2022 | `d1c40860-d286-4ff7-a7e7-1a173f99ad4e` | 11765 | 630 | 2026-05-11T21:29:04.737184+00:00 |
 | 2023 | `210d8066-3bb0-4947-b45b-ceb2962e15d6` | 9099 | 0 | 2026-05-11T20:33:49.504534+00:00 |
 | 2024 | `aeb1b44b-8b45-4dcb-8479-12c5b470c379` | 1680 | 36 | 2026-05-11T20:33:58.836379+00:00 |
 | 2025 | `cc781fa5-1987-411a-ba69-e2653129cf88` | 465 | 957 | 2026-05-11T20:34:07.563410+00:00 |
@@ -28,7 +28,6 @@ Stand: 2026-05-11
 | ---: | --- | --- | ---: | ---: | ---: | --- |
 | 2021 | `HNT` | `matched_transfer_source_cost_basis_gap` | 2 | 18.18741071559783055 | 360.0331781850617052490318998 | binance |
 | 2021 | `HNT` | `missing_lot_source_inventory_gap` | 1 | 22.7759533567933520993873 | 445.1808341476849715363131107 | binance |
-| 2022 | `HNT` | `unclassified_inventory_gap` | 2 | 15.49564033217319698392122 | 312.4668251287188068578008705 | pionex |
 | 2022 | `USDT` | `missing_lot_source_inventory_gap` | 3 | 1569.8280684762 | 1383.876662295203014 | binance, pionex |
 
 ## Betroffene Zeilen
@@ -38,8 +37,6 @@ Stand: 2026-05-11
 | 2021 | 1285 | `HNT` | 22.7759533567933520993873 | 445.1808341476849715363131107 | `binance/trade/out` | `leer` | `missing_lot_source_inventory_gap` |
 | 2021 | 1347 | `HNT` | 14.651308409999999970498 | 290.1121724005967814158276469 | `binance/trade/out` | `binance_api/deposit/in` | `matched_transfer_source_cost_basis_gap` |
 | 2021 | 1517 | `HNT` | 3.536102305597830579502 | 69.92100578446492383320425294 | `binance/trade/out` | `binance_api/deposit/in` | `matched_transfer_source_cost_basis_gap` |
-| 2022 | 957 | `HNT` | 8.95 | 171.6573822489 | `pionex/trade/out` | `binance/trade/in` | `unclassified_inventory_gap` |
-| 2022 | 2760 | `HNT` | 6.54564033217319698392122 | 140.8094428798188068578008705 | `pionex/trade/out` | `binance/trade/in` | `unclassified_inventory_gap` |
 | 2022 | 412 | `USDT` | 75.1046222062 | 66.352680580511514 | `binance/trade/out` | `leer` | `missing_lot_source_inventory_gap` |
 | 2022 | 442 | `USDT` | 168.7646835 | 148.757630271075 | `pionex/trade/out` | `leer` | `missing_lot_source_inventory_gap` |
 | 2022 | 514 | `USDT` | 1325.95876277 | 1168.7663514436165 | `pionex/trade/out` | `leer` | `missing_lot_source_inventory_gap` |
