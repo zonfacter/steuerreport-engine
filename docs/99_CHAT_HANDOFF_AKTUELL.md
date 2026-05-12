@@ -26,6 +26,14 @@ Stand: 2026-05-09
     Ursprungs-Wallet.
   - Offizielle Helium-L1-Archivquelle fuer spaetere Pruefung:
     `https://docs.helium.com/network-data/legacy-blockchain-data/`.
+- Fairspot-Cache wegen fehlender Helium-L1-Torrent-Peers:
+  `docs/235_FAIRSPOT_DIRECT_WALLET_CACHE_2026-05-12.md`
+  - Skript: `scripts/fairspot_direct_wallet_cache_20260512.py`
+  - Rohdaten-Cache ausserhalb Git:
+    `/root/.local/share/steuerreport/fairspot_wallet_exports`
+  - Gesichert: beide eigenen Wallets plus `10` direkte Gegenwallets.
+  - Downloadfehler: `0`.
+  - Keine CSV-Dateien committen; nur Manifest/Befunde auswerten.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
