@@ -55,6 +55,23 @@ Stand: 2026-05-09
   - Kein automatischer Preis-, FX- oder Cost-Basis-Fix wurde abgeleitet.
     Naechster sicherer Schritt: separater Review-/Importpfad nur fuer
     belegbare eigene Roundtrips oder nachgelieferte Primaerbelege.
+- HNT-Roundtrip `14o7...` als kurzer Staking-Plattform-Rueckfluss gematcht:
+  `docs/237_HNT_LEGACY_ROUNDTRIP_WALLET_MATCH_2026-05-12.md`
+  - Skript: `scripts/hnt_legacy_roundtrip_wallet_match_20260512.py`
+  - Methode: `fairspot_roundtrip_14o7_self_custody`
+  - Match: `bee0a64c-e73c-4084-9cd7-8fd48e46e8f2`
+  - Beleg: `100 HNT` gingen am `2021-06-23` von der Haupt-Wallet an
+    `14o7...`; `99.75 HNT` kamen am `2021-07-08` zurueck.
+  - Nicht als Rueckfluss behandelt: `0.25 HNT` Transferdifferenz plus
+    `0.03130590339893 HNT` Netzwerkfee im Out-Event.
+  - Nutzerkontext: Nutzer erinnert eine kurz genutzte Staking-Plattform fuer
+    ungefaehr `100 HNT`; dies passt zur Fairspot-Spur.
+  - Neuer 2021-Job nach Match:
+    `e26811e1-becc-477f-a83c-fdf60cea327b`, `tax_lines=5454`,
+    `derivative_lines=43`.
+  - Ergebnis: 2021-HNT-Zero-Cost-Zeilen >= `50 EUR` sind von `3`
+    (`40.9633640723911826493873 HNT`, `805.2140123327466767853450105 EUR`)
+    auf `0` gefallen.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
