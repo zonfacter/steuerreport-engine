@@ -33,6 +33,7 @@ const state = {
   transactionSearchRows: [],
   selectedImportJob: null,
   dashboard: null,
+  netEurFlows: null,
   platformLedger: null,
   aiReadonlyQueue: null,
   admin: {
@@ -87,6 +88,7 @@ const REVIEW_LABELS = {
   mining: "Mining",
   trading: "Trading",
   transfers: "Transfers",
+  flows: "Geldflüsse",
   platforms: "Plattform-Ledger",
   tax: "Steuer",
 };
@@ -452,6 +454,9 @@ function switchReviewTab(tab) {
   try { localStorage.setItem("ui.reviewTab", String(tab)); } catch (_) {}
   if (tab === "platforms" && !state.platformLedger) {
     loadPlatformLedgerStatus(true);
+  }
+  if (tab === "flows" && !state.netEurFlows) {
+    loadNetEurFlows(true);
   }
   updateContextPath();
   syncRailState();
@@ -2404,6 +2409,7 @@ async function loadDashboard() {
   await Promise.all([
     loadDashboardYearlyActivity(),
     loadDashboardPortfolioHistory(),
+    loadNetEurFlows(true),
     loadDashboardNegativeBalances(),
     loadPlatformLedgerStatus(true),
     loadAiReadonlyQueueStatus(true),
@@ -2445,6 +2451,139 @@ async function loadDashboardPortfolioHistory() {
   populateGlobalYearFilter();
   renderPortfolioValueHistory(state.dashboard.portfolio_value_history, dashboardYearFilter());
   renderCockpit();
+}
+
+async function loadNetEurFlows(silent = false) {
+  const year = dashboardYearFilter();
+  const minValue = String(el("netFlowMinValue")?.value || "25").trim() || "25";
+  const query = new URLSearchParams({
+    min_value_eur: minValue,
+    limit: "80",
+  });
+  if (year) query.set("year", year);
+  const res = await callApi(`/api/v1/dashboard/net-eur-flows?${query.toString()}`, "GET", null, null, true);
+  if (res?.status !== "success") {
+    if (!silent) showToast("Netto-Geldflüsse konnten nicht geladen werden.", "error");
+    return;
+  }
+  state.netEurFlows = res.data || {};
+  renderNetEurFlows(state.netEurFlows);
+  if (!silent) showToast("Netto-Geldflüsse aktualisiert.", "ok");
+}
+
+function renderNetEurFlows(data) {
+  const summary = data?.summary || {};
+  const metrics = el("netFlowMetrics");
+  if (metrics) {
+    metrics.innerHTML = [
+      { label: "Sichtbare Nettoflüsse", value: formatCurrency(summary.total_visible_eur || 0, "EUR"), sub: `${summary.links || 0} Kanten / ${summary.nodes || 0} Knoten` },
+      { label: "Unbelegter Startbestand", value: formatCurrency(summary.missing_opening_balance_eur || 0, "EUR"), sub: "aus negativen Stablecoin-Verläufen" },
+      { label: "Ausgewertete Events", value: formatInt(summary.events_considered || 0), sub: `${formatInt(summary.unpriced_events || 0)} ohne EUR-Wert` },
+    ].map((item) => `
+      <div class="metric">
+        <span>${escapeHtml(item.label)}</span>
+        <strong>${escapeHtml(item.value)}</strong>
+        <em class="sub">${escapeHtml(item.sub)}</em>
+      </div>
+    `).join("");
+  }
+  const status = el("netFlowStatus");
+  if (status) {
+    const year = data?.year ? `Jahr ${data.year}` : "Alle Jahre";
+    status.textContent = `${year}, Mindestfluss ${formatCurrency(data?.min_value_eur || 0, "EUR")}. Basis: saldierte EUR-Flüsse, nicht Handelsvolumen.`;
+  }
+  renderNetFlowSankey(data?.nodes || [], data?.links || []);
+  renderNetFlowTable(data?.links || []);
+}
+
+function renderNetFlowSankey(nodes, links) {
+  const host = el("netFlowSankey");
+  if (!host) return;
+  if (!Array.isArray(nodes) || !nodes.length || !Array.isArray(links) || !links.length) {
+    host.innerHTML = '<div class="notice notice-neutral">Keine Nettoflüsse für die aktuelle Auswahl oberhalb der Schwelle.</div>';
+    return;
+  }
+  const width = Math.max(host.clientWidth || 900, 720);
+  const columns = [0, 1, 2].map((col) => nodes.filter((node) => Number(node.column || 0) === col));
+  const maxRows = Math.max(...columns.map((items) => items.length), 1);
+  const height = Math.max(300, maxRows * 58 + 48);
+  const nodeWidth = 150;
+  const nodeHeight = 34;
+  const xForColumn = (col) => Math.round(22 + (width - nodeWidth - 44) * (col / 2));
+  const positions = new Map();
+  columns.forEach((items, col) => {
+    const gap = Math.max(12, (height - 48 - items.length * nodeHeight) / Math.max(items.length - 1, 1));
+    items.forEach((node, index) => {
+      const y = items.length === 1 ? Math.round((height - nodeHeight) / 2) : Math.round(24 + index * (nodeHeight + gap));
+      positions.set(node.id, { x: xForColumn(col), y, col });
+    });
+  });
+  const maxValue = Math.max(...links.map((link) => toNumber(link.value_eur)), 1);
+  const linkSvg = links.map((link) => {
+    const start = positions.get(link.source);
+    const end = positions.get(link.target);
+    if (!start || !end) return "";
+    const x1 = start.x + nodeWidth;
+    const y1 = start.y + nodeHeight / 2;
+    const x2 = end.x;
+    const y2 = end.y + nodeHeight / 2;
+    const c1 = x1 + Math.max(48, Math.abs(x2 - x1) * 0.45);
+    const c2 = x2 - Math.max(48, Math.abs(x2 - x1) * 0.45);
+    const strokeWidth = Math.max(2, Math.min(22, (toNumber(link.value_eur) / maxValue) * 18 + 2));
+    const klass = link.kind === "missing_opening_balance" ? "sankey-link warning" : "sankey-link";
+    return `<path class="${klass}" d="M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}" stroke-width="${strokeWidth.toFixed(2)}">
+      <title>${escapeHtml(link.source_label)} -> ${escapeHtml(link.target_label)} · ${escapeHtml(link.asset)} · ${escapeHtml(formatCurrency(link.value_eur, "EUR"))}</title>
+    </path>`;
+  }).join("");
+  const nodeSvg = nodes.map((node) => {
+    const pos = positions.get(node.id);
+    if (!pos) return "";
+    return `<g class="sankey-node sankey-node-${escapeHtml(node.kind || "platform")}" transform="translate(${pos.x},${pos.y})">
+      <rect width="${nodeWidth}" height="${nodeHeight}" rx="6"></rect>
+      <text x="10" y="22">${escapeHtml(shortText(node.label, 20))}</text>
+      <title>${escapeHtml(node.label)}</title>
+    </g>`;
+  }).join("");
+  host.innerHTML = `<svg class="sankey-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Netto Euro Geldflüsse">${linkSvg}${nodeSvg}</svg>`;
+}
+
+function renderNetFlowTable(links) {
+  const tbody = el("netFlowTable")?.querySelector("tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  if (!Array.isArray(links) || !links.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="7">Keine Nettoflüsse für die aktuelle Auswahl.</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+  links.forEach((link) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(link.source_label || link.source || "")}</td>
+      <td>${escapeHtml(link.target_label || link.target || "")}</td>
+      <td>${escapeHtml(link.asset || "")}</td>
+      <td>${escapeHtml(flowKindLabel(link.kind))}</td>
+      <td class="num">${escapeHtml(formatCurrency(link.value_eur || 0, "EUR"))}</td>
+      <td class="num">${escapeHtml(formatInt(link.events || 0))}</td>
+      <td>${escapeHtml(link.sample_timestamp_utc || "")}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function flowKindLabel(kind) {
+  const labels = {
+    transfer_match: "Transfer-Match",
+    external_in: "Externer Zufluss",
+    external_out: "Externer Abfluss",
+    fee: "Gebühr",
+    income: "Reward/Einkunft",
+    net_asset_build: "Netto Asset-Aufbau",
+    net_asset_reduce: "Netto Asset-Abbau",
+    missing_opening_balance: "Unbelegter Startbestand",
+  };
+  return labels[kind] || kind || "-";
 }
 
 function portfolioRangeValue() {
@@ -2500,6 +2639,7 @@ async function applyDashboardYearFilter({ toast = false } = {}) {
   await Promise.all([
     loadDashboardYearlyActivity(),
     loadDashboardPortfolioHistory(),
+    loadNetEurFlows(true),
     loadDashboardNegativeBalances(),
     loadPlatformLedgerStatus(true),
     loadAiReadonlyQueueStatus(true),
@@ -6624,6 +6764,12 @@ async function loadUnmatched() {
   el("btnPortfolioRefresh")?.addEventListener("click", async () => {
     await loadDashboardPortfolioHistory();
     showToast("Portfolio-Wertentwicklung aktualisiert.", "ok");
+  });
+  el("btnNetFlowRefresh")?.addEventListener("click", async () => {
+    await loadNetEurFlows(false);
+  });
+  el("netFlowMinValue")?.addEventListener("change", async () => {
+    await loadNetEurFlows(true);
   });
   el("yearlyScaleMode")?.addEventListener("change", () => {
     renderYearlyAssetActivity(state.dashboard?.yearly_asset_activity ?? {});

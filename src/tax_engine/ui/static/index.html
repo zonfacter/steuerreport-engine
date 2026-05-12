@@ -27,6 +27,7 @@
         <div class="rail-subtitle">Direktbereiche</div>
         <nav class="rail-nav">
           <button class="rail-link" data-rail-step="4" data-rail-review="performance"><span class="rail-icon">PV</span><span class="rail-label">Performance</span></button>
+          <button class="rail-link" data-rail-step="4" data-rail-review="flows"><span class="rail-icon">GF</span><span class="rail-label">Geldflüsse</span></button>
           <button class="rail-link" data-rail-step="4" data-rail-review="transfers"><span class="rail-icon">TF</span><span class="rail-label">Transfers</span></button>
           <button class="rail-link" data-rail-step="4" data-rail-review="platforms"><span class="rail-icon">PL</span><span class="rail-label">Plattform-Ledger</span></button>
           <button class="rail-link" data-rail-step="4" data-rail-review="tax"><span class="rail-icon">SO</span><span class="rail-label">Steuerwerte</span></button>
@@ -726,6 +727,7 @@
           <button class="review-tab active" data-review-tab="cockpit">Cockpit</button>
           <button class="review-tab" data-review-tab="aiqueue">KI-Queue</button>
           <button class="review-tab" data-review-tab="performance">Performance</button>
+          <button class="review-tab" data-review-tab="flows">Geldflüsse</button>
           <button class="review-tab" data-review-tab="holdings">Bestände</button>
           <button class="review-tab" data-review-tab="mining">Mining</button>
           <button class="review-tab" data-review-tab="trading">Trading</button>
@@ -1113,6 +1115,36 @@
                   <th class="num">Wallets</th>
                   <th class="num">Quellen</th>
                   <th class="num">Events</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="review-panel hidden" data-review-panel="flows">
+          <h3>Geldflüsse</h3>
+          <p class="muted">Sankey-ähnliche Nettoansicht in EUR: Transfer-Matches, externe Zu-/Abflüsse, saldierter Asset-Auf-/Abbau und erkannte unbelegte Stablecoin-Startbestände.</p>
+          <div class="row compact-row">
+            <label>Mindestfluss EUR
+              <input id="netFlowMinValue" type="number" min="0" step="25" value="25" />
+            </label>
+            <button id="btnNetFlowRefresh" class="btn-primary" type="button">Geldflüsse aktualisieren</button>
+            <span id="netFlowStatus" class="muted">Noch nicht geladen.</span>
+          </div>
+          <div id="netFlowMetrics" class="metrics"></div>
+          <div id="netFlowSankey" class="sankey-box"></div>
+          <div class="table-wrap">
+            <table id="netFlowTable">
+              <thead>
+                <tr>
+                  <th>Von</th>
+                  <th>Nach</th>
+                  <th>Asset</th>
+                  <th>Typ</th>
+                  <th class="num">Netto EUR</th>
+                  <th class="num">Events</th>
+                  <th>Beispiel-Zeit</th>
                 </tr>
               </thead>
               <tbody></tbody>

@@ -10,6 +10,22 @@ Stand: 2026-05-09
 - Deutsche Dokumentation, Code Englisch.
 - Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
 
+## Neuester Stand 2026-05-12 Netto-EUR-Geldfluesse
+- Dashboard-Seite `Geldflüsse` eingerichtet:
+  `docs/242_NETTO_EUR_GELDFLUSS_SANKEY_2026-05-12.md`
+  - API: `GET /api/v1/dashboard/net-eur-flows`
+  - UI: neuer Dashboard-Tab und Direktbereich `Geldflüsse`
+  - Zweck: Sankey-aehnliche Netto-EUR-Fluesse, nicht Handelsvolumen.
+  - Enthalten: gematchte Plattform-Transfers, externe Zu-/Abfluesse,
+    saldierter Asset-Auf-/Abbau je Plattform/Asset und technische Warnkante
+    `Unbelegter Startbestand` bei negativen Stablecoin-Verlaeufen.
+  - Wichtig: Die Ansicht erzeugt keine Anschaffungskosten und trifft keine
+    steuerliche Entscheidung. Bei Jahresfilterung kann ein unbelegter
+    Startbestand auch einen aus Vorjahren mitgebrachten Anfangsbestand zeigen.
+  - Validiert mit `py_compile`, `node --check`, Unit-Test
+    `tests/unit/api/test_dashboard_net_eur_flows.py` und Live-Probe fuer
+    `2022`.
+
 ## Neuester Stand 2026-05-11 HNT Self-Wallet-Transfers gematcht
 - Lokaler-KI-Folgeauftrag:
   `docs/233_LOCAL_AI_REMAINING_HNT_USDT_TASKS_2026-05-11.md`

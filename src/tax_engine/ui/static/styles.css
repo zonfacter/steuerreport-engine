@@ -994,6 +994,62 @@ pre {
   height: 100% !important;
 }
 
+.sankey-box {
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101722;
+  padding: 10px;
+  overflow: auto;
+  margin-bottom: 10px;
+}
+
+.sankey-svg {
+  display: block;
+  min-width: 720px;
+  width: 100%;
+  height: auto;
+}
+
+.sankey-link {
+  fill: none;
+  stroke: rgba(77, 163, 255, 0.34);
+  stroke-linecap: round;
+}
+
+.sankey-link.warning {
+  stroke: rgba(224, 93, 103, 0.55);
+}
+
+.sankey-node rect {
+  fill: #172536;
+  stroke: #315371;
+  stroke-width: 1;
+}
+
+.sankey-node-warning rect {
+  fill: rgba(224, 93, 103, 0.18);
+  stroke: rgba(224, 93, 103, 0.7);
+}
+
+.sankey-node-external rect,
+.sankey-node-income rect {
+  fill: rgba(41, 184, 133, 0.14);
+  stroke: rgba(41, 184, 133, 0.5);
+}
+
+.sankey-node-asset rect,
+.sankey-node-sink rect {
+  fill: rgba(243, 186, 47, 0.12);
+  stroke: rgba(243, 186, 47, 0.45);
+}
+
+.sankey-node text {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -1485,5 +1541,9 @@ table.hide-col-audit .c-audit {
   .chart-box-sm {
     height: 200px;
     max-height: 200px;
+  }
+
+  .sankey-box {
+    min-height: 260px;
   }
 }

@@ -821,6 +821,396 @@ def dashboard_portfolio_history(
     )
 
 
+@router.get("/api/v1/dashboard/net-eur-flows", response_model=StandardResponse, tags=["dashboard"])
+def dashboard_net_eur_flows(year: int | None = None, min_value_eur: Decimal = Decimal("25"), limit: int = 60) -> StandardResponse:
+    trace_id = str(uuid4())
+    min_eur = _safe_decimal(min_value_eur)
+    events = _list_processing_effective_raw_events()
+    data = _build_net_eur_flow_sankey(
+        events=events,
+        transfer_matches=STORE.list_transfer_matches(),
+        year=year,
+        min_value_eur=min_eur,
+        limit=limit,
+    )
+    write_audit(
+        trace_id=trace_id,
+        action="dashboard.net_eur_flows",
+        payload={
+            "year": year,
+            "event_count": len(events),
+            "link_count": len(data.get("links", [])),
+            "min_value_eur": _decimal_to_plain(min_eur),
+        },
+    )
+    return StandardResponse(trace_id=trace_id, status="success", data=data, errors=[], warnings=[])
+
+
+def _build_net_eur_flow_sankey(
+    *,
+    events: list[dict[str, Any]],
+    transfer_matches: list[dict[str, Any]],
+    year: int | None,
+    min_value_eur: Decimal,
+    limit: int,
+) -> dict[str, Any]:
+    runtime_fx = _runtime_usd_to_eur_rate()
+    fx_lookup = _load_fx_lookup()
+    value_cache: dict[str, dict[str, Any]] = {}
+    event_by_id = {str(row.get("unique_event_id") or ""): row for row in events if str(row.get("unique_event_id") or "")}
+    matched_event_ids: set[str] = set()
+    flows: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    trade_net: dict[tuple[str, str, str], Decimal] = {}
+    stable_running: dict[tuple[str, str], Decimal] = {}
+    stable_minimum: dict[tuple[str, str], Decimal] = {}
+    rows_considered = 0
+    unpriced_events = 0
+    min_eur = max(_safe_decimal(min_value_eur), Decimal("0"))
+    safe_limit = min(max(int(limit), 5), 200)
+
+    for match in transfer_matches:
+        if str(match.get("status") or "").lower() not in {"matched", "approved"}:
+            continue
+        outbound_id = str(match.get("outbound_event_id") or "")
+        inbound_id = str(match.get("inbound_event_id") or "")
+        outbound = event_by_id.get(outbound_id)
+        inbound = event_by_id.get(inbound_id)
+        if outbound is None or inbound is None:
+            continue
+        out_payload = _event_payload(outbound)
+        in_payload = _event_payload(inbound)
+        if year is not None and _event_year(out_payload) != year:
+            continue
+        out_asset = _asset_display_symbol(str(out_payload.get("asset") or "")).upper()
+        in_asset = _asset_display_symbol(str(in_payload.get("asset") or "")).upper()
+        if not out_asset or out_asset != in_asset:
+            continue
+        value = _event_eur_value(outbound, out_payload, runtime_fx, fx_lookup, value_cache)
+        if value <= 0:
+            value = abs(_dashboard_event_quantity(out_payload))
+        if value <= 0:
+            continue
+        matched_event_ids.update({outbound_id, inbound_id})
+        _add_net_flow(
+            flows,
+            source_id=_platform_node_id(out_payload),
+            source_label=_platform_label(out_payload),
+            source_kind="platform",
+            target_id=_platform_node_id(in_payload),
+            target_label=_platform_label(in_payload),
+            target_kind="platform",
+            kind="transfer_match",
+            asset=out_asset,
+            value_eur=value,
+            events=1,
+            sample_timestamp=str(out_payload.get("timestamp_utc") or out_payload.get("timestamp") or ""),
+        )
+
+    sorted_events = sorted(events, key=lambda row: str(_event_payload(row).get("timestamp_utc") or _event_payload(row).get("timestamp") or ""))
+    for row in sorted_events:
+        event_id = str(row.get("unique_event_id") or "")
+        payload = _event_payload(row)
+        if year is not None and _event_year(payload) != year:
+            continue
+        if not _counts_dashboard_activity(payload):
+            continue
+        asset = _asset_display_symbol(str(payload.get("asset") or "")).upper()
+        if not asset:
+            continue
+        value = _event_eur_value(row, payload, runtime_fx, fx_lookup, value_cache)
+        if value <= 0:
+            if _requires_dashboard_valuation(payload):
+                unpriced_events += 1
+            continue
+        rows_considered += 1
+        signed_value = value * _net_flow_sign(payload)
+        if _is_stable_asset_symbol(asset):
+            stable_key = (_platform_label(payload), asset)
+            stable_running[stable_key] = stable_running.get(stable_key, Decimal("0")) + signed_value
+            stable_minimum[stable_key] = min(stable_minimum.get(stable_key, stable_running[stable_key]), stable_running[stable_key])
+        if event_id in matched_event_ids:
+            continue
+        category = _dashboard_event_category(payload)
+        platform_id = _platform_node_id(payload)
+        platform_label = _platform_label(payload)
+        event_type = str(payload.get("event_type") or "").lower()
+        if category == "transfer":
+            if signed_value >= 0:
+                _add_net_flow(
+                    flows,
+                    source_id="external:in",
+                    source_label="Externe Zufluesse",
+                    source_kind="external",
+                    target_id=platform_id,
+                    target_label=platform_label,
+                    target_kind="platform",
+                    kind="external_in",
+                    asset=asset,
+                    value_eur=abs(signed_value),
+                    events=1,
+                    sample_timestamp=str(payload.get("timestamp_utc") or payload.get("timestamp") or ""),
+                )
+            else:
+                _add_net_flow(
+                    flows,
+                    source_id=platform_id,
+                    source_label=platform_label,
+                    source_kind="platform",
+                    target_id="external:out",
+                    target_label="Externe Abfluesse",
+                    target_kind="sink",
+                    kind="external_out",
+                    asset=asset,
+                    value_eur=abs(signed_value),
+                    events=1,
+                    sample_timestamp=str(payload.get("timestamp_utc") or payload.get("timestamp") or ""),
+                )
+            continue
+        if "fee" in event_type or category == "gebuehr":
+            _add_net_flow(
+                flows,
+                source_id=platform_id,
+                source_label=platform_label,
+                source_kind="platform",
+                target_id="sink:fees",
+                target_label="Gebuehren",
+                target_kind="sink",
+                kind="fee",
+                asset=asset,
+                value_eur=abs(signed_value),
+                events=1,
+                sample_timestamp=str(payload.get("timestamp_utc") or payload.get("timestamp") or ""),
+            )
+            continue
+        if category == "reward_einkunft" and signed_value > 0:
+            _add_net_flow(
+                flows,
+                source_id="income:crypto",
+                source_label="Rewards / Einkuenfte",
+                source_kind="income",
+                target_id=platform_id,
+                target_label=platform_label,
+                target_kind="platform",
+                kind="income",
+                asset=asset,
+                value_eur=signed_value,
+                events=1,
+                sample_timestamp=str(payload.get("timestamp_utc") or payload.get("timestamp") or ""),
+            )
+            continue
+        if category == "trade_swap":
+            key = (platform_id, platform_label, asset)
+            trade_net[key] = trade_net.get(key, Decimal("0")) + signed_value
+
+    for (platform_id, platform_label, asset), net_value in trade_net.items():
+        asset_id = f"asset:{asset}"
+        asset_label = f"Asset {asset}"
+        if net_value > 0:
+            _add_net_flow(
+                flows,
+                source_id=platform_id,
+                source_label=platform_label,
+                source_kind="platform",
+                target_id=asset_id,
+                target_label=asset_label,
+                target_kind="asset",
+                kind="net_asset_build",
+                asset=asset,
+                value_eur=net_value,
+                events=1,
+                sample_timestamp="",
+            )
+        elif net_value < 0:
+            _add_net_flow(
+                flows,
+                source_id=asset_id,
+                source_label=asset_label,
+                source_kind="asset",
+                target_id=platform_id,
+                target_label=platform_label,
+                target_kind="platform",
+                kind="net_asset_reduce",
+                asset=asset,
+                value_eur=abs(net_value),
+                events=1,
+                sample_timestamp="",
+            )
+
+    for (platform, asset), minimum in stable_minimum.items():
+        if minimum >= Decimal("0"):
+            continue
+        _add_net_flow(
+            flows,
+            source_id="opening:missing",
+            source_label="Unbelegter Startbestand",
+            source_kind="warning",
+            target_id=f"platform:{platform.lower()}",
+            target_label=platform,
+            target_kind="platform",
+            kind="missing_opening_balance",
+            asset=asset,
+            value_eur=abs(minimum),
+            events=1,
+            sample_timestamp="",
+        )
+
+    visible = [item for item in flows.values() if _safe_decimal(item["value_eur"]) >= min_eur]
+    visible.sort(key=lambda item: (-_safe_decimal(item["value_eur"]), str(item["source_label"]), str(item["target_label"])))
+    visible = visible[:safe_limit]
+    nodes = _net_flow_nodes(visible)
+    total_visible = sum((_safe_decimal(item["value_eur"]) for item in visible), Decimal("0"))
+    missing_total = sum((_safe_decimal(item["value_eur"]) for item in visible if item.get("kind") == "missing_opening_balance"), Decimal("0"))
+    return {
+        "year": year,
+        "min_value_eur": _decimal_to_plain(min_eur),
+        "limit": safe_limit,
+        "summary": {
+            "events_considered": rows_considered,
+            "unpriced_events": unpriced_events,
+            "nodes": len(nodes),
+            "links": len(visible),
+            "total_visible_eur": _decimal_to_plain(total_visible),
+            "missing_opening_balance_eur": _decimal_to_plain(missing_total),
+            "basis": "net_eur_flows_not_trade_volume",
+        },
+        "nodes": nodes,
+        "links": visible,
+    }
+
+
+def _event_payload(row: dict[str, Any]) -> dict[str, Any]:
+    payload = row.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
+def _event_year(payload: dict[str, Any]) -> int | None:
+    return _extract_year(str(payload.get("timestamp_utc") or payload.get("timestamp") or ""))
+
+
+def _event_eur_value(
+    row: dict[str, Any],
+    payload: dict[str, Any],
+    runtime_fx: Decimal,
+    fx_lookup: _FxLookup,
+    value_cache: dict[str, dict[str, Any]],
+) -> Decimal:
+    event_id = str(row.get("unique_event_id") or "")
+    if event_id and event_id in value_cache:
+        return _safe_decimal(value_cache[event_id].get("eur_abs"))
+    asset = _asset_display_symbol(str(payload.get("asset") or "")).upper()
+    value = _estimate_event_values(
+        payload=payload,
+        asset=asset,
+        quantity=_dashboard_event_quantity(payload),
+        runtime_fx=runtime_fx,
+        fx_rate_cache={},
+        asset_usd_price_cache={},
+        fx_lookup=fx_lookup,
+    )
+    if event_id:
+        value_cache[event_id] = value
+    return _safe_decimal(value.get("eur_abs"))
+
+
+def _net_flow_sign(payload: dict[str, Any]) -> Decimal:
+    side = str(payload.get("side") or "").lower().strip()
+    event_type = str(payload.get("event_type") or "").lower().strip()
+    if side in {"out", "send", "sent", "sell", "sold", "debit"}:
+        return Decimal("-1")
+    if side in {"in", "receive", "received", "buy", "bought", "credit"}:
+        return Decimal("1")
+    if "withdraw" in event_type or "fee" in event_type:
+        return Decimal("-1")
+    return Decimal("1")
+
+
+def _platform_label(payload: dict[str, Any]) -> str:
+    raw = str(payload.get("source") or payload.get("source_name") or "unknown").strip() or "unknown"
+    normalized = raw.replace("_api", "").replace("_csv", "").replace("_", " ").strip()
+    known = {
+        "binance": "Binance",
+        "pionex": "Pionex",
+        "pionex inferred": "Pionex",
+        "fairspot": "Fairspot / Helium",
+        "heliumgeek": "HeliumGeek",
+        "solana rpc": "Solana",
+        "tronscan": "Tron",
+        "blockpit": "Blockpit",
+    }
+    return known.get(normalized.lower(), normalized.title())
+
+
+def _platform_node_id(payload: dict[str, Any]) -> str:
+    return f"platform:{_platform_label(payload).lower()}"
+
+
+def _add_net_flow(
+    flows: dict[tuple[str, str, str, str], dict[str, Any]],
+    *,
+    source_id: str,
+    source_label: str,
+    source_kind: str,
+    target_id: str,
+    target_label: str,
+    target_kind: str,
+    kind: str,
+    asset: str,
+    value_eur: Decimal,
+    events: int,
+    sample_timestamp: str,
+) -> None:
+    value = abs(_safe_decimal(value_eur))
+    if value <= 0 or source_id == target_id:
+        return
+    key = (source_id, target_id, kind, asset)
+    bucket = flows.setdefault(
+        key,
+        {
+            "source": source_id,
+            "source_label": source_label,
+            "source_kind": source_kind,
+            "target": target_id,
+            "target_label": target_label,
+            "target_kind": target_kind,
+            "kind": kind,
+            "asset": asset,
+            "value_eur": "0",
+            "events": 0,
+            "sample_timestamp_utc": sample_timestamp,
+        },
+    )
+    bucket["value_eur"] = _decimal_to_plain(_safe_decimal(bucket["value_eur"]) + value)
+    bucket["events"] = int(bucket["events"]) + int(events)
+    if sample_timestamp and not bucket.get("sample_timestamp_utc"):
+        bucket["sample_timestamp_utc"] = sample_timestamp
+
+
+def _net_flow_nodes(links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    nodes: dict[str, dict[str, Any]] = {}
+    column_by_kind = {
+        "external": 0,
+        "income": 0,
+        "warning": 0,
+        "platform": 1,
+        "asset": 2,
+        "sink": 2,
+    }
+    for link in links:
+        for prefix in ("source", "target"):
+            node_id = str(link[prefix])
+            kind = str(link.get(f"{prefix}_kind") or "platform")
+            nodes.setdefault(
+                node_id,
+                {
+                    "id": node_id,
+                    "label": str(link.get(f"{prefix}_label") or node_id),
+                    "kind": kind,
+                    "column": column_by_kind.get(kind, 1),
+                },
+            )
+    return sorted(nodes.values(), key=lambda item: (int(item["column"]), str(item["label"])))
+
+
 def _decorate_wallet_groups_with_sources(groups: list[dict[str, Any]], by_source: dict[str, int]) -> list[dict[str, Any]]:
     available_sources = set(by_source.keys())
     decorated: list[dict[str, Any]] = []
