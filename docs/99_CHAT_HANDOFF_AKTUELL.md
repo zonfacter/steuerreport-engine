@@ -89,6 +89,23 @@ Stand: 2026-05-09
     details.csv` liefert Fill-Details, aber keine Opening-/Bot-Kapitalbuchung.
   - Kein automatischer Fix: weiter nur mit Pionex Opening Balance,
     Bot/Grid-/Strategy-Statement oder expliziter Review-Entscheidung.
+- USDT-Kreditkartenkauf-Hinweis geprueft:
+  `docs/239_USDT_2022_CREDIT_CARD_PURCHASE_EVIDENCE_AUDIT_2026-05-12.md`
+  - Skript: `scripts/usdt_2022_credit_card_purchase_evidence_audit_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/usdt_2022_credit_card_purchase_evidence_audit_2026-05-12.json`
+  - Nutzerkontext: USDT wurde damals wahrscheinlich per Kreditkarte gekauft.
+  - Ergebnis: Suchhinweis plausibel, aber lokal kein belastbarer
+    `2021-12`-/`2022-01`-Primaerbeleg importiert.
+  - Readonly-DB enthaelt `fiat_crypto_purchase` nur fuer `2021-02` bis
+    `2021-04`; fuer `2021-12`/`2022-01` kein Treffer.
+  - Lokale Binance-`Fiat-Buy-History`-, `Fiat-Deposit-History`- und
+    `Fiat-Withdraw-History`-XLSX sind vorhanden, enthalten aber keine
+    Datenzeilen.
+  - Kein automatischer Cost-Basis-Fix aus Erinnerung allein. Benoetigt wird
+    Binance `Buy Crypto` / `Fiat Order History` / Kartenkauf-Historie oder
+    Kreditkarten-/Bankbeleg fuer `2021-12` bis `2022-01` mit Zeit,
+    EUR-Betrag, USDT-Menge und Gebuehren.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
