@@ -128,6 +128,23 @@ Stand: 2026-05-09
     urspruengliche USDT-Anschaffung. Der Pionex-MXC-BUY um
     `2022-01-19T12:45:42+00:00` liegt vor dem Binance-Transfer; fuer ihn
     bleibt Pionex-Start-/Botbestand oder frueherer Beleg erforderlich.
+- Pionex-interne Bilanz bis zum USDT-Bruch rekonstruiert:
+  `docs/241_PIONEX_INTERNAL_BALANCE_AUDIT_2026-05-12.md`
+  - Skript: `scripts/pionex_internal_balance_audit_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/pionex_internal_balance_audit_2026-05-12.json`
+  - Quelle: kanonische lokale Dateien `usertransfer/pionex/deposit-withdraw.csv`
+    und `usertransfer/pionex/trading.csv`, Cutoff
+    `2022-01-19T12:56:19+00:00`.
+  - Ergebnis: Nur `USDT` wird negativ; `EGLD`, `HNT`, `MXC` und `SHIB`
+    bleiben aus den sichtbaren Pionex-Trades heraus nicht negativ.
+  - Sichtbare HNT_USDT-Trades bis Cutoff: `18.888 HNT` gekauft,
+    `18.876 HNT` verkauft, Netto-Quote vor Fees nur `+4.940925 USDT`.
+  - Schlechtester USDT-Stand: `-1643.2312211162 USDT` beim
+    `MXC_USDT`-BUY `s_11` am `2022-01-19T12:56:19+00:00`.
+  - Einordnung: Die Luecke ist kein sichtbarer Verkauf/Swap eines anderen
+    vorhandenen Pionex-Assets, sondern ein fehlender USDT-Opening-/Bot-/
+    Strategy-Startbestand oder eine nicht exportierte interne Pionex-Buchung.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
