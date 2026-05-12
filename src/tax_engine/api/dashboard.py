@@ -1922,20 +1922,22 @@ def _estimate_event_values(
             fx_lookup=fx_lookup,
         )
 
-    eur = eur_direct
-    usd = usd_direct
-    if eur <= 0 and price_eur > 0 and qty_abs > 0:
-        eur = price_eur * qty_abs
-    if usd <= 0 and price_usd > 0 and qty_abs > 0:
-        usd = price_usd * qty_abs
     asset_symbol = _asset_display_symbol(asset)
     quote_symbol = _asset_display_symbol(quote_asset) if quote_asset else quote_asset
+    eur = eur_direct
+    usd = usd_direct
     if eur <= 0 and asset_symbol == "EUR":
         eur = qty_abs
-    if eur <= 0 and quote_symbol == "EUR" and price > 0 and qty_abs > 0:
-        eur = price * qty_abs
     if usd <= 0 and _is_stable_asset_symbol(asset_symbol):
         usd = qty_abs
+    if eur <= 0 and _is_stable_asset_symbol(asset_symbol) and fx_rate > 0:
+        eur = qty_abs * fx_rate
+    if eur <= 0 and not _is_stable_asset_symbol(asset_symbol) and price_eur > 0 and qty_abs > 0:
+        eur = price_eur * qty_abs
+    if usd <= 0 and not _is_stable_asset_symbol(asset_symbol) and price_usd > 0 and qty_abs > 0:
+        usd = price_usd * qty_abs
+    if eur <= 0 and quote_symbol == "EUR" and price > 0 and qty_abs > 0:
+        eur = price * qty_abs
     if usd <= 0 and _is_stable_asset_symbol(quote_symbol) and price > 0 and qty_abs > 0:
         usd = price * qty_abs
     if usd <= 0 and eur <= 0:

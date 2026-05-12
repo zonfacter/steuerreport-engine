@@ -2409,7 +2409,6 @@ async function loadDashboard() {
   await Promise.all([
     loadDashboardYearlyActivity(),
     loadDashboardPortfolioHistory(),
-    loadNetEurFlows(true),
     loadDashboardNegativeBalances(),
     loadPlatformLedgerStatus(true),
     loadAiReadonlyQueueStatus(true),
@@ -2455,6 +2454,18 @@ async function loadDashboardPortfolioHistory() {
 
 async function loadNetEurFlows(silent = false) {
   const year = dashboardYearFilter();
+  if (!year) {
+    state.netEurFlows = null;
+    renderNetEurFlows({
+      summary: {},
+      nodes: [],
+      links: [],
+      min_value_eur: String(el("netFlowMinValue")?.value || "25"),
+      requires_year: true,
+    });
+    if (!silent) showToast("Bitte zuerst ein Jahr für die Geldfluss-Ansicht wählen.", "warn");
+    return;
+  }
   const minValue = String(el("netFlowMinValue")?.value || "25").trim() || "25";
   const query = new URLSearchParams({
     min_value_eur: minValue,
@@ -2489,8 +2500,12 @@ function renderNetEurFlows(data) {
   }
   const status = el("netFlowStatus");
   if (status) {
-    const year = data?.year ? `Jahr ${data.year}` : "Alle Jahre";
-    status.textContent = `${year}, Mindestfluss ${formatCurrency(data?.min_value_eur || 0, "EUR")}. Basis: saldierte EUR-Flüsse, nicht Handelsvolumen.`;
+    if (data?.requires_year) {
+      status.textContent = "Bitte oben im Dashboard einen Zeitraum / ein Jahr wählen.";
+    } else {
+      const year = data?.year ? `Jahr ${data.year}` : "Alle Jahre";
+      status.textContent = `${year}, Mindestfluss ${formatCurrency(data?.min_value_eur || 0, "EUR")}. Basis: saldierte EUR-Flüsse, nicht Handelsvolumen.`;
+    }
   }
   renderNetFlowSankey(data?.nodes || [], data?.links || []);
   renderNetFlowTable(data?.links || []);
@@ -2639,7 +2654,6 @@ async function applyDashboardYearFilter({ toast = false } = {}) {
   await Promise.all([
     loadDashboardYearlyActivity(),
     loadDashboardPortfolioHistory(),
-    loadNetEurFlows(true),
     loadDashboardNegativeBalances(),
     loadPlatformLedgerStatus(true),
     loadAiReadonlyQueueStatus(true),

@@ -25,6 +25,15 @@ Stand: 2026-05-09
   - Validiert mit `py_compile`, `node --check`, Unit-Test
     `tests/unit/api/test_dashboard_net_eur_flows.py` und Live-Probe fuer
     `2022`.
+  - Nach Nutzerhinweis auf unrealistische Millionenwerte wurde die
+    Stablecoin-Bewertung korrigiert: Quote-Legs wie `USDT` aus Paaren
+    `BTCUSDT` duerfen nicht mit dem BTC-Preis multipliziert werden. Diese
+    Korrektur betrifft auch Dashboard-/Portfolio-Sichten, die denselben
+    Bewertungshelfer nutzen. Die Geldfluss-API wird nicht mehr beim initialen
+    Dashboard-Load fuer alle Jahre vorgeladen, sondern beim Oeffnen der
+    `Geldflüsse`-Seite bzw. manuellen Aktualisieren. In der UI ist fuer diese
+    Ansicht ein konkretes Jahr erforderlich, weil Allzeit-Sankeys zu langsam
+    und fachlich schwer interpretierbar sind.
 
 ## Neuester Stand 2026-05-11 HNT Self-Wallet-Transfers gematcht
 - Lokaler-KI-Folgeauftrag:

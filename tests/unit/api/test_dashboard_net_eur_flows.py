@@ -17,6 +17,8 @@ def _event(event_id: str, source: str, timestamp: str, event_type: str, asset: s
             "side": side,
             "quantity": value,
             "value_eur": value,
+            "price": "50000",
+            "price_eur": "45000",
         },
     }
 
