@@ -376,7 +376,7 @@ def dashboard_role_override(payload: DashboardRoleOverrideRequest) -> StandardRe
 @router.get("/api/v1/dashboard/overview", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_overview() -> StandardResponse:
     trace_id = str(uuid4())
-    events = _list_effective_raw_events()
+    events = _list_processing_effective_raw_events()
 
     by_source: dict[str, int] = {}
     by_event_type: dict[str, int] = {}
@@ -601,7 +601,7 @@ def dashboard_overview() -> StandardResponse:
 @router.get("/api/v1/dashboard/shell", response_model=StandardResponse, tags=["dashboard"])
 def dashboard_shell() -> StandardResponse:
     trace_id = str(uuid4())
-    events = _list_effective_raw_events()
+    events = _list_processing_effective_raw_events()
     by_source: dict[str, int] = {}
     by_event_type: dict[str, int] = {}
     by_day: dict[str, int] = {}
@@ -736,7 +736,7 @@ def dashboard_portfolio_history(
     max_points: int = 240,
 ) -> StandardResponse:
     trace_id = str(uuid4())
-    events = _list_effective_raw_events()
+    events = _list_processing_effective_raw_events()
     runtime_fx = _runtime_usd_to_eur_rate()
     ignored_mints = set(_load_ignored_tokens().keys())
     safe_max_points = min(max(int(max_points), 20), 2000)
@@ -1518,7 +1518,7 @@ def dashboard_portfolio_set_history(
         )
 
     source_filters = _normalize_source_filters([str(v) for v in group.get("source_filters", [])])
-    all_events = _list_effective_raw_events()
+    all_events = _list_processing_effective_raw_events()
     events: list[dict[str, Any]] = []
     if source_filters:
         wanted = set(source_filters)
@@ -2339,6 +2339,91 @@ def _cached_asset_usd_price_on_or_before(
     return Decimal("0")
 
 
+def _cached_asset_usd_price_recent_on_or_before(
+    asset: str,
+    rate_date: str,
+    *,
+    max_age_days: int,
+    asset_usd_price_cache: dict[tuple[str, str, str], Decimal] | None = None,
+    fx_lookup: _FxLookup | None = None,
+) -> Decimal:
+    if not asset or len(rate_date) < 10:
+        return Decimal("0")
+    normalized = asset.upper()
+    cache_key = (f"recent_on_or_before_{max_age_days}", normalized, rate_date[:10])
+    if asset_usd_price_cache is not None and cache_key in asset_usd_price_cache:
+        return asset_usd_price_cache[cache_key]
+    candidates = [normalized]
+    meta = _resolve_token_display(normalized)
+    symbol = str(meta.get("symbol") or "").upper().strip()
+    if _is_stable_asset_symbol(normalized) or _is_stable_asset_symbol(symbol):
+        if asset_usd_price_cache is not None:
+            asset_usd_price_cache[cache_key] = Decimal("1")
+        return Decimal("1")
+    if symbol and symbol not in candidates:
+        candidates.append(symbol)
+
+    target_date = rate_date[:10]
+    max_age = max(int(max_age_days), 0)
+    for candidate in candidates:
+        lookup_rate, _lookup_date = _lookup_recent_fx_price(
+            fx_lookup,
+            rate_date=target_date,
+            base_ccy=candidate,
+            quote_ccy="USD",
+            max_age_days=max_age,
+        )
+        if lookup_rate > 0:
+            if asset_usd_price_cache is not None:
+                asset_usd_price_cache[cache_key] = lookup_rate
+            return lookup_rate
+        row = STORE.get_fx_rate_on_or_before(rate_date=target_date, base_ccy=candidate, quote_ccy="USD")
+        if row:
+            source_date = str(row.get("rate_date") or "")
+            rate = _safe_decimal(row.get("rate"))
+            if rate > 0 and _iso_date_distance_days(source_date, target_date) <= max_age:
+                if asset_usd_price_cache is not None:
+                    asset_usd_price_cache[cache_key] = rate
+                return rate
+    if asset_usd_price_cache is not None:
+        asset_usd_price_cache[cache_key] = Decimal("0")
+    return Decimal("0")
+
+
+def _lookup_recent_fx_price(
+    lookup: _FxLookup | None,
+    *,
+    rate_date: str,
+    base_ccy: str,
+    quote_ccy: str,
+    max_age_days: int,
+) -> tuple[Decimal, str]:
+    if lookup is None or len(rate_date) < 10:
+        return Decimal("0"), ""
+    rows = lookup.get((base_ccy.upper(), quote_ccy.upper()), [])
+    best_date = ""
+    best_rate = Decimal("0")
+    for row_date, row_rate in rows:
+        date_text = str(row_date or "")[:10]
+        if not date_text or date_text > rate_date:
+            continue
+        if best_date and date_text <= best_date:
+            continue
+        if _iso_date_distance_days(date_text, rate_date) <= max_age_days:
+            best_date = date_text
+            best_rate = _safe_decimal(row_rate)
+    return best_rate, best_date
+
+
+def _iso_date_distance_days(source_date: str, target_date: str) -> int:
+    try:
+        source = datetime.fromisoformat(str(source_date)[:10]).date()
+        target = datetime.fromisoformat(str(target_date)[:10]).date()
+    except ValueError:
+        return 10**9
+    return abs((target - source).days)
+
+
 def _build_portfolio_value_history(
     events: list[dict[str, Any]],
     ignored_mints: set[str],
@@ -2402,9 +2487,10 @@ def _build_portfolio_value_history(
         for balance_asset, balance_qty in running_balances.items():
             if balance_qty == 0:
                 continue
-            price = _cached_asset_usd_price_on_or_before(
+            price = _cached_asset_usd_price_recent_on_or_before(
                 balance_asset,
                 day,
+                max_age_days=45,
                 asset_usd_price_cache=asset_usd_price_cache,
                 fx_lookup=fx_lookup,
             )

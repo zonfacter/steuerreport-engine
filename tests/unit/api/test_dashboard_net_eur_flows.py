@@ -53,3 +53,48 @@ def test_net_eur_flow_sankey_nets_trade_asset_values(monkeypatch) -> None:
     assert links[("net_asset_reduce", "Asset USDT", "Pionex", "USDT")]["value_eur"] == "130"
     assert links[("net_asset_build", "Pionex", "Asset MXC", "MXC")]["value_eur"] == "80"
     assert links[("missing_opening_balance", "Unbelegter Startbestand", "Pionex", "USDT")]["value_eur"] == "150"
+
+
+def test_portfolio_history_does_not_reuse_stale_non_stable_prices(monkeypatch) -> None:
+    monkeypatch.setattr(dashboard, "_load_token_aliases", lambda: {})
+
+    events = [
+        _event("btc-in", "binance", "2026-01-10T00:00:00+00:00", "deposit", "BTC", "in", "1"),
+        _event("usdt-in", "binance", "2026-01-10T00:00:00+00:00", "deposit", "USDT", "in", "25"),
+    ]
+    points = dashboard._build_portfolio_value_history(
+        events=events,
+        ignored_mints=set(),
+        runtime_fx=Decimal("1"),
+        fx_rate_cache={},
+        asset_usd_price_cache={},
+        fx_lookup={
+            ("BTC", "USD"): [("2021-12-31", Decimal("50000"))],
+            ("USD", "EUR"): [("2026-01-10", Decimal("1"))],
+        },
+        interval="day",
+        max_points=10,
+    )
+
+    assert points[-1]["value_usd"] == "25"
+    assert points[-1]["priced_assets"] == 1
+    assert points[-1]["unpriced_assets"] == 1
+
+
+def test_portfolio_history_endpoint_uses_processing_effective_events(monkeypatch) -> None:
+    events = [_event("usdt-in", "binance", "2026-01-10T00:00:00+00:00", "deposit", "USDT", "in", "25")]
+
+    def fail_if_legacy_path_is_used() -> list[dict[str, Any]]:
+        raise AssertionError("portfolio history must use processing-effective events")
+
+    monkeypatch.setattr(dashboard, "_list_processing_effective_raw_events", lambda: events)
+    monkeypatch.setattr(dashboard, "_list_effective_raw_events", fail_if_legacy_path_is_used)
+    monkeypatch.setattr(dashboard, "_runtime_usd_to_eur_rate", lambda: Decimal("1"))
+    monkeypatch.setattr(dashboard, "_load_ignored_tokens", lambda: {})
+    monkeypatch.setattr(dashboard, "_load_fx_lookup", lambda: {("USD", "EUR"): [("2026-01-10", Decimal("1"))]})
+    monkeypatch.setattr(dashboard, "_load_token_aliases", lambda: {})
+
+    response = dashboard.dashboard_portfolio_history(window_days=0, year=2026, max_points=20)
+
+    assert response.status == "success"
+    assert response.data["summary"]["end_value_usd"] == "25"

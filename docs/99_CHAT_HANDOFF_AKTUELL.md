@@ -34,6 +34,13 @@ Stand: 2026-05-09
     `Geldflüsse`-Seite bzw. manuellen Aktualisieren. In der UI ist fuer diese
     Ansicht ein konkretes Jahr erforderlich, weil Allzeit-Sankeys zu langsam
     und fachlich schwer interpretierbar sind.
+  - Zweiter Nutzerhinweis: Portfolio war weiterhin falsch. Ursache war ein
+    separater Portfolio-Balance-Pfad mit `_list_effective_raw_events()`, der
+    Referenzquellen wie Blockpit zusammen mit Primaerquellen in die
+    Bestandssimulation nahm. `dashboard_portfolio_history` und
+    `dashboard_portfolio_set_history` nutzen jetzt
+    `_list_processing_effective_raw_events()` und vermeiden zusaetzlich
+    unbegrenzt alte Nicht-Stablecoin-Preise im Portfolio-Verlauf.
 
 ## Neuester Stand 2026-05-11 HNT Self-Wallet-Transfers gematcht
 - Lokaler-KI-Folgeauftrag:

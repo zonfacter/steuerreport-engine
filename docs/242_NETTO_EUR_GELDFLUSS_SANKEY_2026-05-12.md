@@ -37,6 +37,25 @@ verlangt ein konkretes Jahr. Das vermeidet schwer interpretierbare Allzeit-
 Sankeys und verhindert lange All-Jahre-Berechnungen beim normalen Dashboard-
 Laden.
 
+## Portfolio-Folgefix
+
+Nach dem Stablecoin-Fix war die Portfolio-Berechnung weiterhin fachlich falsch,
+weil der Portfolio-Verlauf den alten effektiven Raw-Event-Pfad genutzt hat.
+Dadurch liefen Referenzquellen wie Blockpit zusammen mit Primaerquellen in die
+Balance-Simulation und konnten Bestände deutlich ueberhoehen, z.B. bei SOL.
+
+Der Portfolio-Verlauf und Portfolio-Set-Verlauf nutzen jetzt ebenfalls die
+processing-effektiven Events. Damit werden Integrationsfilter, Referenzquellen-
+Ausschluss und Duplicate-Drops konsistent mit Steuerlauf und Geldfluss-Ansicht
+angewendet.
+
+Live-Pruefung nach API-Neustart:
+
+- `2025`: Endwert von vorher ca. `75.914 USD` auf `5.390,50 USD`
+  korrigiert.
+- `2026`: Endwert von vorher ca. `66.218 USD` auf `6.310,52 USD`
+  korrigiert.
+
 ## Einordnung
 
 Die Ansicht ersetzt keine steuerliche Entscheidung und erzeugt keine
