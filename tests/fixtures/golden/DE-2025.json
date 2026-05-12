@@ -1,0 +1,11 @@
+{
+  "jurisdiction": "DE",
+  "tax_year": 2025,
+  "case_id": "golden-minimal-2025",
+  "input_hash": "placeholder",
+  "expected": {
+    "tax_lines_count": 0,
+    "derivative_lines_count": 0,
+    "summary": {}
+  }
+}

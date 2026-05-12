@@ -1,5 +1,8 @@
 # Projektplan: Cross-Chain-Steuerreport (Deutschland, ab Steuerjahr 2020)
 
+Verbindlicher Zusatzleitfaden für UX/Import/Processing: `17_UX_IMPORT_PROCESSING_MASTERPLAN.md`.
+Verbindlicher Fachleitfaden für BMF 2025: `19_BMF_2025_STEUERREGELN_UND_PFLICHTEN.md`.
+
 ## 1. Zielbild und Leitplanken
 - Rechtsraum: Deutschland (`DE`), Steuerjahre ab `2020`.
 - Lastziel: Verarbeitung von `30.000+` Transaktionen je Lauf.
@@ -7,6 +10,7 @@
 - Rechenpräzision: ausschließlich `Decimal`.
 - Report-Export: PDF-Splitting auf maximal `100 Seiten` je Datei.
 - Keine Hardcodings in Kernlogik: Regeln, Schwellen und Mappings konfigurationsgetrieben und versioniert.
+- §23-Freigrenze und §22-Freigrenze sind technisch getrennte Ruleset-Parameter.
 
 ## 2. Etappenplan mit Abnahmekriterien
 
@@ -86,10 +90,12 @@ Lieferobjekte:
 - Fallback-Reihenfolge und Caching.
 - Harte Behandlung fehlender Marktdaten (Flag statt Schätzung).
 - Berechnungspfad immer mit explizitem `ruleset_id` und `ruleset_version`.
+- Bewertungsmethode (`sekundengenau`, Tageskurs, Tagesendkurs) je Veranlagungszeitraum konsistent dokumentieren.
 
 Abnahme:
 - Jeder EUR-Wert ist rückverfolgbar.
 - Fehlende Daten erzeugen Review-Items.
+- Kursquelle, Kursdatum und FX-Quelle sind im Audit exportierbar.
 
 ### Etappe 7: Reporting + PDF-Export
 Lieferobjekte:

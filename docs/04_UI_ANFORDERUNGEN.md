@@ -52,6 +52,9 @@ Die Oberfläche dient primär der fachlichen Validierung, Nachvollziehbarkeit un
 - Kommentare auf Ebene von Event, Match, Issue, Run und Report.
 - Kommentarverlauf mit Zeitstempel und Autor.
 - Verknüpfung von Kommentar mit konkreter Aktion (z. B. Merge, Ignore, Zeitkorrektur).
+- Negativbestand-Pruefung ist ueber `GET /api/v1/review/negative-balances` maschinenlesbar:
+  - UI zeigt Stichtag, Asset, Saldo, geschätzten USD-Wert, Quellenaufschlüsselung und letzte verursachende Transaktion.
+  - Jede Zeile hat eine stabile `issue_id` und verweist auf API-Aktionen fuer Status, Kommentar, Ignore, Merge, Split und Tax-Override.
 
 ## 5. Import von Blockpit/Blockbit und Alternativen
 - Priorität 1: strukturierte Datenquellen (CSV/JSON/API).

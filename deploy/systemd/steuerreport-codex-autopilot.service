@@ -1,0 +1,15 @@
+[Unit]
+Description=Steuerreport Codex Autopilot Queue
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/workspace/steuerreport
+ExecStart=/usr/bin/python3 /workspace/steuerreport/scripts/codex_autopilot_queue.py run --max-hours 12 --max-tasks 0 --sleep-seconds 10
+Restart=on-failure
+RestartSec=60
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

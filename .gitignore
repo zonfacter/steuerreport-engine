@@ -27,6 +27,15 @@ venv/
 .env
 .env.*
 
+# Lokale Echtdaten / Arbeitsdaten
+usertransfer/
+var/
+*.csv
+*.xlsx
+*.db
+*.sqlite
+*.sqlite3
+
 # Build
 build/
 dist/

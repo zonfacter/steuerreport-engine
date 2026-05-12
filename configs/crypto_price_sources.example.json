@@ -1,0 +1,131 @@
+{
+  "provider": "coingecko",
+  "assets": [
+    {
+      "symbol": "BTC",
+      "coingecko_id": "bitcoin",
+      "yahoo_ticker": "BTC-USD",
+      "store_keys": ["BTC"],
+      "aliases": ["BTC"]
+    },
+    {
+      "symbol": "ETH",
+      "coingecko_id": "ethereum",
+      "yahoo_ticker": "ETH-USD",
+      "store_keys": ["ETH"],
+      "aliases": ["ETH"]
+    },
+    {
+      "symbol": "BNB",
+      "coingecko_id": "binancecoin",
+      "yahoo_ticker": "BNB-USD",
+      "store_keys": ["BNB"],
+      "aliases": ["BNB"]
+    },
+    {
+      "symbol": "DOGE",
+      "coingecko_id": "dogecoin",
+      "yahoo_ticker": "DOGE-USD",
+      "store_keys": ["DOGE"],
+      "aliases": ["DOGE"]
+    },
+    {
+      "symbol": "ADA",
+      "coingecko_id": "cardano",
+      "yahoo_ticker": "ADA-USD",
+      "store_keys": ["ADA"],
+      "aliases": ["ADA"]
+    },
+    {
+      "symbol": "XRP",
+      "coingecko_id": "ripple",
+      "yahoo_ticker": "XRP-USD",
+      "store_keys": ["XRP"],
+      "aliases": ["XRP"]
+    },
+    {
+      "symbol": "SHIB",
+      "coingecko_id": "shiba-inu",
+      "yahoo_ticker": "SHIB-USD",
+      "store_keys": ["SHIB"],
+      "aliases": ["SHIB"]
+    },
+    {
+      "symbol": "EGLD",
+      "coingecko_id": "elrond-erd-2",
+      "yahoo_ticker": "EGLD-USD",
+      "store_keys": ["EGLD"],
+      "aliases": ["EGLD"]
+    },
+    {
+      "symbol": "MXC",
+      "coingecko_id": "mxc",
+      "yahoo_ticker": "MXC-USD",
+      "store_keys": ["MXC"],
+      "aliases": ["MXC"]
+    },
+    {
+      "symbol": "SOL",
+      "coingecko_id": "solana",
+      "yahoo_ticker": "SOL-USD",
+      "store_keys": ["SOL", "So11111111111111111111111111111111111111112"],
+      "aliases": ["SOL", "So11111111111111111111111111111111111111112"]
+    },
+    {
+      "symbol": "HNT",
+      "coingecko_id": "helium",
+      "yahoo_ticker": "HNT-USD",
+      "store_keys": ["HNT", "HNTYVP6YFM1HG25TN9WGLQM12B8TQMCKNKRDU1OXWUX"],
+      "aliases": ["HNT", "HNTYVP6YFM1HG25TN9WGLQM12B8TQMCKNKRDU1OXWUX"]
+    },
+    {
+      "symbol": "IOT",
+      "coingecko_id": "helium-iot",
+      "coinmarketcap_id": "24686",
+      "store_keys": ["IOT", "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS"],
+      "aliases": ["IOT", "IOTEVVZLEYWOTN1QDWNPDDXPWSZN3ZFHEOT3MFL9FNS"]
+    },
+    {
+      "symbol": "MOBILE",
+      "coingecko_id": "helium-mobile",
+      "store_keys": ["MOBILE", "MB1EU7TZEC71KXDPSMSKOUCSSUUOGLV1DRYS1OP2JH6"],
+      "aliases": ["MOBILE", "MB1EU7TZEC71KXDPSMSKOUCSSUUOGLV1DRYS1OP2JH6"]
+    },
+    {
+      "symbol": "JUP",
+      "coingecko_id": "jupiter-exchange-solana",
+      "store_keys": ["JUP", "JUPYIWRYJFSKUPIHA7HKER8VUTAEFOSYBKEDZNSDVCN"],
+      "aliases": ["JUP", "JUPYIWRYJFSKUPIHA7HKER8VUTAEFOSYBKEDZNSDVCN"]
+    },
+    {
+      "symbol": "POPCAT",
+      "coingecko_id": "popcat",
+      "store_keys": ["POPCAT", "7GCIHGDB8FE6KNJN2MYTKZZCRJQY3T9GHDC8UHYMW2HR"],
+      "aliases": ["POPCAT", "7GCIHGDB8FE6KNJN2MYTKZZCRJQY3T9GHDC8UHYMW2HR"]
+    },
+    {
+      "symbol": "ZEUS",
+      "coingecko_id": "zeus-network",
+      "store_keys": ["ZEUS", "ZEUS1AR7AX8DFFJF5QJWJ2FTDDDNTROMNGO8YOQM3GQ"],
+      "aliases": ["ZEUS", "ZEUS1AR7AX8DFFJF5QJWJ2FTDDDNTROMNGO8YOQM3GQ"]
+    },
+    {
+      "symbol": "JUPSOL",
+      "coingecko_id": "jupiter-staked-sol",
+      "store_keys": ["JUPSOL", "JUPSOLAHXQIZZTSFEWMTRRGPNYFM8F6SZDOSWBJX93V"],
+      "aliases": ["JUPSOL", "JUPSOLAHXQIZZTSFEWMTRRGPNYFM8F6SZDOSWBJX93V"]
+    },
+    {
+      "symbol": "SHARK",
+      "coingecko_id": "sharky",
+      "store_keys": ["SHARK", "SHARKSYJJQANYXVFRPNBN9PJGKHWDHATNMYICWPNR1S"],
+      "aliases": ["SHARK", "SHARKSYJJQANYXVFRPNBN9PJGKHWDHATNMYICWPNR1S"]
+    },
+    {
+      "symbol": "UPT",
+      "coingecko_id": "uprock",
+      "store_keys": ["UPT", "UPTX1D24ABWURGWXVNFMX4GNRAJ3QGFZL3QQBGXTWQG"],
+      "aliases": ["UPT", "UPTX1D24ABWURGWXVNFMX4GNRAJ3QGFZL3QQBGXTWQG"]
+    }
+  ]
+}

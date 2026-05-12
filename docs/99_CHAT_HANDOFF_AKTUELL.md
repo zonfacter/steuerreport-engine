@@ -1,0 +1,2528 @@
+# Chat-Handoff aktuell
+
+Stand: 2026-05-09
+
+## Arbeitsmodus
+- Projekt: `/workspace/steuerreport`
+- Live-Dashboard: Port `8000`
+- Port `8001` nicht weiter verwenden.
+- RAW-Daten nicht loeschen. Korrekturen nur ueber Overrides/Review-Actions.
+- Deutsche Dokumentation, Code Englisch.
+- Steuerlogik ab `2020`, PDF-Export maximal `100` Seiten je Datei.
+
+## Neuester Stand 2026-05-12 Netto-EUR-Geldfluesse
+- Dashboard-Seite `Geldflüsse` eingerichtet:
+  `docs/242_NETTO_EUR_GELDFLUSS_SANKEY_2026-05-12.md`
+  - API: `GET /api/v1/dashboard/net-eur-flows`
+  - UI: neuer Dashboard-Tab und Direktbereich `Geldflüsse`
+  - Zweck: Sankey-aehnliche Netto-EUR-Fluesse, nicht Handelsvolumen.
+  - Enthalten: gematchte Plattform-Transfers, externe Zu-/Abfluesse,
+    saldierter Asset-Auf-/Abbau je Plattform/Asset und technische Warnkante
+    `Unbelegter Startbestand` bei negativen Stablecoin-Verlaeufen.
+  - Wichtig: Die Ansicht erzeugt keine Anschaffungskosten und trifft keine
+    steuerliche Entscheidung. Bei Jahresfilterung kann ein unbelegter
+    Startbestand auch einen aus Vorjahren mitgebrachten Anfangsbestand zeigen.
+  - Validiert mit `py_compile`, `node --check`, Unit-Test
+    `tests/unit/api/test_dashboard_net_eur_flows.py` und Live-Probe fuer
+    `2022`.
+  - Nach Nutzerhinweis auf unrealistische Millionenwerte wurde die
+    Stablecoin-Bewertung korrigiert: Quote-Legs wie `USDT` aus Paaren
+    `BTCUSDT` duerfen nicht mit dem BTC-Preis multipliziert werden. Diese
+    Korrektur betrifft auch Dashboard-/Portfolio-Sichten, die denselben
+    Bewertungshelfer nutzen. Die Geldfluss-API wird nicht mehr beim initialen
+    Dashboard-Load fuer alle Jahre vorgeladen, sondern beim Oeffnen der
+    `Geldflüsse`-Seite bzw. manuellen Aktualisieren. In der UI ist fuer diese
+    Ansicht ein konkretes Jahr erforderlich, weil Allzeit-Sankeys zu langsam
+    und fachlich schwer interpretierbar sind.
+  - Zweiter Nutzerhinweis: Portfolio war weiterhin falsch. Ursache war ein
+    separater Portfolio-Balance-Pfad mit `_list_effective_raw_events()`, der
+    Referenzquellen wie Blockpit zusammen mit Primaerquellen in die
+    Bestandssimulation nahm. `dashboard_portfolio_history` und
+    `dashboard_portfolio_set_history` nutzen jetzt
+    `_list_processing_effective_raw_events()` und vermeiden zusaetzlich
+    unbegrenzt alte Nicht-Stablecoin-Preise im Portfolio-Verlauf.
+
+## Neuester Stand 2026-05-11 HNT Self-Wallet-Transfers gematcht
+- Lokaler-KI-Folgeauftrag:
+  `docs/233_LOCAL_AI_REMAINING_HNT_USDT_TASKS_2026-05-11.md`
+  - Queue-Task `remaining_2022_usdt_opening_bot_history_20260511`
+  - Queue-Task `remaining_2021_hnt_legacy_evidence_20260511`
+  - Beide Tasks sind read-only angelegt und duerfen keine Cost Basis,
+    FX-Kurse oder steuerliche Behandlung schaetzen.
+- Validierung der lokalen KI-Ergebnisse:
+  `docs/234_LOCAL_AI_RESULT_VALIDATION_HNT_PIONEX_2026-05-11.md`
+  - Pionex Lines `442` und `514` sind echte `MXC_USDT`-BUY-Zeilen; die
+    offene Frage bleibt die USDT-Herkunft/Cost-Basis vor dem MXC-Kauf.
+  - Die lokale KI-Aussage zu `138bCXPV...` wurde korrigiert: Im 2021-HNT-
+    Match ist das die Binance-Payee-/Deposit-Adresse, nicht die
+    Ursprungs-Wallet.
+  - Offizielle Helium-L1-Archivquelle fuer spaetere Pruefung:
+    `https://docs.helium.com/network-data/legacy-blockchain-data/`.
+- Fairspot-Cache wegen fehlender Helium-L1-Torrent-Peers:
+  `docs/235_FAIRSPOT_DIRECT_WALLET_CACHE_2026-05-12.md`
+  - Skript: `scripts/fairspot_direct_wallet_cache_20260512.py`
+  - Rohdaten-Cache ausserhalb Git:
+    `/root/.local/share/steuerreport/fairspot_wallet_exports`
+  - Gesichert: beide eigenen Wallets plus `10` direkte Gegenwallets.
+  - Downloadfehler: `0`.
+  - Keine CSV-Dateien committen; nur Manifest/Befunde auswerten.
+- Fairspot-Cache-Auswertung fuer die verbleibenden 2021-HNT-Restzeilen:
+  `docs/236_FAIRSPOT_HNT_2021_REMAINING_CACHE_AUDIT_2026-05-12.md`
+  - Skript: `scripts/fairspot_hnt_2021_remaining_cache_audit_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/fairspot_hnt_2021_remaining_cache_audit_2026-05-12.json`
+  - Fairspot wurde inklusive `rewards_v1`, `payment_v1`, `payment_v2` und
+    Fees ausgewertet.
+  - Vor dem Binance-HNT-Verkauf am `2021-08-17` zeigt Fairspot fuer die
+    Haupt-Wallet nur `20.0447256801337252586127 HNT` Restbestand; es gibt
+    keinen zusaetzlichen Binance-Zufluss zwischen den bekannten Deposits am
+    `2021-08-10` und dem Verkauf am `2021-08-17`.
+  - Vor dem `2021-08-20`-Abgang an Binance (`dd5353...`) ist Fairspot-seitig
+    genug Hauptwallet-Bestand sichtbar, aber ein Teil stammt aus Gegenwallet-
+    Inbounds und darf nicht automatisch als bewertete Cost-Basis verwendet
+    werden.
+  - `14o7...` ist ein belegnaher Roundtrip (`100 HNT` hin, `99.75 HNT`
+    zurueck). `14Ye...` wirkt wegen tausender Zahlungsgegenparteien wie eine
+    Service-/Pool-Wallet und ist kein Eigenwallet-Nachweis.
+  - Kein automatischer Preis-, FX- oder Cost-Basis-Fix wurde abgeleitet.
+    Naechster sicherer Schritt: separater Review-/Importpfad nur fuer
+    belegbare eigene Roundtrips oder nachgelieferte Primaerbelege.
+- HNT-Roundtrip `14o7...` als kurzer Staking-Plattform-Rueckfluss gematcht:
+  `docs/237_HNT_LEGACY_ROUNDTRIP_WALLET_MATCH_2026-05-12.md`
+  - Skript: `scripts/hnt_legacy_roundtrip_wallet_match_20260512.py`
+  - Methode: `fairspot_roundtrip_14o7_self_custody`
+  - Match: `bee0a64c-e73c-4084-9cd7-8fd48e46e8f2`
+  - Beleg: `100 HNT` gingen am `2021-06-23` von der Haupt-Wallet an
+    `14o7...`; `99.75 HNT` kamen am `2021-07-08` zurueck.
+  - Nicht als Rueckfluss behandelt: `0.25 HNT` Transferdifferenz plus
+    `0.03130590339893 HNT` Netzwerkfee im Out-Event.
+  - Nutzerkontext: Nutzer erinnert eine kurz genutzte Staking-Plattform fuer
+    ungefaehr `100 HNT`; dies passt zur Fairspot-Spur.
+  - Neuer 2021-Job nach Match:
+    `e26811e1-becc-477f-a83c-fdf60cea327b`, `tax_lines=5454`,
+    `derivative_lines=43`.
+  - Ergebnis: 2021-HNT-Zero-Cost-Zeilen >= `50 EUR` sind von `3`
+    (`40.9633640723911826493873 HNT`, `805.2140123327466767853450105 EUR`)
+    auf `0` gefallen.
+- USDT-Restblock nach HNT-Schliessung aktualisiert:
+  `docs/238_USDT_2022_REMAINING_AFTER_HNT_CLOSURE_2026-05-12.md`
+  - Skript: `scripts/usdt_2022_remaining_after_hnt_closure_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/usdt_2022_remaining_after_hnt_closure_2026-05-12.json`
+  - Verbleibender >=50-EUR-Restblock ist nur noch `2022/USDT`:
+    `3` Zeilen, `1569.8280684762 USDT`, `1383.876662295203014 EUR`.
+  - Line `412`: Binance-USDT-Verbrauch am `2022-01-05T15:36:46+00:00`;
+    am selben Tag sind Binance-HNT/USDT-Erloese sichtbar, die spaeteren
+    USDT-Spends uebersteigen den belegten Tagesbestand aber weiter.
+  - Lines `442` und `514`: Pionex-`MXC_USDT`-BUY-Kontext; erklaert die
+    USDT-Verwendung, aber nicht die vorherige USDT-Herkunft.
+  - Lokale Pionex-Nebenlisten `others`, `staking`, `structured-products` und
+    `position_futures` sind fuer den fruehen USDT-Block leer; `raw-trading-
+    details.csv` liefert Fill-Details, aber keine Opening-/Bot-Kapitalbuchung.
+  - Kein automatischer Fix: weiter nur mit Pionex Opening Balance,
+    Bot/Grid-/Strategy-Statement oder expliziter Review-Entscheidung.
+- USDT-Kreditkartenkauf-Hinweis geprueft:
+  `docs/239_USDT_2022_CREDIT_CARD_PURCHASE_EVIDENCE_AUDIT_2026-05-12.md`
+  - Skript: `scripts/usdt_2022_credit_card_purchase_evidence_audit_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/usdt_2022_credit_card_purchase_evidence_audit_2026-05-12.json`
+  - Nutzerkontext: USDT wurde damals wahrscheinlich per Kreditkarte gekauft.
+  - Ergebnis: Suchhinweis plausibel, aber lokal kein belastbarer
+    `2021-12`-/`2022-01`-Primaerbeleg importiert.
+  - Readonly-DB enthaelt `fiat_crypto_purchase` nur fuer `2021-02` bis
+    `2021-04`; fuer `2021-12`/`2022-01` kein Treffer.
+  - Lokale Binance-`Fiat-Buy-History`-, `Fiat-Deposit-History`- und
+    `Fiat-Withdraw-History`-XLSX sind vorhanden, enthalten aber keine
+    Datenzeilen.
+  - Kein automatischer Cost-Basis-Fix aus Erinnerung allein. Benoetigt wird
+    Binance `Buy Crypto` / `Fiat Order History` / Kartenkauf-Historie oder
+    Kreditkarten-/Bankbeleg fuer `2021-12` bis `2022-01` mit Zeit,
+    EUR-Betrag, USDT-Menge und Gebuehren.
+- Binance->Pionex-USDT-Transfers per TXID gematcht:
+  `docs/240_USDT_BINANCE_PIONEX_TRANSFER_MATCH_2026-05-12.md`
+  - Skript: `scripts/usdt_binance_pionex_transfer_match_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/usdt_binance_pionex_transfer_match_2026-05-12.json`
+  - Persistierte Matches:
+    `ec1bca59-973d-46a3-9b1a-01fa78311712` fuer `200 USDT` am
+    `2021-12-25`, TX `b742f811...c724182`;
+    `954e170d-a35d-4e60-afba-f637f0f0007a` fuer `1245.38419 USDT` am
+    `2022-01-19`, TX `b930ad78...17aa`.
+  - Onchain-Beleg fuer `b930ad78...17aa`: TRC20-USDT von Binance-Hot-Wallet
+    `TAzsQ9...` an Pionex-Adresse `TMHP82...`, Betrag `1245.38419 USDT`,
+    Blockzeit `2022-01-19T12:51:36+00:00`.
+  - 2022 neu gerechnet: Job `155397bd-fe29-4827-9b74-f83389a2d836`,
+    `tax_lines=11793`, `derivative_lines=630`.
+  - Ergebnis nach Readonly-Rebuild: offener USDT-Rest bleibt `3` Zeilen,
+    `1569.8280684762 USDT`, `1383.876662295203014 EUR`; Zeilen nun
+    `390`, `420`, `504`.
+  - Einordnung: TXID belegt Transferkontinuitaet, aber nicht die
+    urspruengliche USDT-Anschaffung. Der Pionex-MXC-BUY um
+    `2022-01-19T12:45:42+00:00` liegt vor dem Binance-Transfer; fuer ihn
+    bleibt Pionex-Start-/Botbestand oder frueherer Beleg erforderlich.
+- Pionex-interne Bilanz bis zum USDT-Bruch rekonstruiert:
+  `docs/241_PIONEX_INTERNAL_BALANCE_AUDIT_2026-05-12.md`
+  - Skript: `scripts/pionex_internal_balance_audit_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/pionex_internal_balance_audit_2026-05-12.json`
+  - Quelle: kanonische lokale Dateien `usertransfer/pionex/deposit-withdraw.csv`
+    und `usertransfer/pionex/trading.csv`, Cutoff
+    `2022-01-19T12:56:19+00:00`.
+  - Ergebnis: Nur `USDT` wird negativ; `EGLD`, `HNT`, `MXC` und `SHIB`
+    bleiben aus den sichtbaren Pionex-Trades heraus nicht negativ.
+  - Sichtbare HNT_USDT-Trades bis Cutoff: `18.888 HNT` gekauft,
+    `18.876 HNT` verkauft, Netto-Quote vor Fees nur `+4.940925 USDT`.
+  - Schlechtester USDT-Stand: `-1643.2312211162 USDT` beim
+    `MXC_USDT`-BUY `s_11` am `2022-01-19T12:56:19+00:00`.
+  - Einordnung: Die Luecke ist kein sichtbarer Verkauf/Swap eines anderen
+    vorhandenen Pionex-Assets, sondern ein fehlender USDT-Opening-/Bot-/
+    Strategy-Startbestand oder eine nicht exportierte interne Pionex-Buchung.
+- Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
+- Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
+- Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
+- Lokaler JSON-Output, nicht committen:
+  `var/hnt_legacy_self_wallet_transfer_match_2026-05-11.json`
+- Fix:
+  - `9` direkte HNT-Legacy-Transfers zwischen eigener Haupt-Wallet
+    `133rkwoKC...` und eigener Staking-Wallet `14eKedP4...` wurden ueber
+    identische Helium-Transaktions-IDs als Transfer-Matches gespeichert.
+  - Match-Methode: `txid_verified_hnt_legacy_self_wallet`.
+  - Die Fairspot-Counterparty `14aDLshY...` wurde bewusst nicht automatisch
+    gematcht, weil diese Kette eine mehrteilige Staking-/Custody-/Pool-
+    Rueckgabe ist und fachlich separat bewertet werden muss.
+  - Die Matches erzeugen keine neuen Anschaffungskosten; sie erhalten nur
+    belegte Lot-Continuity zwischen eigenen Wallets.
+- Neu gerechnete Jobs:
+  - 2021 `155b1abc-cd34-44d1-9497-f072afd8cf1c`, `tax_lines=5434`,
+    `derivative_lines=43`
+  - 2022 `a4c8d845-bef8-41e9-b520-b6eff6a7b781`, `tax_lines=11765`,
+    `derivative_lines=630`
+- Ergebnis nach Neuberechnung:
+  - HNT-/USDT-Restzeilen insgesamt nach Folgefix: `6`
+  - Erloes dieser Restzeilen nach Folgefix:
+    `2189.09067462794969078534501 EUR`
+  - 2021 HNT: `3` Zero-Cost-Zeilen, `40.9633640723911826493873 HNT`,
+    `805.2140123327466767853450105 EUR` Erloes.
+  - 2022 HNT: `0` Zero-Cost-Zeilen ueber `50 EUR` Erloes.
+  - 2022 USDT: `3` Zero-Cost-Zeilen,
+    `1383.876662295203014 EUR` Erloes.
+  - Die vormals grosse 2022-HNT-Luecke aus dem `2022-07-12`-Ruecktransfer ist
+    damit weitgehend technisch als eigene Wallet-Kontinuitaet abgebildet.
+- Binance-Transaction-History-Folgefix:
+  - Neue Funktion `attach_binance_transaction_history_stable_counterflow_value_anchors()`.
+  - Bewertet nur `binance-txhist-*`-Gruppen mit gleichem Source-File und
+    Timestamp, wenn Stable-Outflows genau einem Nicht-Stable-Inflow-Asset
+    gegenueberstehen.
+  - 2022 Job `d1c40860-d286-4ff7-a7e7-1a173f99ad4e`:
+    `2` Gruppen, `9` Bewertungsanker.
+  - Dadurch verschwanden die verbliebenen 2022-HNT-Zero-Cost-Zeilen aus
+    Binance-HNT-Kaeufen mit USDT-Gegenfluss.
+- Audit nach Readonly-Rebuild:
+  - `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`:
+    `priority_1_total=0`, `high_gain_ratio=6`.
+  - `docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md`:
+    verbleibend sind HNT-Teilreste ohne Primarherkunft/Cost-Basis und USDT-
+    Pionex-/Binance-Opening- bzw. Bot-Historie.
+- Validierung:
+  - AI-Readonly-DB neu gebaut:
+    `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 scripts/verify_integrity.py --all-years`
+    gruen fuer die geprueften Exportjahre `2024`, `2025`, `2026`.
+
+## Stand 2026-05-11 HNT-/USDT-Restbestandsluecken nach Fairspot und Excel eingeordnet
+- Report: `docs/229_HNT_USDT_REMAINING_INVENTORY_GAP_AUDIT_2026-05-11.md`
+- Fairspot-Trace: `docs/230_FAIRSPOT_HNT_LEGACY_TRANSFER_TRACE_2026-05-11.md`
+- Skript: `scripts/hnt_usdt_remaining_inventory_gap_audit_20260511.py`
+- Fairspot-Skript: `scripts/fairspot_hnt_legacy_transfer_trace_20260511.py`
+- Lokaler JSON-Output, nicht committen:
+  `var/hnt_usdt_remaining_inventory_gap_audit_2026-05-11.json`
+  und `var/fairspot_hnt_legacy_transfer_trace_2026-05-11.json`
+- Fairspot-Ergaenzung:
+  - Quelle: `https://www.fairspot.host/hnt-export-mining-tax`
+  - Statische CSVs: `https://fairspot.nyc3.digitaloceanspaces.com/accounting-csv/helium-{wallet}-all.csv`
+  - Fairspot bestaetigt fuer Legacy-Helium-Wallets `payer`, `payee`,
+    `transaction_hash`, HNT-Menge, Fee und Oracle-USD-Werte.
+  - Wallets im Trace:
+    - Haupt-Wallet `133rkwoKCfxLTTt1zGjge7c2nGLUSY5sTuG2V61zi6ik269Tf4j`
+    - Staking-Wallet `14eKedP4gCyefaMgjxPULPVecDq6gM5aEJYLDvbiRXZpuq2kYNA`
+    - Counterparty/Payout-Wallet
+      `14aDLshY7p2MJrCgbYrWFZZfjB1MBSqHboo2cJCPCVR9Meorh7w`
+  - `2021-08-14`: `100 HNT` gingen von `133...` an `14e...`,
+    danach `100.40763734 HNT` von `14e...` an `14a...`. Daraus ergibt
+    sich kein zusaetzlicher Binance-Bestand fuer die Verkaeufe am
+    `2021-08-17`.
+  - `2022-07-12`: `14a...` zahlte `254.95946999`, `100.36710733` und
+    `66.01905002 HNT` an `14e...` zurueck; `14e...` leitete
+    `421.30245111 HNT` an `133...` weiter.
+  - Bis zum Rueckfluss am `2022-07-12 01:08:41` hatte `14e...` netto
+    weniger HNT von `14a...` zurueckerhalten als vorher an `14a...`
+    gesendet: `421.34562734 HNT` zurueck vs. `477.39864361 HNT` plus
+    `0.182363194919347751 HNT` Fees gesendet.
+  - Die Fairspot-Daten machen die 2022-Luecke damit wahrscheinlich zu
+    einer nicht modellierten Staking-/Custody-Rueckgabe-Kette, nicht zu
+    einem komplett neuen unbelegten Zufluss. Kein automatisches
+    Steuerurteil daraus ableiten; naechster sicherer Schritt ist ein
+    separater Korrekturpfad fuer `14e...` <-> `14a...`.
+- Ergaenzung Excel-/Staking-Wallet-Pruefung:
+  - Gepruefte lokale Excel-Dateien:
+    `BINANCE - HNT Transfer Staking Wallet - Deposit_History 07 bis 09-2021.xlsx`,
+    `BINANCE - HNT Transfer Staking Wallet - deposit_history 11-2021.xlsx`,
+    `usertransfer/legacy_daten/Heliumtracker/advance/Heliumtracker 2021.xlsx`,
+    `daily_hotspot_rewards_2022-03-21T17_52_18.702901-04_00.xlsx` und
+    `Binance Export History Daten 2021 2022.xlsx`.
+  - Die Excel-Dateien bestaetigen die eigene Staking-Wallet
+    `14eKedP4...` und die Haupt-Wallet `133rkwoK...`.
+  - Binance-HNT-Deposit-Excel `07 bis 09-2021`: `9` HNT-Deposits,
+    `366.22656046 HNT`, bereits importiert.
+  - Binance-HNT-Deposit-Excel `11-2021`: lokal vorhanden und importiert,
+    aber `0` Datenzeilen.
+  - Heliumtracker-Transferliste: `30` Abgaenge aus der Haupt-Wallet mit
+    `1204.55 HNT`, davon `950.62 HNT` zu Binance und `221.1 HNT` zur
+    Staking-Wallet.
+  - Kritisch fuer `2021-08-17`: kein weiterer Binance-HNT-Deposit zwischen
+    den bekannten Deposits am `2021-08-10` und den Verkaeufen am
+    `2021-08-17`. Die `100 HNT` am `2021-08-14` gingen zur Staking-Wallet
+    und verliessen diese kurz danach wieder.
+  - Kritisch fuer `2022-07-12`: Die Staking-Wallet erhielt kurz vorher
+    `421.34562734 HNT` aus drei Legacy-Transfers und leitete
+    `421.30245111 HNT` an die Haupt-Wallet zurueck; fuer diese drei
+    Zufluesse fehlt weiterhin eine bewertete Primaerherkunft.
+  - In der Datenbank existiert die Staking-Wallet-Quelle mit `27` Events,
+    `973.08856161 HNT` inbound, `972.63568422 HNT` outbound und
+    `0.45287739 HNT` Saldo.
+  - Die `9` Self-Transfer-Kandidaten mit gleicher Helium-Transaktion zwischen
+    Haupt- und Staking-Wallet wurden im Folgefix als Transfer-Matches
+    gespeichert. Sie verbessern die Kettenbelegung, erzeugen aber keine
+    Anschaffungskosten.
+- Ergebnis:
+  - Aktuelle Restzeilen nach Folgefixes: `6`
+  - Erloes dieser Restzeilen nach Folgefix:
+    `2189.09067462794969078534501 EUR`
+  - Keine Restzeile ist ein belegbarer Preisanker- oder FX-Backfill.
+  - HNT-Transfer-Matches fuer die Binance-Deposits existieren bereits; die
+    Luecke liegt vor dem Legacy-Outflow.
+  - USDT-Reste bleiben Pionex-/Binance-Opening- bzw. Bot-Historie ohne
+    Primaerbeleg.
+- Gruppierung nach Folgefix:
+  - 2021 HNT, 1 Zeile ohne Lot-Quelle,
+    `445.1808341476849715363131107 EUR` Erloes.
+  - 2021 HNT, 2 Zeilen aus gematchtem Binance-HNT-Deposit, aber unbewerteter
+    Legacy-Herkunft, `360.0331781850617052490318998 EUR` Erloes.
+  - 2022 HNT, `0` Zeilen ueber `50 EUR` Erloes nach Binance-
+    Transaction-History-Stable-Counterflow-Fix.
+  - 2022 USDT, 3 Zeilen ohne Lot-Quelle, `1383.876662295203014 EUR`
+    Erloes.
+- Wichtige HNT-Belege:
+  - `dd5353eedbee68d33a5c687e013b67f468dac6a769af6b56b60dfd7c1e40fa2f`
+    ist per Match `ddec12db-878f-4285-b40a-16df945a301a` belegt.
+  - `9dd85d203cebbe23d40ff09ddd91b30758c3d255c6f80dadbb27581ab152bcba`
+    ist per Match `728264aa-94fe-43ec-a49f-ed9a3a5af447` belegt.
+  - Die Legacy-Transferwerte `value_usd=403.42` und `value_usd=3949.67`
+    sind Transferwerte, keine belegten Anschaffungskosten.
+- Mining-Reward-Pruefung:
+  - BMF 2025 beschreibt Block-Rewards/Mining als Erwerb von Kryptowerten und
+    ordnet Blockerstellung nicht als private Vermoegensverwaltung ein.
+  - Projektlogik behandelt `mining_reward` bereits als Reward-/Business-Lot.
+  - Der Restbefund ist deshalb keine falsche Mining-Klassifikation.
+  - HNT-Bestandsschnitte zeigen aber, dass vor den konkreten Binance-Verkaeufen
+    und Legacy-Outflows nicht ausreichend belegter HNT-Bestand vorhanden ist.
+  - Beispiel: vor `2021-08-20T08:01:13+00:00` steht
+    `helium_legacy_cointracking` trotz `558.8505043200000073041147` geminter
+    HNT nur bei `-0.0020030355676380698853` HNT Saldo.
+  - Beispiel: vor `2022-07-12T06:59:57+00:00` steht
+    `helium_legacy_cointracking` bei `33.85902329177388847810946` HNT Saldo,
+    waehrend der gematchte Transfer `450.0398803021218` HNT outbound umfasst.
+- Lokale HeliumTracker-Quellenabdeckung:
+  - Alle im Workspace vorhandenen `heliumtracker-report-advanced-*.csv` sind
+    als `manual_legacy_import:heliumtracker` im Store vorhanden.
+  - Die HNT-Summen aus CSV und Store stimmen je Datei ueberein.
+  - Fuer `2021` liegt lokal nur `heliumtracker-report-advanced-2021-12.csv`
+    vor; fuer die kritischen Binance-HNT-Verkaeufe am `2021-08-17` gibt es
+    damit keine zusaetzliche lokale HeliumTracker-Quelle.
+  - Fuer `2022-02` bis `2022-07` sind HeliumTracker-Rewards importiert, aber
+    nicht ausreichend, um den `450.0398803021218`-HNT-Legacy-Outflow vom
+    `2022-07-12` belegbar zu decken.
+- Naechste sichere Aktion:
+  - Keine automatische RAW-/FX-/Cost-Basis-Korrektur.
+  - HNT nur mit Primaerbelegen fuer Anschaffung/Mining-Bestand vor den
+    Legacy-Outflows weiter korrigieren.
+  - USDT nur mit Pionex-Opening-/Bot-Historie oder expliziter
+    Review-Entscheidung weiter behandeln.
+
+## Neuester Stand 2026-05-11 Binance-Fiatkauf und High-Gain-Restpruefung
+- Report: `docs/228_BINANCE_FIAT_PURCHASE_AND_REMAINING_HIGH_GAIN_REVIEW_2026-05-11.md`
+- Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Code/Test:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+- Fix:
+  - Neue Funktion `attach_binance_fiat_purchase_value_anchors()`.
+  - Bewertet nur `source=binance`, `event_type=fiat_crypto_purchase`,
+    `side=in` fuer Nicht-EUR-Assets, wenn in derselben Binance-Account-
+    Statement-Gruppe ein belegter EUR-Abfluss vorhanden ist.
+  - Haertet Mehr-Inflow-Gruppen ab: ein EUR-Abfluss wird nur angehaengt, wenn
+    die Gruppe genau einen Krypto-Inflow enthaelt.
+  - Keine Preise erfunden; verwendet wird der vorhandene EUR-Gegenfluss.
+- Korrigierte 2021-Line `1`:
+  - `BNB`, Menge `1.6`
+  - Kaufzeit `2021-02-06T21:18:15+00:00`
+  - Kostenbasis jetzt `96.59076923076923076923076923 EUR`
+  - Erloes `94.120963316925600000000 EUR`
+  - Ergebnis `-2.46980591384363076923076923 EUR`
+- Neu gerechnete Jobs:
+  - 2021 `01504a89-9b31-4e87-97f4-953f70164a9f`, `tax_lines=5494`,
+    `derivative_lines=43`
+  - 2022 `a2523d34-68b5-4983-b08f-c44dbf7816a8`, `tax_lines=6896`,
+    `derivative_lines=630`
+  - 2023 `210d8066-3bb0-4947-b45b-ceb2962e15d6`, `tax_lines=9099`,
+    `derivative_lines=0`
+  - 2024 `aeb1b44b-8b45-4dcb-8479-12c5b470c379`, `tax_lines=1680`,
+    `derivative_lines=36`
+  - 2025 `cc781fa5-1987-411a-ba69-e2653129cf88`, `tax_lines=465`,
+    `derivative_lines=957`
+  - 2026 `b59704da-a6b6-442d-b64d-b8024a74bab5`, `tax_lines=1`,
+    `derivative_lines=0`
+- Audit nach Fix:
+  - `priority_1_total=0`
+  - `fast_null_cost_basis=0`
+  - `fx_available_but_low_cost_basis=0`
+  - `same_tx_priced_counterflow_candidates=0`
+  - `high_gain_ratio=14`
+- Restbefund:
+  - Die verbleibenden 14 High-Gain-Treffer sind historische HNT-/USDT-
+    Beleg- und Bestandsluecken.
+  - HNT-Transfer-Matches fuer die auffaelligen Binance-Deposits existieren
+    bereits; es fehlt vor den Legacy-Outflows ausreichender bewerteter Bestand.
+  - Keine weitere automatische Preisanker-Korrektur aus diesem Audit ableiten.
+  - Naechster fachlicher Schritt waere eine separate HNT-/USDT-
+    Bestandslueckenanalyse.
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `523128832` Bytes
+- Review-/Export-Gegenprobe:
+  - 2024 und 2025 job-spezifisch `allow_export=true`, keine aktuellen Issues,
+    `issues_historical_open=3`, `unmatched_total=0`.
+  - 2024 PDF-Seiten: all `63`, tax `61`, derivatives `3`.
+  - 2025 PDF-Seiten: all `52`, tax `18`, derivatives `36`.
+  - `part=2` liefert fuer alle PDF-Scopes den Standard-Response-Code
+    `report_part_not_found`.
+- Validierung:
+  - `ruff` komplett gruen.
+  - `mypy` gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `tests/unit` gruen.
+  - API-Coverage-Gate `81.08%`, gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet, `/api/v1/health` und `/app` gruen.
+
+## Neuester Stand 2026-05-11 BNB-Dust-Convert mit CoinMarketCap-Preis korrigiert
+- Report: `docs/227_BNB_2021_COINMARKETCAP_PRICE_BACKFILL_2026-05-11.md`
+- Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Quelle:
+  - CoinMarketCap Public Historical Data
+  - `BNB` CoinMarketCap-ID `1839`
+  - `2021-04-28` USD-Close `562.63256836`
+  - lokaler `fx_cache` Source-String `coinmarketcap_public_historical:bnb`
+- Code/Test:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+- Fix:
+  - Neue Funktion `attach_cached_usd_prices_to_binance_dust_convert_in_events()`.
+  - Bewertet nur `source=binance_api`, `event_type=dust_convert_in`, `side=in`,
+    wenn fuer das Asset ein belegter Asset/USD-Kurs im `fx_cache` existiert.
+  - Keine Preise erfunden; der BNB-Kurs wurde vorher explizit in `fx_cache`
+    gecacht.
+- Neu gerechnete Jobs:
+  - 2021 `37d133d7-107f-4397-a8e4-d34f6d9e9066`, `tax_lines=5494`,
+    `derivative_lines=43`
+  - 2022 `57cc9a54-8002-4e4e-ae1b-801ca2883d1f`, `tax_lines=6896`,
+    `derivative_lines=630`
+  - 2023 `45c0f99e-8731-461c-bab7-75135a620eee`, `tax_lines=9099`,
+    `derivative_lines=0`
+  - 2024 `8cd9c465-b531-43e8-a496-334695e4c2de`, `tax_lines=1680`,
+    `derivative_lines=36`
+  - 2025 `acd47dd6-6a71-4a99-9e11-f05c5dd07674`, `tax_lines=465`,
+    `derivative_lines=957`
+  - 2026 `99e1c825-b686-4626-b6f6-d10ba5a32f74`, `tax_lines=1`,
+    `derivative_lines=0`
+- Korrigierte 2021-Line `468`:
+  - `BNB`, Menge `0.27191796`
+  - Kostenbasis jetzt `126.7575706906227312296000000 EUR`
+  - Erloes `125.771557359007051887187500 EUR`
+  - Ergebnis `-0.9860133316156793424125000 EUR`
+- Audit nach Fix:
+  - `priority_1_total=0`
+  - `fast_null_cost_basis=0`
+  - `fx_available_but_low_cost_basis=0`
+  - `same_tx_priced_counterflow_candidates=0`
+  - `high_gain_ratio=15`
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `501055488` Bytes
+  - neuester 2024-Job `8cd9c465-b531-43e8-a496-334695e4c2de`
+  - neuester 2025-Job `acd47dd6-6a71-4a99-9e11-f05c5dd07674`
+- Review-/Export-Gegenprobe:
+  - 2024 und 2025 job-spezifisch `allow_export=true`, keine aktuellen Issues,
+    `issues_historical_open=3`, `unmatched_total=0`.
+  - 2024 PDF-Seiten: all `63`, tax `61`, derivatives `3`.
+  - 2025 PDF-Seiten: all `52`, tax `18`, derivatives `36`.
+  - `part=2` liefert fuer alle PDF-Scopes korrekt `report_part_not_found`.
+- Validierung:
+  - `ruff` komplett gruen.
+  - `mypy` gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `tests/unit` gruen.
+  - API-Coverage-Gate `81.08%`, gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet und Health-Check gruen.
+
+## Neuester Stand 2026-05-11 Binance-Legacy-Market-Bewertung korrigiert
+- Report: `docs/226_BINANCE_LEGACY_MARKET_VALUATION_FIX_2026-05-11.md`
+- Aktualisierter Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Code/Test:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+- Fix 1:
+  - `drop_malformed_binance_market_summary_events()` entfernt fehlerhafte
+    Binance-Summary-Zeilen mit leerem Asset, wenn `raw_row.Market` existiert.
+  - Die korrekten normalisierten Legs bleiben erhalten.
+  - Je neuem Job wurden `403` solche Zeilen entfernt.
+- Fix 2:
+  - `attach_binance_market_quote_value_anchors()` bewertet Binance-Legacy-Trades
+    aus `raw_row.Market` und `raw_row.Total`.
+  - Crypto/Crypto-Preise wie `HNTBTC`, `DOGEBTC` oder `HOTETH` werden nicht mehr
+    als EUR-Stueckpreis interpretiert.
+  - `EUR`-Quotes setzen `value_eur`; USD-Stable-Quotes setzen `value_usd_sum`;
+    Crypto-Quotes nutzen vorhandene Quote/USD-FX-Cachekurse.
+  - Je neuem Job wurden `826` Binance-Market-Legs bewertet:
+    `108` EUR-Werte und `718` USD-Werte, `missing_quote_rate_count=0`.
+- Neu gerechnete Jobs:
+  - 2021 `3c7b4069-2065-4c5a-a77a-7e52eb545664`, `tax_lines=5494`,
+    `derivative_lines=43`
+  - 2022 `bee1a279-eb50-47ec-b6ea-96ebbd7a7f81`, `tax_lines=6896`,
+    `derivative_lines=630`
+  - 2023 `c7e8b073-1750-4703-bd01-e2f3c9e63405`, `tax_lines=9099`,
+    `derivative_lines=0`
+  - 2024 `690aca3b-59ae-45ee-91e5-e3b9a5812f0b`, `tax_lines=1680`,
+    `derivative_lines=36`
+  - 2025 `28e7f7e6-1ea8-4e4e-a4b0-93e4cc534480`, `tax_lines=465`,
+    `derivative_lines=957`
+  - 2026 `5c2d47e8-8dd8-400f-9fdb-86ac9af6c71a`, `tax_lines=1`,
+    `derivative_lines=0`
+- Audit nach Fix:
+  - `priority_1_total=0`
+  - `fast_null_cost_basis=1`
+  - `fx_available_but_low_cost_basis=0`
+  - `same_tx_priced_counterflow_candidates=1`
+  - `high_gain_ratio=16`
+- Verbleibender Fast-Null-Treffer:
+  - 2021 BNB Dust-Convert, `tx_id=55615425065`.
+  - Nicht automatisch korrigiert, weil kein lokaler BNB/USD-FX-Kurs fuer
+    `2021-04-28` vorhanden ist und der bepreiste Gegenfluss nur einen kleinen
+    Teil der Dust-Ausgangsassets deckt.
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `478978048` Bytes
+  - neuester 2024-Job `690aca3b-59ae-45ee-91e5-e3b9a5812f0b`
+  - neuester 2025-Job `28e7f7e6-1ea8-4e4e-a4b0-93e4cc534480`
+- Review-/Export-Gegenprobe:
+  - 2024 und 2025 job-spezifisch `allow_export=true`, keine aktuellen Issues,
+    `issues_historical_open=3`, `unmatched_total=0`.
+  - 2024 PDF-Seiten: all `63`, tax `61`, derivatives `3`.
+  - 2025 PDF-Seiten: all `52`, tax `18`, derivatives `36`.
+  - `part=2` liefert fuer alle PDF-Scopes korrekt `report_part_not_found`.
+- Validierung:
+  - `ruff` komplett gruen.
+  - `mypy` gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `tests/unit` gruen.
+  - API-Coverage-Gate `81.08%`, gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet und Health-Check gruen.
+  - Hinweis: Ein erster paralleler Pytest-Lauf gegen denselben Test-Store zeigte
+    Cross-Test-Kollisionen; sequenzielle Wiederholung war gruen.
+
+## Neuester Stand 2026-05-11 Bewertungsanomalie-Audit gestartet und Bitget-Spot-Fix
+- Audit-Bericht: `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Fix-Bericht: `docs/225_BITGET_SPOT_BIZ_ORDER_VALUATION_FIX_2026-05-11.md`
+- Code/Test/Skript:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+  - `scripts/valuation_anomaly_audit_20260511.py`
+- Audit-Skript erzeugt lokal:
+  - `var/valuation_anomaly_audit_2026-05-11.json`
+  - nicht committen.
+- Gefundener technischer Fehler:
+  - Bitget Tax API Spot-Kaeufe haben Inflow und Stablecoin-Outflow mit derselben
+    `raw_row.bizOrderId`, aber unterschiedlichen `tx_id`.
+  - Die bisherige Gegenflusslogik suchte gleiche `tx_id`; HNT/JUP-Kaeufe wurden
+    deshalb nur fee-gross bewertet.
+- Fix:
+  - Neue Funktion `attach_bitget_tax_api_spot_trade_value_anchors()`.
+  - Nur `bitget_tax_api` Spot-Trade-Inflow eines Nicht-Stable-Assets wird
+    bewertet, wenn ein Stablecoin-Outflow mit gleicher `bizOrderId` existiert.
+  - Keine Preise erfunden; verwendet wird der vorhandene Stablecoin-Gegenfluss.
+- Neu gerechnete Jobs:
+  - 2024 `54225c56-f4e7-4ecd-a63a-26b499f2f336`, `tax_lines=1680`,
+    `derivative_lines=36`, Bitget-Spot-Anker `25`.
+  - 2025 `1505480c-23b5-408c-9813-445425e1ef0c`, `tax_lines=465`,
+    `derivative_lines=957`, Bitget-Spot-Anker `25`.
+- Korrigierte Beispiele:
+  - 2025 HNT Line `377`: Kostenbasis jetzt
+    `2405.908843731238530538445382 EUR`, Erloes
+    `1747.101889630951191847321056 EUR`, Ergebnis
+    `-658.806954100287338691124326 EUR`.
+  - 2024 JUP Line `1284`: Kostenbasis jetzt
+    `117.488407101069524 EUR`, Erloes
+    `134.6282704189103867415416482 EUR`, Ergebnis
+    `17.1398633178408627415416482 EUR`.
+- Audit nach Fix:
+  - `priority_1_total=0`
+  - `fast_null_cost_basis=113`
+  - `fx_available_but_low_cost_basis=18`
+  - `high_gain_ratio=98`
+  - verbleibende Treffer sind Prioritaet 2, vor allem historische
+    `2021`/`2022`-Altbestands-/UNKNOWN-Themen.
+- Review-Gates:
+  - 2024 und 2025 job-spezifisch `allow_export=true`, keine Blocker/Warnungen,
+    `issues_open=0`, `issues_historical_open=3`, `unmatched_total=0`.
+- Export-Metriken:
+  - 2024: Vollreport `1736` Zeilen, Tax `1700`, Derivate `36`; PDF-Seiten
+    all `63`, tax `61`, derivatives `3`.
+  - 2025: Vollreport `1442` Zeilen, Tax `485`, Derivate `957`; PDF-Seiten
+    all `52`, tax `18`, derivatives `36`.
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `456892416` Bytes
+  - neuester 2024-Job `54225c56-f4e7-4ecd-a63a-26b499f2f336`
+  - neuester 2025-Job `1505480c-23b5-408c-9813-445425e1ef0c`
+- Validierung:
+  - `ruff` fuer geaenderte Dateien gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `mypy` gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet und Health-Check gruen.
+- Naechster Schritt:
+  - Prioritaet-2-Treffer gruppieren und gegen historische Review-/Closed-Year-
+    Regeln sowie Beleglage abgleichen. Nicht automatisch korrigieren, wenn nur
+    Belegluecke oder Steuerentscheidung vorliegt.
+
+## Neuester Plan 2026-05-11 Bewertungsanomalien systematisch finden
+- Plan: `docs/223_VALUATION_ANOMALY_AUDIT_AND_FIX_PLAN_2026-05-11.md`
+- Anlass:
+  - Der SOL-Fix zeigte, dass exakte Zero-Cost-Pruefung nicht ausreicht.
+  - Fast-Null-Kostenbasis, Swap-In ohne Preisanker und bepreister Gegenfluss
+    muessen systematisch geprueft werden.
+- Geplantes erstes Arbeitspaket:
+  - `scripts/valuation_anomaly_audit_20260511.py`
+  - lokaler Output `var/valuation_anomaly_audit_2026-05-11.json`
+  - Bericht `docs/224_VALUATION_ANOMALY_AUDIT_RESULTS_2026-05-11.md`
+- Befundklassen:
+  - Fast-Null-Kostenbasis mit materiellem Erloes.
+  - `solana_rpc` Swap-Semantik ohne Preisanker.
+  - gleicher `tx_id` mit bepreistem Gegenfluss.
+  - FX-Cache vorhanden, aber Lot unbewertet.
+  - auffaellige Gewinnquote als Suchfilter.
+- Stop-Regeln:
+  - Keine Preise/FX/Cost Basis erfinden.
+  - Keine automatische Korrektur bei Belegluecke oder Steuerentscheidung.
+  - Deterministische Fixes einzeln testen, neu rechnen, dokumentieren und
+    Snapshot aktualisieren.
+
+## Neuester Stand 2026-05-11 SOL-Swap-In Kostenbasis korrigiert
+- Report: `docs/222_SOLANA_SOL_SWAP_IN_VALUATION_FIX_2026-05-11.md`
+- Code/Test:
+  - `src/tax_engine/queue/service.py`
+  - `tests/unit/api/test_process_endpoints.py`
+- Ursache:
+  - Solana-Swap-In-Preisanker erkannten bisher `swap_in_aggregated` und
+    `token_transfer` mit `defi_label=swap`, aber keinen nativen `sol_transfer`
+    mit `defi_label=swap`.
+  - Die auffaellige 2025-SOL-Line hatte deshalb nur fee-grosse Kostenbasis.
+- Fix:
+  - `attach_cached_usd_prices_to_swap_in_events()` bewertet jetzt auch
+    `sol_transfer` mit `defi_label=swap` und `side=in`.
+  - Normale SOL-Transfers ohne Swap-Label bleiben unveraendert.
+- Neuer 2025-Job:
+  - `d2e5a9cc-d051-49df-b8a6-0b49a5e9d61d`
+  - `tax_lines=465`
+  - `derivative_lines=957`
+  - `derivative_processed_events=957`
+- Korrigierte Nutzerzeile:
+  - Line `101`, `SOL`, Menge `0.286177283`
+  - Kostenbasis vorher rund `0.0004 EUR`
+  - Kostenbasis jetzt `60.50927453911816737483725105 EUR`
+  - Erloes `71.0361802286395714728000 EUR`
+  - Ergebnis `10.52690568952140409796274895 EUR`
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `455602176` Bytes
+  - neuester 2025-Job im Snapshot: `d2e5a9cc-d051-49df-b8a6-0b49a5e9d61d`
+  - `open_zero_cost_2025=0`
+- Export-/Gate-Gegenprobe:
+  - `report_files=11`
+  - Vollreport `1442` Zeilen: `20` Summary, `465` Tax, `957` Derivate
+  - PDF-Seiten: all `52`, tax `18`, derivatives `36`
+  - Job-spezifisches Review-Gate: `allow_export=true`, keine Blocker/Warnungen,
+    historische offene Issues `3`
+- Validierung:
+  - `ruff` fuer geaenderte Dateien gruen.
+  - `tests/unit/api/test_process_endpoints.py` gruen.
+  - `mypy` gruen.
+  - `verify_integrity --all-years` gruen.
+  - API-Service Port `8000` neu gestartet und Health-Check gruen.
+
+## Neuester Stand 2026-05-11 2025 Export-Paket validiert
+- Report: `docs/221_2025_EXPORT_PACKAGE_VALIDATION_2026-05-11.md`
+- Job: `b7c013f5-d176-4875-bdbe-df614bee4800`
+- Lokale Export-Artefakte:
+  - `var/export_validation_2025_derivatives_2026-05-11/`
+  - Nicht committen, nur lokaler Validierungsoutput.
+- Report-API liefert `11` Dateien.
+- Vollreport:
+  - `1442` Exportzeilen
+  - `20` Tax-Domain-Summary-Zeilen
+  - `465` Tax-Lines
+  - `957` Derivate-Lines
+- CSV-Zeilen inklusive Header:
+  - `all.csv=1443`
+  - `tax.csv=486`
+  - `derivatives.csv=958`
+  - `wiso.csv=409`
+- PDF-Seiten:
+  - `all`: `52` Seiten, `1/1` Teile
+  - `tax`: `18` Seiten, `1/1` Teile
+  - `derivatives`: `36` Seiten, `1/1` Teile
+  - Alle unter der harten Grenze `100` Seiten je Datei.
+  - `part=2` liefert fuer alle PDF-Scopes korrekt `report_part_not_found`.
+- Job-spezifisches Review-Gate:
+  - `allow_export=true`
+  - `blocking_reasons=[]`
+  - `warning_reasons=[]`
+  - `issues_open=0`
+  - `issues_historical_open=3`
+  - `issues_high_open=0`
+  - `unmatched_total=0`
+
+## Neuester Stand 2026-05-11 2025 Derivate neu gerechnet und Readonly-Snapshot aktualisiert
+- Report: `docs/220_2025_DERIVATIVE_RECALC_AND_READONLY_SNAPSHOT_2026-05-11.md`
+- Neuer 2025-Job:
+  - `b7c013f5-d176-4875-bdbe-df614bee4800`
+  - Status `completed`
+  - Tax-Lines `465`
+  - Derivate-Lines `957`
+- Derivate-Ergebnis 2025:
+  - `processed_events=957`
+  - `standalone_cash_settlements=957`
+  - `open_positions_remaining=0`
+  - `unmatched_closes=0`
+  - Termingeschaefte netto `-1708.50463884 EUR`
+  - Derivate Verlustsumme `3647.91700648 EUR`
+- AI-Readonly-DB neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Groesse `455090176` Bytes
+- Readonly-Gegenprobe:
+  - 2025 neuester Job ist `b7c013f5-d176-4875-bdbe-df614bee4800`.
+  - `derivative_lines` fuer 2025: `957`.
+  - Typen: `close=409`, `fee=546`, `liquidation=2`.
+- Review-Gate:
+  - `allow_export=true`
+  - `issues_open=0`
+  - `issues_open_total=3`
+  - `issues_historical_open=3`
+  - `issues_high_open=0`
+  - `unmatched_total=0`
+- Validierung:
+  - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 scripts/verify_integrity.py --all-years`
+  - `systemctl restart steuerreport-api.service`
+  - `curl -fsS http://127.0.0.1:8000/api/v1/health`
+
+## Neuester Stand 2026-05-10 Lokale-KI-Pruefung und Folgeauftrag
+- Report: `docs/218_LOCAL_AI_RESULTS_AND_CODEX_FOLLOWUP_2026-05-10.md`
+- Folgefix: `docs/219_BITGET_2025_DERIVATIVE_PIPELINE_FIX_2026-05-10.md`
+- Code/Test:
+  - `src/tax_engine/core/derivatives.py`
+  - `tests/unit/core/test_derivatives_manager.py`
+- Verifizierte Ursache fuer `derivative_lines=0` im 2025-Job
+  `f4342b4b-a502-47cf-a5dc-255eda49d94c`:
+  - Bitget-Tax-API-Derivatevents tragen `timestamp_utc`.
+  - DerivativesManager las bisher nur `timestamp/datetime/date/time` und filterte
+    diese Events dadurch vor der Klassifikation aus.
+  - Bitget-Futures-Bills ohne stabile Position-ID werden jetzt eng als
+    Cash-Settlement-Lines aus `raw_row.amount + raw_row.fee` verarbeitet.
+- Gegenprobe auf Readonly-DB-Raw-Events:
+  - `processed_events=1047`
+  - `standalone_cash_settlements=1047`
+  - `line_count=1047`
+  - `derivative_gain_loss_total_eur=-2110.92099932`
+  - `open_positions_remaining=0`
+- Wichtig:
+  - Der gespeicherte 2025-Job in der Readonly-DB bleibt bis zur Neuberechnung bei
+    `derivative_lines=0`.
+  - Danach Projekt-DB neu rechnen und AI-Readonly-Snapshot neu bauen.
+- Readonly-KI-Queue:
+  - `done=13`
+  - `failed=2`
+  - `pending=0`
+  - `running=0`
+- Fehlgeschlagene Readonly-KI-Tasks waren LLM-/Servicefehler:
+  - `exports_pdf_wiso_readiness_2025_2026_20260510`: RemoteDisconnected
+  - `mining_rewards_business_private_split_20260510`: HTTP 503
+- Gegen DB verifiziert:
+  - 2025 hat aktuell `0` offene Zeilen in `ai_open_zero_cost_tax_lines`.
+  - Offene Zero-Cost-Reste: 2021 `BNB/HNT/UNKNOWN`, 2022 `HNT/USDT`, 2024 `USDC`.
+  - `ruleset_catalog` ist leer, `report_snapshots` enthaelt `1` Eintrag.
+- Wichtige Korrektur an KI-Befund:
+  - Die Aussage "keine Bitget-API-Daten 2025" ist zu grob.
+  - In `ai_raw_events_flat` existieren 2025 `bitget_tax_api`-Events, inklusive derivative open/close/fee Events.
+  - Belastbarer Befund: `derivative_lines` hat fuer 2025 ueber Join mit `processing_queue` `0` Zeilen, obwohl Bitget-Futures-/Derivative-Rohdaten existieren.
+- Angelegter Codex-Autopilot-Task:
+  - `verify_local_ai_bitget_derivatives_followup_20260510`
+  - `validation_profile=quick`
+  - `allow_push=false`
+  - Ziel: KI-Befunde verifizieren, fragile SQL-Annahmen korrigieren und die Bitget-2025-Derivate-Pipeline deterministisch klaeren.
+
+## Neuester Stand 2026-05-10 Codex-Autopilot-Dienst vorbereitet
+- Report: `docs/217_CODEX_AUTOPILOT_SERVICE_2026-05-10.md`
+- Skript: `scripts/codex_autopilot_queue.py`
+- systemd-Vorlage: `deploy/systemd/steuerreport-codex-autopilot.service`
+- Zweck:
+  - Codex kann eine lokale Task-Queue abarbeiten, ohne dass im Terminal wiederholt `weiter` geschrieben werden muss.
+  - Jeder Task laeuft ueber `codex exec -C /workspace/steuerreport --sandbox workspace-write -c approval_policy="never"`.
+  - Der Runner nutzt bewusst nicht `danger-full-access`.
+- Standardverhalten:
+  - Queue unter `var/codex_autopilot_queue/`.
+  - Push ist standardmaessig aus und nur pro Task mit `--allow-push` erlaubt.
+  - Post-Checks pruefen `git diff --check`, verbotene staged Rohdaten und je nach Profil `ruff`, `node --check`, optional `mypy`, `pytest`, `verify_integrity`.
+- Kontrollbefehle:
+  - `python3 scripts/codex_autopilot_queue.py status`
+  - `python3 scripts/codex_autopilot_queue.py init-defaults`
+  - `python3 scripts/codex_autopilot_queue.py run --max-hours 12 --max-tasks 0 --sleep-seconds 10`
+- Aktivierung als Dienst ist vorbereitet, aber nicht automatisch gestartet:
+  - `sudo cp deploy/systemd/steuerreport-codex-autopilot.service /etc/systemd/system/`
+  - `sudo systemctl daemon-reload`
+  - `sudo systemctl enable --now steuerreport-codex-autopilot.service`
+- Grenzen:
+  - Der Autopilot darf keine Anschaffungskosten, Preise, FX-Kurse, Belege oder steuerliche Behandlung erfinden.
+  - Bei Primaerbeleg-, Steuerentscheidungs-, Secret-, Rohdaten- oder Git-Konflikt muss er mit dokumentiertem Blocker stoppen.
+
+## Neuester Stand 2026-05-10 Autonomer Abschluss-/GitHub-Sync-Abgleich
+- Report: `docs/216_CURRENT_AUTONOMOUS_COMPLETION_AND_GITHUB_SYNC_2026-05-10.md`
+- GitHub Connector:
+  - Keine offenen GitHub-Issues gefunden.
+  - Offener PR `#3` auf Branch `codex/next-roadmap-work`.
+- Engineering-Gates lokal gruen:
+  - `python3 -m ruff check . --no-cache`
+  - `python3 -m mypy src/ --cache-dir=/tmp/steuerreport_mypy_cache`
+  - `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest -q tests/unit`
+  - `COVERAGE_FILE=/tmp/steuerreport-api-coverage PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest -p no:cacheprovider tests/unit/api --cov=src/tax_engine/api --cov-fail-under=80 -q` -> `81.08%`
+  - `node --check src/tax_engine/ui/static/app.js`
+  - `python3 scripts/verify_integrity.py --all-years`
+- Fixes:
+  - Ruff/Mypy-Stabilisierung fuer neue Audit-/Import-Skripte und API-Module.
+  - `api.app` Re-Exports fuer Balance-Adjustment-Request-Klassen wiederhergestellt.
+  - Dashboard-Jahresanalyse-Test an Token-Alias-Aggregation angepasst.
+- Aktuelle Readonly-DB:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Neuester 2025 Job `f4342b4b-a502-47cf-a5dc-255eda49d94c`.
+  - In `ai_open_zero_cost_tax_lines` keine offenen 2025-Zero-Cost-Zeilen.
+  - Offene Reste: 2021 `BNB/HNT/UNKNOWN`, 2022 `HNT/USDT`, 2024 winziger `USDC`-Rest.
+- Sync-Scope:
+  - Rohdaten `*.csv`/`*.xlsx` und `var/` nicht nach GitHub pushen.
+  - Code, Tests, Scripts, Docs und Projektkonfiguration sind GitHub-geeignet.
+
+## Neuester Stand 2026-05-10 Current-Gate nach 25HAYB/IOT-Fixes
+- Aktuelle Reports:
+  - `docs/213_CURRENT_ZERO_COST_FIXES_2026-05-10.md`
+  - `docs/214_25HAYB_REMAINING_SWAP_GAP_2026-05-10.md`
+- Neu berechnet: Steuerjahre `2020` bis `2026`.
+- Aktuelle Jobs:
+  - 2020 `287cc41c-9055-42ca-8b5a-9d5578e07dc6`
+  - 2021 `5ab77c28-68f9-42f2-8a97-47f1d4f57f13`
+  - 2022 `c4d8719c-4041-443a-b182-d9f6ccf06407`
+  - 2023 `bf4e3974-5e7e-4bfe-9e15-6992ad4812bb`
+  - 2024 `0b0d5264-b38f-4726-81eb-bd54191a0064`
+  - 2025 `f4342b4b-a502-47cf-a5dc-255eda49d94c`
+  - 2026 `924d49e7-b215-480f-ae35-9dddc8d99648`
+- Fixes:
+  - IOT 2023: Review-Zeitkorrekturen laufen vor Preisankern; Helium-Solana-Distributor-Zufluesse werden eng als `claim` gelabelt.
+  - 25HAYB 2024: fehlender Jupiter-/Solana-Swap-In-Erwerbswert wird aus bepreistem Raw-Route-Gegenfluss abgeleitet.
+- Ergebnis 25HAYB:
+  - Verkaufsmenge `5945.66318`, Kostenbasis `77.355924270991... EUR`, Erloes `74.00590961138 EUR`, Ergebnis ca. `-3.35 EUR`.
+- Runtime-Gate-Scope:
+  - `runtime.review.closed_tax_years=[2020, 2021, 2022]`.
+  - Offene Altjahr-Issues bleiben sichtbar, zaehlen aber nicht als Current-Export-Blocker.
+- Dashboard:
+  - Issue-Inbox hat jetzt eine eigene Spalte `Scope`.
+  - Review-Gate-Zusammenfassung zeigt `offene Issues` und `Altjahr offen` getrennt.
+- Aktuelles Review-Gate Port `8000`:
+  - `allow_export=True`
+  - `issues_open=0`
+  - `issues_open_total=3`
+  - `issues_historical_open=3`
+  - `issues_high_open=0`
+  - `unmatched_total=0`
+- Sichtbare offene Altjahr-Issues:
+  - `2021/HNT`: `8` Zero-Cost-Zeilen, `1790.06 EUR`
+  - `2022/USDT`: `3` Zero-Cost-Zeilen, `1383.88 EUR`
+  - `2022/HNT`: `5` Zero-Cost-Zeilen, `2300.13 EUR`
+- Tests:
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_issue_endpoints.py tests/unit/api/test_process_endpoints.py tests/unit/core/test_processor_fifo.py`
+  - Ergebnis: `93 passed`, eine bekannte Importlib-Deprecation-Warnung.
+- API-Service wurde neu gestartet und ist `active`.
+- AI-Readonly-DB wurde neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+
+## Neuester Stand 2026-05-10 Lokale KI laeuft fuer Punkte ab 2025-Readiness
+- Report: `docs/215_LOCAL_AI_OVERNIGHT_TASKS_2026-05-10.md`
+- systemd Unit gestartet:
+  - `steuerreport-ai-readonly-queue.service`
+- Status beim Start:
+  - `pending=8`
+  - `running=1`
+  - `done=7`
+  - `failed=0`
+- Laufender erster Task:
+  - `2025_binance_earn_staking_rewards_20260510`
+- Neue Tasks:
+  - `2025_end_to_end_readiness_20260510`
+  - `2025_binance_earn_staking_rewards_20260510`
+  - `2025_bitget_api_blockpit_cex_check_20260510`
+  - `2025_jupiter_solana_wallet_swaps_20260510`
+  - `2025_year_end_holdings_reconciliation_20260510`
+  - `exports_pdf_wiso_readiness_2025_2026_20260510`
+  - `mining_rewards_business_private_split_20260510`
+  - `db_audit_hygiene_snapshot_export_plan_20260510`
+- Kontrollbefehle:
+  - `python3 scripts/ai_readonly_task_queue.py status`
+  - `systemctl status steuerreport-ai-readonly-queue.service --no-pager`
+  - `tail -n 80 var/ai_readonly_queue/runner.log`
+  - `tail -n 80 var/ai_readonly_queue/systemd.log`
+- Ergebnisse:
+  - Index `var/ai_readonly_queue/results.jsonl`
+  - Einzelberichte `var/ai_db_countercheck_*.md`
+
+## Neuester Stand 2026-05-10 JUP/ZEUS 2024 Transfer-Matches
+- Report: `docs/208_JUP_ZEUS_2024_TRANSFER_MATCH_FIX_2026-05-10.md`
+- Persistiert:
+  - `2` ZEUS interne Solana-Transfer-Matches:
+    - `1843.317972 ZEUS`, Match `f1103095-48b1-4954-bb7a-e2fbeb37f103`
+    - `1688.000000 ZEUS`, Match `f7274552-d750-47ed-9ef8-7e98178f24b7`
+  - `2` JUP interne Solana-Transfer-Matches:
+    - `147.000000 JUP`, Match `87dcfbf3-0849-4c34-a22d-59bf53cf5d5a`
+    - `1070.000000 JUP`, Match `8e845587-70cc-4d6a-8b0f-bb02b2993ecb`
+- Ergebnis:
+  - `2024/ZEUS` ist geschlossen.
+  - `2024/JUP` reduziert von `4` Zero-Cost-Zeilen / `3412.26 EUR` auf `3` Zero-Cost-Zeilen / `1979.51 EUR`.
+  - Aktueller 2024 Job: `356890b8-99b7-4562-89d0-79f4aa21804c`.
+  - Review-Gate `allow_export=True`, High-Issues `0`, offene Issues `4`.
+- JUP-Restbefund:
+  - Verbleibende JUP-Zeilen liegen im November 2024.
+  - Auffaellig ist eine Solana-DCA-/Order-Programmbewegung:
+    - `2024-08-29T11:23:43+00:00` JUP Out `4632.733027`
+    - Programm `DCA265Vj8a9CEuX1eb1LWRnDT7uK6q1xMipnNyatn23M`
+    - `2024-08-29T11:25:59+00:00` JUP In `1853.093212`
+    - Raw-Log `CloseDca`
+  - Kein 1:1-Transfer; Differenz vermutlich DCA-/Order-Ausfuehrung oder fehlende Gegenbuchungen. Nicht automatisch gematcht.
+- Offene Issues jetzt:
+  - `2021/HNT`: `8` Zero-Cost-Zeilen, `1790.06 EUR`.
+  - `2022/USDT`: `3` Zero-Cost-Zeilen, `1383.88 EUR`.
+  - `2022/HNT`: `5` Zero-Cost-Zeilen, `2300.13 EUR`.
+  - `2024/JUP`: `3` Zero-Cost-Zeilen, `1979.51 EUR`.
+- AI-Readonly-DB wurde danach neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+
+## Neuester Stand 2026-05-10 HNT 2025 Bitget -> Solana Zeitreihenfolge behoben
+- Report: `docs/207_HNT_2025_BITGET_SOLANA_TIMESTAMP_ORDER_FIX_2026-05-10.md`
+- Code: `src/tax_engine/core/processor.py`
+- Test: `tests/unit/core/test_processor_fifo.py`
+- Match-ID: `7787227c-e348-45bc-a904-42755db8aa5d`
+- Ursache:
+  - Bitget-Withdrawal und Solscan-Inbound waren derselbe wirtschaftliche HNT-Transfer.
+  - Solscan-Inbound: `2025-03-09T18:59:51+00:00`, `859.9208492 HNT`, `counterflow_for_platform=bitget`, `counterflow_tx_id=1282705829779644421`.
+  - Bitget Tax API Withdrawal: `2025-03-09T19:00:22.011000+00:00`, `859.9208492 HNT`, `tx_id=1282705829779644421`.
+  - Zeitstempel waren um `31` Sekunden invertiert, sodass FIFO den Inbound vor dem Outbound als Nullkosten-Lot verarbeitete.
+- Umsetzung:
+  - Transfer-Match Bitget Out -> Solscan In gespeichert.
+  - FIFO sortiert bestaetigte Transfer-Paare nun intern immer `outbound -> inbound`; RAW-Zeitstempel bleiben unveraendert.
+- Ergebnis:
+  - 2025 Einzellauf `fb2c8530-b47d-44be-85af-9e9d1bb4bd33`: HNT-Zero-Cost `0`.
+  - Gesamtlauf `2020..2026` danach aktualisiert `docs/190_CURRENT_TAX_RUNS_2026-05-10.md`.
+  - Aktueller 2025 Job: `3ebf9a80-cdc5-43ba-85dc-b08fe9ed966a`.
+  - `2025/HNT` ist geschlossen.
+  - Review-Gate `allow_export=True`, High-Issues `0`, offene Issues `5`.
+- Offene Issues jetzt:
+  - `2021/HNT`: `8` Zero-Cost-Zeilen, `1790.06 EUR`.
+  - `2022/USDT`: `3` Zero-Cost-Zeilen, `1383.88 EUR`.
+  - `2022/HNT`: `5` Zero-Cost-Zeilen, `2300.13 EUR`.
+  - `2024/JUP`: `4` Zero-Cost-Zeilen, `3412.26 EUR`.
+  - `2024/ZEUS`: `1` Zero-Cost-Zeile, `1687.95 EUR`.
+- AI-Readonly-DB wurde danach neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+
+## Neuester Stand 2026-05-10 HNT Legacy -> Binance Transfer-Matches
+- Report: `docs/206_HNT_LEGACY_BINANCE_TRANSFER_MATCH_2026-05-10.md`
+- Skript: `scripts/hnt_legacy_binance_transfer_match_20260510.py`
+- Persistiert: `19` neue Transfer-Matches `helium_legacy_cointracking legacy_transfer out` -> `binance_api deposit in`.
+- Matching-Kriterium: gleiche Helium-Legacy-Basis-TXID, HNT, Zeitdifferenz nur Sekunden/Minuten, Mengenabweichung als Netzwerk-/Deposit-Delta dokumentiert.
+- Effekt nach Gesamtlauf `2020..2026`:
+  - `docs/190_CURRENT_TAX_RUNS_2026-05-10.md` aktualisiert.
+  - Review-Gate `allow_export=True`.
+  - High-Issues offen: `0`.
+  - HNT 2021 verbessert von `25` Zero-Cost-Zeilen / `7323.13 EUR` / `high` auf `8` Zero-Cost-Zeilen / `1790.06 EUR` / `medium`.
+- Aktuelle Jobs:
+  - 2020 `9fb20759-a2aa-4f17-832c-d37609672630`
+  - 2021 `7a0883ae-e82f-4d6d-a090-300a52cf1875`
+  - 2022 `b230a4a3-2e0e-414d-b871-013d7906dfe1`
+  - 2023 `97fe17a2-769a-4383-9a4e-1c8d5ac720ee`
+  - 2024 `7fa5bd22-e248-45e3-9b84-0050d3deb2ab`
+  - 2025 `f9737dc0-a5fa-4da9-9ca7-32e9e2b871db`
+  - 2026 `fc4d9ad5-19bd-407d-a336-e5cccda4af36`
+- Offene Issues nach Gesamtlauf: `6`, alle `medium`:
+  - `2021/HNT`: `8` Zero-Cost-Zeilen, `1790.06 EUR`.
+  - `2022/USDT`: `3` Zero-Cost-Zeilen, `1383.45 EUR`.
+  - `2022/HNT`: `5` Zero-Cost-Zeilen, `2300.28 EUR`.
+  - `2024/JUP`: `4` Zero-Cost-Zeilen, `3412.26 EUR`.
+  - `2024/ZEUS`: `1` Zero-Cost-Zeile, `1687.95 EUR`.
+  - `2025/HNT`: `1` Zero-Cost-Zeile, `2142.77 EUR`.
+- Restbefund HNT 2021:
+  - Am `2021-08-17` gibt es Binance-HNT-Verkaeufe, aber keinen passenden Binance-API-HNT-Deposit zwischen `2021-08-10` und `2021-08-17`.
+  - Ein manueller Blockpit-Eintrag `Binance Deposit` ueber ca. `100 HNT` am `2021-08-14` existiert, ist aber ohne TXID und widerspricht/ueberlappt mit Legacy-Staking-Wallet-Bewegungen; daher nicht automatisch als Cost-Basis-Korrektur verwendet.
+  - Weitere Korrektur nur mit Primaerbeleg, Opening-Lot oder expliziter Review-Entscheidung.
+- AI-Readonly-DB wurde danach neu gebaut:
+  - `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Nutzung: `sqlite3 'file:/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite?mode=ro&immutable=1'`
+
+## Neuester Stand 2026-05-10 PDF-/Steuerrecht-Readiness 2025/2026
+- Report: `docs/195_PDF_STEUERRECHT_READINESS_2025_2026_2026-05-10.md`
+- Code: `src/tax_engine/api/reporting.py`
+- PDF-Export verbessert:
+  - Querformat statt enger Hochformat-Tabelle.
+  - Neue Deck-/Summenseite je PDF-Teil mit Steuerjahr, Ruleset, FIFO/EUR, §22, §23, Termingeschaefte, EÜR/Gewerbe, Integritaetsdaten.
+  - 2026-PDF enthaelt DAC8/CARF/KStTG-Hinweis als Melde-/Plausibilitaetskontext, nicht als materielles Steuerrecht.
+  - Maximal `100` Seiten je PDF bleibt hart: pro Datei nur noch `99 * 28` Detailzeilen plus Summenseite.
+- Live-Test Port `8000` nach Restart:
+  - 2025 Job `8c0b81a8-7c60-4df8-9090-8dfeeecf86c4`: PDF `19` Seiten, Review-Gate `allow_export=true`.
+  - 2026 Job `81949598-7ec7-4a9d-8f9d-77f40f6bf07e`: PDF `2` Seiten, Review-Gate `allow_export=true`.
+- Fachliche Bewertung:
+  - 2025/2026 sind technisch exportfaehig.
+  - Nicht als steuerlich garantiert final bezeichnen; Report ist technische Berechnung nach Ruleset, kein Steuerberaterersatz.
+  - Vor Abgabe 2025 noch `22` unresolved valuation events, Jahresendbestand und CEX-/Jup-/Bitget-Abgleich pruefen.
+  - 2026 ist laufendes Jahr; DAC8/CARF-Daten sind erst als spaetere Referenz-/Plausibilitaetsquelle relevant.
+- Validierung:
+  - `python3 -m py_compile src/tax_engine/api/reporting.py src/tax_engine/api/processing.py`
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_api_coverage_gate.py::test_report_export_integrity_snapshot_and_compliance_paths tests/unit/api/test_api_coverage_gate.py::test_report_helpers_and_review_gate_empty_completed_job_paths tests/unit/api/test_process_endpoints.py`
+  - Ergebnis: `34 passed`, `1` Importlib-Deprecation-Warnung.
+- Naechster sinnvoller Schritt:
+  1. Report/Endpoint fuer unresolved valuation events je Jahr bauen.
+  2. PDF um Anhang "Offene Hinweise und Review-Entscheidungen" erweitern.
+  3. Jahresendbestand je Plattform/Wallet fuer 2025/2026 als Abgleich erzeugen.
+
+## Neuester Stand 2026-05-10 Mining/Reward als Gewerbe/EUER
+- Report: `docs/196_MINING_REWARD_GEWERBLICH_RULESET_2026-05-10.md`
+- Entscheidung: Mining-/Reward-nahe Zufluesse werden in diesem Projekt als gewerblicher Vorgang behandelt.
+- Code:
+  - `src/tax_engine/rulesets/registry.py`: Standard-Rulesets `DE-2020-v1.0` bis `DE-2026-v1.0` nutzen jetzt `mining_tax_category=BUSINESS`.
+  - `src/tax_engine/core/tax_domains.py`: Reward-like Zufluesse laufen bei BUSINESS-Ruleset in `euer.betriebseinnahmen_mining_staking_eur`.
+  - `src/tax_engine/api/reporting.py`: PDF-Summenseite weist `EÜR/Gewerbe Mining-/Reward-Einnahmen` separat aus; §22 ist als nicht gewerbliche sonstige Leistungen beschriftet.
+- Neu gerechnete Jobs:
+  - 2020 `62964cd6-7884-4aaf-869d-3766fb55e5bc`: §22 `0`, EÜR Mining/Reward `0`
+  - 2021 `69c34b41-29da-4a7e-9333-24fc964a566d`: §22 `0`, EÜR Mining/Reward `12035.69168383139309885257935`
+  - 2022 `984ede24-56da-4c3b-be21-ac076876a4ec`: §22 `0`, EÜR Mining/Reward `9761.711828427325809098030511`
+  - 2023 `486c2e57-4ea2-4dd3-8585-9b35b4d51e64`: §22 `0`, EÜR Mining/Reward `1591.789580302749903677688467`
+  - 2024 `202e4d5a-dfd7-42a7-bb8c-0baa36145641`: §22 `0`, EÜR Mining/Reward `2291.938703634026589700257328`
+  - 2025 `0f671359-c095-4ba2-b664-353875ff09af`: §22 `0`, EÜR Mining/Reward `747.7890097989682380400235705`
+  - 2026 `816353c8-edee-428e-ad92-a571dfb1f356`: §22 `0`, EÜR Mining/Reward `26.62449231868769297855626282`
+- `docs/190_CURRENT_TAX_RUNS_2026-05-10.md` zeigt jetzt eigene Spalten fuer `§22 Leistungen`, `EÜR Mining/Reward` und `EÜR Ergebnis`.
+- Hinweis:
+  - WISO-CSV bleibt aktuell Capital-Gains/Anlage-SO-nah; Gewerbe/EÜR-Werte stehen in Vollreport/PDF/CSV, ein eigener EÜR-CSV-Export ist noch offen.
+- Validierung:
+  - `48 passed` fuer Ruleset/Tax-Domain/API-Prozess/Reporting-nahe Tests.
+  - Gesamtlauf `2020..2026` completed.
+
+## Neuester Stand 2026-05-10 USDT 2022 finaler Review-Audit
+- Report: `docs/194_USDT_2022_FINAL_REVIEW_AUDIT_2026-05-10.md`
+- JSON: `var/usdt_2022_final_review_audit_2026-05-10.json`
+- Skript: `scripts/usdt_2022_final_review_audit_20260510.py`
+- Aktuelles offenes Issue:
+  - `zero_cost_tax_lots:2022:USDT:942afb62-85f5-4690-9b74-2e6195d5205f`
+  - `3` steuerpflichtige USDT-Zeilen mit Cost Basis `0`
+  - Menge `1569.34243684620000000000 USDT`
+  - Erloes `1383.448602294939514000000000 EUR`
+  - Plattform-Mengen: Binance `75.10462220620000000000 USDT`, Pionex `1494.23781464000000000000 USDT`
+- Befund:
+  - Kein Preis-/FX-/Stable-Pair-Fehler mehr.
+  - HNT 2023, USDC 2024 und JUP 2024 sind durch Verarbeitungskorrekturen geschlossen.
+  - Binance-Jan-2022-Transaction-History belegt die HNT/USDT-Trades, aber keine zusaetzliche vorherige USDT-Anschaffung fuer den letzten Binance-Rest.
+  - Pionex-Komplettexport belegt MXC_USDT-Trades und bekannte Deposits; fuer den Rest am `2022-01-19` fehlt weiterhin Opening-/Bot-Historie.
+  - Keine automatische steuerwirksame Zuflussfiktion importieren.
+- Live-API Port `8000`:
+  - `/api/v1/health` OK.
+  - `/api/v1/issues/inbox` zeigt exakt dieses eine offene Medium-Issue.
+  - Issue hat API-Actions `context`, `set_status`, `confirm_zero_basis`.
+- Entscheidungswege:
+  1. Offen lassen: Report bleibt mit Medium-Issue dokumentiert.
+  2. Nullbasis bestaetigen: per Dashboard/API auf `wont_fix`; Steuerzeilen bleiben mit Cost Basis `0` sichtbar.
+  3. Primaerbeleg nachreichen: neue Quelle importieren und 2022 neu rechnen.
+- Nutzerentscheidung 2026-05-10:
+  - `2022/USDT` bleibt offen.
+  - Begruendung: Steuerjahre `2020`, `2021`, `2022` sind bereits abgeschlossen; eine Korrektur ist wahrscheinlich nicht mehr sinnvoll bzw. nicht mehr moeglich.
+  - Keine API-Bestaetigung auf `wont_fix` setzen, solange der Nutzer dies nicht spaeter ausdruecklich anders entscheidet.
+- Validierung:
+  - `python3 -m py_compile scripts/usdt_2022_final_review_audit_20260510.py`
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_issue_endpoints.py tests/unit/fx/test_fx_service.py tests/unit/core/test_processor_fifo.py`
+  - Ergebnis: `51` Tests erfolgreich.
+- Naechster sinnvoller Schritt:
+  1. Nutzerentscheidung fuer `2022/USDT` einholen bzw. im Dashboard treffen.
+  2. Danach finalen Export-/Readiness-Stand nicht mehr wegen diesem Medium-Issue blockieren, falls Nullbasis fachlich bestaetigt wird.
+  3. Bei neuen Pionex-/Binance-/Bitget-Belegen: Audit-Skript erneut ausfuehren und Steuerjahr 2022 neu rechnen.
+
+## Neuester Stand 2026-05-10 IOT Zero-Cost behoben
+- IOT-Review-Issue `zero_cost_tax_lots:2024:IOT` ist nach Verarbeitungskorrektur geschlossen.
+- Report: `docs/183_IOT_REWARD_CLAIM_COST_BASIS_FIX_2026-05-10.md`
+- Kernursache:
+  - Reward-/Mining-Inflows wurden bisher nicht als FIFO-Anschaffungslots gefuehrt.
+  - Solana-IOT-Claims kamen als `token_transfer` mit `defi_label=claim` und hatten keine Cost Basis, obwohl IOT/USD-Preise im FX-Cache vorhanden waren.
+  - HeliumGeek-Base-Unit-Felder mussten in der Steuerdomänen-Summary auf Display-Mengen normalisiert werden.
+- Code:
+  - `src/tax_engine/core/processor.py`: Reward-Inflows erzeugen jetzt FIFO-Lots; Transfers bleiben Transfers.
+  - `src/tax_engine/queue/service.py`: FX-Cache-Preisanker bepreist Reward-/Mining-Inflows sowie `defi_label=claim|staking`.
+  - `src/tax_engine/core/tax_domains.py`: HeliumGeek-Display-Mengen werden in der Summary genutzt.
+- Neu gerechneter 2024-Job: `f21e8665-dbce-4841-821a-49f86ed3e7f8`
+  - `reward_price_summary.attached_price_count=24426`
+  - `tax_domain_summary.anlage_so.leistungen_income_eur=2291.938703634026589700257328`
+  - Offene Zero-Cost-Medium-Issues danach: `3`
+- Weiter offen:
+  - `2022/USDT`: 3 Zeilen, `1377.09 EUR`, Dossier `docs/181_USDT_2022_ZERO_COST_DOSSIER_2026-05-10.md`; keine Auto-Korrektur ohne Primaerbeleg.
+  - `2024/USDC`: 6 Zeilen, `2843.31 EUR`; naechstes Dossier/Ziel.
+  - `2024/JUP`: 5 Zeilen, `1941.79 EUR`; danach pruefen.
+- Tests:
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_process_endpoints.py tests/unit/core/test_processor_fifo.py tests/unit/core/test_tax_domains.py`
+  - Ergebnis: `44 passed`, `1` Importlib-Deprecation-Warnung.
+- Naechster sinnvoller Schritt:
+  1. `2024/USDC` Zero-Cost-Dossier erstellen/analysieren.
+  2. Danach `2024/JUP`.
+  3. `2022/USDT` nur weiter anfassen, wenn neue Primaerquelle/Beleg auftaucht oder eine explizite Review-Entscheidung getroffen wird.
+
+## Neuester Stand 2026-05-10 USDC Zero-Cost behoben
+- USDC-Review-Issue `zero_cost_tax_lots:2024:USDC` ist nach Stable-Transfer-Lot-Korrektur geschlossen.
+- Report: `docs/185_USDC_STABLE_TRANSFER_LOT_FIX_2026-05-10.md`
+- Dossier: `docs/184_USDC_2024_ZERO_COST_DOSSIER_2026-05-10.md`
+- Kernursache:
+  - Stablecoin-Zufluesse/Deposits wurden als nicht steuerbare Transfers korrekt nicht verkauft, erzeugten aber auch keine FIFO-Lots.
+  - Spaetere USDC-Swaps/Trades hatten deshalb Erloese, aber keine Anschaffungskosten.
+- Code:
+  - `src/tax_engine/core/processor.py`: eingehende Stablecoin-Transfers/Deposits erzeugen FIFO-Lots; ausgehende Stablecoin-Transfers verbrauchen Lots nicht steuerbar und ohne Steuerzeile.
+  - Nicht-Stable-Transfers bleiben unveraendert reine Transfers.
+- Neu gerechneter 2024-Job: `b7531c5c-6f24-45f2-9499-8e963c62de62`
+  - USDC-Medium-Issue nicht mehr in Review-Inbox.
+  - Nur noch ein USDC-Dust-Rest im Dossier: `0.000002 USDC`, `0.000001893578471013762814449849252 EUR`; unter Review-Issue-Schwelle.
+- Offene Zero-Cost-Medium-Issues danach: `2`
+  - `2022/USDT`: 3 Zeilen, `1377.09 EUR`, Dossier `docs/181_USDT_2022_ZERO_COST_DOSSIER_2026-05-10.md`; keine Auto-Korrektur ohne Primaerbeleg.
+  - `2024/JUP`: 5 Zeilen, `1941.79 EUR`; naechstes Dossier/Ziel.
+- Tests:
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_process_endpoints.py tests/unit/core/test_processor_fifo.py tests/unit/core/test_tax_domains.py`
+  - Ergebnis: `46 passed`, `1` Importlib-Deprecation-Warnung.
+- Naechster sinnvoller Schritt:
+  1. `2024/JUP` Zero-Cost-Dossier erstellen/analysieren.
+  2. Danach entscheiden, ob `2022/USDT` mit Primaerbeleg oder expliziter Review-Entscheidung geschlossen wird.
+
+## Neuester Stand 2026-05-10 JUP Zero-Cost behoben
+- JUP-Review-Issue `zero_cost_tax_lots:2024:JUP` ist nach Swap-In-FX-Cache-Korrektur geschlossen.
+- Report: `docs/187_JUP_SWAP_IN_PRICE_LOT_FIX_2026-05-10.md`
+- Dossier: `docs/186_JUP_2024_ZERO_COST_DOSSIER_2026-05-10.md`
+- Kernursache:
+  - Betroffene FIFO-Lots stammten aus `solana_rpc` `swap_in_aggregated`-Events.
+  - Diese hatten Mengen/Gegenassets, aber keinen `price_usd`, `price_eur` oder `value_usd_sum`.
+  - JUP/USD-Preise waren im FX-Cache vorhanden, wurden bisher aber nicht an Swap-In-Lots geschrieben.
+- Code:
+  - `src/tax_engine/queue/service.py`: neue enge Vorverarbeitung `attach_cached_usd_prices_to_swap_in_events`.
+  - Nur `solana_rpc` + `swap_in_aggregated` + `side=in`; normale Token-Transfers bleiben unveraendert.
+  - Processing Result enthaelt jetzt `swap_in_price_summary`.
+- Neu gerechneter 2024-Job: `a7431b53-fab6-4f38-b41f-228ba122b9c2`
+  - `swap_in_price_summary.attached_price_count=13`
+  - JUP-Dossier zeigt `0` Nullkosten-Zeilen.
+- Offene Zero-Cost-Medium-Issues danach: `1`
+  - `2022/USDT`: 3 Zeilen, `1377.09 EUR`, Dossier `docs/181_USDT_2022_ZERO_COST_DOSSIER_2026-05-10.md`.
+  - Bisheriger Befund: kein deterministischer Software-Fix; Primaerbeleg oder explizite Review-Entscheidung erforderlich.
+- Tests:
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_process_endpoints.py tests/unit/core/test_processor_fifo.py tests/unit/core/test_tax_domains.py`
+  - Ergebnis: `48 passed`, `1` Importlib-Deprecation-Warnung.
+- Naechster sinnvoller Schritt:
+  1. `2022/USDT` fachlich entscheiden: neue Primaerquelle suchen oder als explizite Nullbasis/Review-Entscheidung dokumentieren.
+  2. Danach alle Jahre `2020..2026` neu rechnen und finalen Readiness-/Export-Status pruefen.
+
+## Neuester Stand 2026-05-10 USDT Zero-Cost Entscheidungspaket
+- Das letzte offene Zero-Cost-Issue war in diesem Zwischenstand `zero_cost_tax_lots:2022:USDT:c94a113e-1423-4ac1-8a72-9a12cd1156b1`; aktueller Stand nach Gesamtlauf siehe Abschnitt `Gesamtlauf und HNT/Pionex Preisfix`.
+- Report: `docs/188_USDT_2022_ZERO_COST_REVIEW_DECISION_PACKAGE_2026-05-10.md`
+- Dossier: `docs/181_USDT_2022_ZERO_COST_DOSSIER_2026-05-10.md`
+- Befund:
+  - `3` steuerpflichtige USDT-Zeilen mit Cost Basis `0`.
+  - Erlöse im Zwischenstand `1377.093968129900714000000000 EUR`; aktuell nach Gesamtlauf `1383.45 EUR`.
+  - Betroffen sind Binance `2022-01-05` und Pionex `2022-01-19`.
+  - Lokale KI-Pruefung mit `qwen3.6-35b-a3b-iq4xs`: fehlende historische USDT-Anschaffungskette, `can_auto_fix=false`.
+- Code/API:
+  - `src/tax_engine/api/review.py`: `GET /api/v1/review/issue-context/{issue_id}` unterstuetzt jetzt auch `zero_cost_tax_lots:<YEAR>:<ASSET>:<JOB_ID>`.
+  - Issue-Zeilen liefern `api_actions.context`, `api_actions.set_status` und `api_actions.confirm_zero_basis`.
+  - `POST /api/v1/issues/update-status` mit Status `wont_fix` gibt das Review-Gate frei, veraendert aber keine Steuerzeilen; Nullbasis bleibt im Report sichtbar.
+- Test:
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_issue_endpoints.py::test_review_gates_block_on_material_zero_cost_tax_lots`
+  - Ergebnis: `1 passed`.
+- Naechster sinnvoller Schritt:
+  1. Nicht automatisch `wont_fix` setzen, solange keine explizite Nutzerentscheidung vorliegt.
+  2. Wenn Nutzer Nullbasis fachlich bestaetigt: per API `status=wont_fix` setzen.
+  3. Danach alle Jahre `2020..2026` neu rechnen und `GET /api/v1/review/gates` mit Job-ID pruefen.
+
+## Neuester Stand 2026-05-10 Zero-Cost Review im Dashboard bedienbar
+- Report: `docs/189_ZERO_COST_REVIEW_DASHBOARD_ACTIONS_2026-05-10.md`
+- UI:
+  - Review-Tab `Issue Inbox` hat jetzt eine Aktionsspalte.
+  - Button `Kontext` laedt `GET /api/v1/review/issue-context/{issue_id}` und zeigt bei Zero-Cost-Issues die betroffenen Steuerzeilen.
+  - Button `Nullbasis bestätigen` setzt nach Browser-Bestaetigung `POST /api/v1/issues/update-status` mit `status=wont_fix`.
+- Wichtig:
+  - `wont_fix` aendert keine RAW-Daten und keine Steuerzeilen.
+  - Cost Basis `0` bleibt im Steuerreport sichtbar; nur das Review-Issue wird fachlich geschlossen.
+  - Fuer `2022/USDT` wurde die Entscheidung nicht automatisch gesetzt.
+- Validierung:
+  - `node --check src/tax_engine/ui/static/app.js`
+  - `python3 -m py_compile src/tax_engine/api/review.py`
+- Naechster sinnvoller Schritt:
+  1. Im Dashboard Issue-Kontext pruefen.
+  2. Nutzerentscheidung zu `2022/USDT`: offen lassen oder Nullbasis bestaetigen.
+  3. Danach Steuerjahre `2020..2026` neu rechnen und Exporte/Readiness aktualisieren.
+
+## Neuester Stand 2026-05-10 Gesamtlauf und HNT/Pionex Preisfix
+- Reports:
+  - `docs/190_CURRENT_TAX_RUNS_2026-05-10.md`
+  - `docs/191_HNT_2023_ZERO_COST_DOSSIER_2026-05-10.md`
+  - `docs/192_PIONEX_HNT_AND_STABLE_PAIR_PRICE_FIX_2026-05-10.md`
+- Wiederholbares Skript:
+  - `scripts/run_current_tax_years_20260510.py`
+  - Rechnet `2020..2026`, schreibt `var/current_tax_summary_2026-05-10.json`, `var/current_tax_jobs_2026-05-10.jsonl`, `var/review_gate_snapshot_2026-05-10.json` und Exporte unter `var/report_exports_current_2026-05-10/`.
+- HNT 2023:
+  - Nach frischem Lauf tauchte kurz `zero_cost_tax_lots:2023:HNT` auf.
+  - Ursache: Pionex-HNT-Kaeufe mit `raw_row.symbol=HNT_USDT` wurden nicht als USD-Stable-Quote bepreist.
+  - Fix in `src/tax_engine/fx/service.py`: Stable-Quote aus Symbol/Market ableiten.
+  - Zusaetzlicher Schutz in `src/tax_engine/core/processor.py`: Stable-Assets nutzen zuerst USD/EUR-FX, nicht Pair-Marktpreise wie BTCUSDT.
+  - `2023/HNT` ist nach Neuberechnung geschlossen.
+- Aktueller Gesamtlauf nach Fix:
+  - Jobs: `2020 85094b45-65e1-413b-ba82-39276528f270`, `2021 bb7d350f-b806-4615-b40d-820fd841870f`, `2022 942afb62-85f5-4690-9b74-2e6195d5205f`, `2023 8a95da60-eac3-4ed1-abb8-cd27f5fba690`, `2024 7158e799-c930-4306-baf3-165e06d856d7`, `2025 8c0b81a8-7c60-4df8-9090-8dfeeecf86c4`, `2026 81949598-7ec7-4a9d-8f9d-77f40f6bf07e`.
+  - Gesamt Tax Lines `31837`, Derivative Lines `36`.
+  - Review-Gate `allow_export=True`.
+  - Offene Issues: `1`, nur `zero_cost_tax_lots:2022:USDT:942afb62-85f5-4690-9b74-2e6195d5205f`, `medium`, `1383.45 EUR`.
+  - Exportdateien: `var/report_exports_current_2026-05-10/`.
+- Tests:
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/fx/test_fx_service.py tests/unit/core/test_processor_fifo.py tests/unit/api/test_issue_endpoints.py tests/unit/api/test_process_endpoints.py tests/unit/core/test_tax_domains.py`
+  - Ergebnis: `86 passed`, `1` Importlib-Deprecation-Warnung.
+- Naechster sinnvoller Schritt:
+  1. Port `8000` nach Codeaenderung neu starten.
+  2. Dashboard Issue-Kontext fuer aktuelles `2022/USDT` pruefen.
+  3. Nutzerentscheidung: offen lassen oder Nullbasis explizit bestaetigen.
+
+## Neuester Stand 2026-05-09 nach Solscan-/Bitget-HNT-Korrektur
+- Solscan-HNT-Gegenfluss fuer Bitget-Withdrawal `2025-03-09` importiert:
+  - Script: `scripts/import_solscan_bitget_hnt_counterflow_20250309.py`
+  - Report: `docs/159_SOLSCAN_BITGET_HNT_COUNTERFLOW_20250309_IMPORT_2026-05-09.md`
+  - Ergebnis: `+859.9208492 HNT` in Solana-Wallet `wBrPoi...` um `2025-03-09T18:59:51Z`, passend zum Bitget-Withdrawal und dem anschliessenden Solana-Swap.
+- Bitget-HNT-Quelle aus Blockpit-Bitget-Referenz rekonstruiert:
+  - Script: `scripts/import_bitget_hnt_2024_blockpit_source_chain.py`
+  - Report: `docs/161_BITGET_HNT_2024_BLOCKPIT_SOURCE_CHAIN_2026-05-09.md`
+  - Ergebnis: `12` aktive Rekonstruktionszeilen importiert; sie liefern exakt `12.499488 HNT` vor dem ersten Bitget-HNT-Bruch am `2024-04-02`.
+- Aktueller chronologischer Balance-Audit:
+  - Report: `docs/162_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BITGET_HNT_SOURCE_CHAIN_2026-05-09.md`
+  - JSON: `var/chronological_balance_break_audit_after_bitget_hnt_source_chain_2026-05-09.json`
+  - Ergebnis: `0` negative Endbestaende; `HNT` global ohne Negativbruch, Endbestand `1577.92535200143114379127906`.
+- Aktueller HNT-Plattform-Kontext:
+  - Report: `docs/158_HNT_PLATFORM_CONTEXT_AUDIT_2026-05-09.md`
+  - Solana-Wallet-HNT und Bitget-HNT sind geschlossen.
+  - Rest-HNT nur noch Plattformkontext/Dust: `binance -1.62738672 HNT`, `pionex -0.16629829 HNT`.
+- Binance-HNT-Rest wurde separat eingegrenzt:
+  - Script: `scripts/binance_hnt_residual_audit_20260509.py`
+  - Report: `docs/163_BINANCE_HNT_RESIDUAL_AUDIT_2026-05-09.md`
+  - Ergebnis: Blockpit-Binance-Referenzen am `2023-03-17` enthalten genau die bereits importierten 5 HNT-Trades (`312.07 HNT` gekauft, `313.91 HNT` verkauft). Mit Binance-Vorbestand `0.21261328 HNT` bleibt lokal `-1.62738672 HNT`.
+  - Nicht global als HNT-Zufluss buchen; globaler HNT-Endsaldo ist positiv. Falls kein weiterer Beleg auftaucht, als Plattformkontext-/Kleinrest entscheiden.
+- Binance-BTC-Rest geschlossen:
+  - Script: `scripts/import_binance_btc_2023_vet_win_blockpit_reconstruction.py`
+  - Import-Report: `docs/164_BINANCE_BTC_2023_VET_WIN_BLOCKPIT_RECONSTRUCTION_2026-05-09.md`
+  - Chronologie danach: `docs/165_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BINANCE_BTC_VET_WIN_RECONSTRUCTION_2026-05-09.md`
+  - Importiert wurden `4` enge Rekonstruktionszeilen aus Blockpit-Binance-Referenz:
+    - `2023-05-02T04:12:16Z` Auto-Balancing In `100.01639287 VET`
+    - `2023-05-02T04:12:17Z` Trade `100.01639287 VET -> 0.00007565 BTC`
+    - `2023-05-02T04:12:35Z` Auto-Balancing In `14149.30730362 WIN`
+    - `2023-05-02T04:12:36Z` Trade `14156.61280211 WIN -> 0.00004088 BTC`
+  - Ergebnis: Binance/BTC ist aus dem Plattform-Resolution-Plan verschwunden; globaler BTC-Audit hat keinen Negativbruch mehr, BTC-Endstand `0.00264023400000000000`.
+- Aktueller Plattform-Resolution-Plan:
+  - Report: `docs/135_PLATFORM_BREAK_RESOLUTION_PLAN_2026-05-09.md`
+  - Offene Brueche: `5`
+  - High-Blocker bleibt `pionex / USDT`, worst `-1643.2312211162`, Status `opening_balance_or_bot_history_needed`.
+  - Weitere Restfaelle: `binance/HNT`, `pionex/HNT`, `solana_wallet/USDC`, `solana_wallet/USDT`.
+- Plattform-Restfaelle dokumentiert:
+  - Script: `scripts/platform_residual_review_audit_20260509.py`
+  - Report: `docs/166_PLATFORM_RESIDUAL_REVIEW_AUDIT_2026-05-09.md`
+  - JSON: `var/platform_residual_review_audit_2026-05-09.json`
+  - Ergebnis: `4` Restfaelle ohne Pionex-USDT-Hardblocker.
+  - Klassifikation: `binance/HNT` als `documented_platform_context_residual`; `pionex/HNT`, `solana_wallet/USDC`, `solana_wallet/USDT` als `documented_rounding_dust`.
+  - Automatischer Import: `False`; steuerwirksames Adjustment empfohlen: `False`.
+  - Bewertung: Diese Restfaelle bleiben dokumentierte Plattform-/Rundungsreste und duerfen nicht als neue steuerpflichtige Zufluesse gebucht werden.
+- Aktueller Readiness-Audit:
+  - Script: `scripts/tax_report_readiness_audit.py`
+  - Report: `docs/126_TAX_REPORT_READINESS_STATUS_2026-05-09.md`
+  - Status: `blocked_by_pionex_opening_evidence`
+  - Draft-Report erzeugbar: `True`
+  - Final sauber markierbar: `False`
+  - Offener Review-Kandidat: `pionex-usdt-opening-balance-2021-12-28`, `1643.2312211162 USDT`, `tax_effective=false`, Status `ready_for_explicit_review_decision`.
+- Neuer API-Entscheidungspunkt fuer Balance-Adjustment-Kandidaten:
+  - `POST /api/v1/review/balance-adjustment-candidates/decide`
+  - Erlaubte Entscheidungen: `approve_non_tax_inventory_normalization`, `reject_candidate`, `request_more_evidence`.
+  - Die Entscheidung bleibt immer `tax_effective=false`; sie speichert nur die fachliche Review-Freigabe bzw. Ablehnung.
+  - `scripts/tax_report_readiness_audit.py` erkennt `approved_non_tax_inventory_normalization` fuer den Pionex-Kandidaten und kann dann die Pionex-Opening-Coverage-Blocker als dokumentiert erledigt werten.
+  - Aktuell wurde keine Freigabe gesetzt; Status bleibt deshalb korrekt `blocked_by_pionex_opening_evidence`.
+  - Live auf Port `8000` verfuegbar; Prozess nach Restart: `/opt/steuerreport-venv/bin/python -m uvicorn tax_engine.api.app:app --host 0.0.0.0 --port 8000`.
+- Dashboard/API trennt echte Plattform-Blocker von dokumentierten Restfaellen:
+  - Code: `src/tax_engine/api/dashboard.py`, `src/tax_engine/ui/static/index.html`, `src/tax_engine/ui/static/app.js`.
+  - API: `GET /api/v1/platform-ledger/status` liefert jetzt `break_resolution.active_rows`, `break_resolution.documented_rows`, `active_blocker_count`, `documented_residual_count` und `residual_review`.
+  - Live-Check Port `8000`: Status `success`, aktive Blocker `1`, dokumentierte Restfaelle `4`.
+  - Dashboard-Tab `Plattform-Ledger`: neue KPIs `Aktive Blocker` und `Dokumentierte Reste`; priorisierte Bruchstellen zeigen nur aktive Blocker, Restfaelle stehen in eigener Tabelle.
+  - Test: `tests/unit/api/test_admin_endpoints.py::test_platform_ledger_status_separates_documented_residuals`.
+- Pionex-USDT finaler Blocker-Audit und Review-Entscheidung:
+  - Script: `scripts/pionex_usdt_final_blocker_audit_20260509.py`
+  - Report: `docs/167_PIONEX_USDT_FINAL_BLOCKER_AUDIT_2026-05-09.md`
+  - JSON: `var/pionex_usdt_final_blocker_audit_2026-05-09.json`
+  - Onchain-/Binance-Befund: bekannte Pionex-TRON-Adresse `TMHP82UVnvYQTqoxEP98gVch5DqbzZYfCQ` hat `4` USDT-Eingaenge und `4` Sweeps; bis Worst `2022-01-19T12:56:19Z` sind nur `1445.38419 USDT` sichtbar.
+  - Benoetigtes Opening bleibt `1643.2312211162 USDT`; nicht durch sichtbare Deposits gedeckt `197.8470311162 USDT`.
+  - API-Entscheidung gesetzt: `POST /api/v1/review/balance-adjustment-candidates/decide`, Entscheidung `request_more_evidence`, Status jetzt `needs_evidence`, `tax_effective=false`.
+  - Readiness nach erneutem Lauf bleibt korrekt `blocked_by_pionex_opening_evidence`; Report `docs/126_TAX_REPORT_READINESS_STATUS_2026-05-09.md`.
+- Review-Gates blockieren jetzt Balance-Kandidaten mit fehlendem Beleg:
+  - Code: `src/tax_engine/api/review.py`, UI-Zusammenfassung in `src/tax_engine/ui/static/app.js`.
+  - `GET /api/v1/review/gates` zaehlt `counts.balance_adjustment_candidates_open` und liefert `balance_adjustment_candidates[]`.
+  - Blocker-Status gilt fuer Kandidaten mit `needs_evidence` oder `ready_for_explicit_review_decision`.
+  - Live-Check Port `8000`: `allow_export=false`, `balance_adjustment_candidates_open=1`, Kandidat `pionex-usdt-opening-balance-2021-12-28`, Blocker-Code `balance_adjustment_candidates_need_decision`.
+  - Dashboard-Tab `Steuer` zeigt im Bereich `Review Gates` jetzt eine eigene Tabelle `gateBalanceCandidateTable` fuer offene Review-only Balance-Kandidaten mit Status, Betrag, `tax_effective=false` und letzter Entscheidung.
+  - Test: `tests/unit/api/test_issue_endpoints.py::test_review_gates_block_on_balance_adjustment_candidate_needing_evidence`.
+- Aktuelle Draft-Steuerlaeufe neu berechnet:
+  - Job-Log: `var/current_tax_draft_jobs_2026-05-09.jsonl`
+  - Summary JSON: `var/current_tax_draft_summary_2026-05-09.json`
+  - Report: `docs/168_CURRENT_TAX_DRAFT_RUNS_2026-05-09.md`
+  - Jahre `2020..2026` neu mit aktuellem Datenstand und `DE-YYYY-v1.0` gerechnet.
+  - Ergebnisse: `3320` Tax Lines gesamt, `36` Derivative Lines, Gate bleibt `allow_export=false`.
+  - Job-IDs: `2020 b9da157a-5d07-495e-9291-f4526e8c499e`, `2021 66fe27cc-e418-4ea5-8097-98ab5b42cabb`, `2022 1805e7af-5a85-40f9-b8a5-519b1728c5ca`, `2023 8dabcc3d-3ea3-49ac-8a22-379805b3f82c`, `2024 33e3a5fb-d8d1-42e1-bef5-c24da36e3e26`, `2025 d4cb13ef-42fd-4943-8554-db36dd895fd4`, `2026 1831aa17-fc4d-4a90-8dbf-330e1c2a64b7`.
+  - Lokale Entwurfs-Exports: `var/report_exports_current_2026-05-09/` mit `all.json`, `tax.csv`, `wiso.csv` je Jahr; fuer 2024 zusaetzlich `derivatives.csv`.
+- Naechster sinnvoller Schritt:
+  1. Pionex-USDT-Opening/Bot-Start weiter belegen oder explizite nicht steuerwirksame Review-Entscheidung vorbereiten.
+  2. Keine steuerwirksame Buchung fuer dokumentierte Restfaelle aus `docs/166_PLATFORM_RESIDUAL_REVIEW_AUDIT_2026-05-09.md` vornehmen.
+  3. Nach jeder gezielten Korrektur Pipeline erneut laufen lassen: `build_platform_ledger.py`, `match_platform_transfers.py`, `simulate_platform_balances.py`, `match_platform_transfer_candidates.py`, `platform_break_resolution_plan.py`, `chronological_balance_break_audit.py`, `tax_report_readiness_audit.py`.
+
+## Aktueller Stand Bestands-/Unterdeckungspruefung 2026-05-09
+  - Neuester Plattform-Ledger-Stand nach Bitget-/Binance-Duplikatbereinigung, JUP-Solscan-Gegenfluss und Bitget-BTC-Rekonstruktion:
+  - Bitget Tax API Duplikat-Withdrawals ausgeschlossen:
+    - Script: `scripts/apply_bitget_tax_api_duplicate_withdrawal_exclusions.py`
+    - Report: `docs/136_BITGET_TAX_API_DUPLICATE_WITHDRAWAL_EXCLUSIONS_2026-05-09.md`
+    - Ergebnis: `2` doppelte Bitget-Tax-API Withdrawals ausgeschlossen; Bitget API bleibt aktiv, weil sie Grossbetrag/Zieladresse/Onchain-TX enthaelt.
+  - Binance File/API Deposit-Duplikate ausgeschlossen:
+    - Script: `scripts/apply_binance_duplicate_deposit_exclusions.py`
+    - Report: `docs/138_BINANCE_DUPLICATE_DEPOSIT_EXCLUSIONS_2026-05-09.md`
+    - Ergebnis: `54` Binance-File-Deposits ausgeschlossen, wenn identische Binance-API-Deposit-Zeile mit gleicher `tx_id + asset + quantity` existiert.
+    - Asset-Verteilung: `HNT 45`, `JUP 5`, `SOL 3`, `BTC 1`.
+  - Zeitvarianten-Audit fuer Rohdaten ergaenzt:
+    - Script: `scripts/audit_timestamp_variants.py`
+    - Report: `docs/140_TIMESTAMP_VARIANT_AUDIT_2026-05-09.md`
+    - JSON: `var/timestamp_variant_audit_2026-05-09.json`
+    - Ergebnis: `36` Gruppen / `78` Rohdaten-Zeilen mit Zeitvarianten.
+    - Beispiel Nutzerfall: Binance SOL-Deposit `2025-06-15T07:47:02+00:00` (`binance_api`, aktiv) und doppelte Binance-CSV-Zeile `2025-06-15T09:47:02+00:00` (`+7200s`, `EXCLUDED`) werden auf `normalized_timestamp_utc=2025-06-15T07:47:02+00:00` geglaettet.
+  - Plattform-Ledger nutzt jetzt zusaetzliche Zeitfelder:
+    - `timestamp_utc` bleibt Original.
+    - `normalized_timestamp_utc` ist kanonische Vergleichszeit.
+    - `timestamp_offset_seconds` zeigt Abweichungen wie `7200`.
+    - Transfer-/Kandidaten-/Plattform-Balance-Simulationen sortieren nach normalisierter Zeit, ohne RAW-Zeitstempel zu ueberschreiben.
+  - JUP-Solana-Wallet-Bruch geschlossen:
+    - Script: `scripts/import_solscan_jup_counterflow_20250323.py`
+    - Report: `docs/141_SOLSCAN_JUP_COUNTERFLOW_20250323_2026-05-09.md`
+    - Chronologie danach: `docs/142_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_SOLSCAN_JUP_COUNTERFLOW_2026-05-09.md`
+    - Importiert wurde `1` aktive Primaerzeile aus `solscan_account_transfers`: `2025-03-23T13:47:55+00:00` `+5530.555703 JUP` in Wallet `wBrPoi...`, TX `GuZCyW2...`.
+    - Diese Zeile matcht exakt die Binance-API-Withdrawal `2025-03-23T13:47:35+00:00` `-5530.555703 JUP`.
+    - Transfergruppe: `binance -> solana_wallet`, `quantity_diff=0`.
+    - Der spaetere Bruch `2025-06-12` `579Evf8...` ist damit erklaert; Solscan zeigte dort vor dem Outflow tatsaechlich `10067.887283 JUP`, nicht nur die vorher simulierten `4537.33158 JUP`.
+    - Die zwei Blockpit-Referenz-Deposits fuer `GuZCyW2...` bleiben Referenz; keine RAW-Daten wurden ueberschrieben.
+  - Bitget-BTC-2024-Bruch geschlossen:
+    - Script: `scripts/import_bitget_btc_2024_blockpit_reconstruction.py`
+    - Report: `docs/143_BITGET_BTC_2024_BLOCKPIT_RECONSTRUCTION_2026-05-09.md`
+    - Chronologie danach: `docs/144_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BITGET_BTC_RECONSTRUCTION_2026-05-09.md`
+    - Importiert wurden nur `2` enge Rekonstruktionszeilen aus Blockpit-Bitget-API-Referenz:
+      - `2024-03-07T19:55:23+00:00` `+0.0046913 BTC` Deposit, Ref `5ad748...`
+      - `2024-03-11T11:47:00+00:00` BTC-Sell `-0.000121 BTC` gegen `+8.73522595 USDT`, Fee `0.00873522595 USDT`, Ref `1f629...`
+    - Die Blockpit-April-Merged-Trade-Zeile wurde nicht importiert, weil April bereits durch Bitget Tax API Primaerzeilen abgedeckt ist.
+    - Bitget-BTC-Saldo nach Rekonstruktion: vor April-Verkauf `0.0045703 BTC`, nach April-Verkauf `0.0000003 BTC`, nach Mini-Deposit `0.000000304 BTC`.
+    - Status `bitget_history_needed` ist aus dem Plattform-Resolution-Plan verschwunden.
+  - Aktuelle Pipeline-Ausgaben:
+    - Ledger: `docs/130_PLATFORM_LEDGER_EXPORT_2026-05-09.md`, `var/platform_ledger_2026-05-09.jsonl`
+    - Transfergruppen: `docs/131_PLATFORM_TRANSFER_GROUPS_2026-05-09.md`, `11` Gruppen, `764` unmatched transfer-like Rows.
+    - Plattform-Simulation: `docs/132_PLATFORM_BALANCE_SIMULATION_2026-05-09.md`, `8` Plattform/Asset-Brueche.
+    - Kandidaten: `docs/134_PLATFORM_TRANSFER_CANDIDATES_2026-05-09.md`, `26` Kandidaten, `8` Break-Links.
+    - Resolution Plan: `docs/135_PLATFORM_BREAK_RESOLUTION_PLAN_2026-05-09.md`, Prioritaeten `high 1`, `medium 3`, `low 4`.
+    - KI-Review: `docs/133_AI_PLATFORM_RECONCILIATION_REVIEW_2026-05-09.md`, Status `success`, `reasoning_content_present=false`, `prompt_tokens=16676`, `completion_tokens=1213`.
+  - High-Restthemen im Plattform-Ledger:
+    - `pionex / USDT`: worst `-1643.2312211162`, Status `opening_balance_or_bot_history_needed`.
+  - Globaler chronologischer Audit nach Bitget-BTC-Rekonstruktion:
+    - Report: `docs/144_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BITGET_BTC_RECONSTRUCTION_2026-05-09.md`
+    - JSON: `var/chronological_balance_break_audit_after_bitget_btc_reconstruction_2026-05-09.json`
+    - Ergebnis: `42899` Bewegungen, `213` Assets, `0` Assets mit negativem Endbestand.
+- Wichtiger Audit-Fix danach:
+  - `scripts/chronological_balance_break_audit.py` filtert jetzt Referenzquellen wie `blockpit` standardmaessig aus der Bestandsrechnung. Referenzen bleiben Evidence-/Konfliktdaten, zaehlen aber nicht mehr als aktiver Bestand.
+  - Neuer aktiver Endbestands-Audit: `docs/145_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_ACTIVE_SOURCE_FILTER_2026-05-09.md`
+  - JSON: `var/chronological_balance_break_audit_after_active_source_filter_2026-05-09.json`
+  - Ergebnis aktive Quellen: `37798` Bewegungen, `55` Assets, `2` negative Endbestaende:
+    - `SOL -44.78296156000000000000`, erster Bruch `2023-05-08T04:43:46Z` Binance API Withdrawal `4eU6ZG...`
+    - `BUSD -0.55168701480000000000`, Dust-Convert-Out `2023-05-02T04:13:23Z`
+- Transiente Crypto-/Asset-Chronologie-Unterdeckungen nach aktiver Quellenfilterung:
+  - Report: `docs/119_TRANSIENT_BALANCE_UNDERCOVERAGE_AUDIT_2026-05-09.md`
+  - JSON: `var/transient_balance_undercoverage_audit_2026-05-09.json`
+  - Ergebnis: `4` aktive transiente Unterdeckungen:
+    - `USDT`: worst `-1569.91028184620000000000`, Pionex Trade-Out `2022-01-19T12:56:19Z`; Pionex Opening-/Bot-Startbestand oder gleichzeitige interne Bot-Fills pruefen.
+    - `SOL`: worst `-54.79988580100000000000`, aktiver Binance/Solana-Kontext ab `2023-05-08`.
+    - `BUSD`: worst `-0.55168701480000000000`, Dust-Convert-Kontext.
+    - `USDC`: worst `-0.000002`, Solana-Dust/Rundung.
+  - `EUR` wird separat als Fiat-Cash-Unterdeckung dokumentiert, aber nicht als Crypto-Bestandsbruch gezaehlt: Kreditkarte/Apple Pay/Bankzahlungen sind externe Zahlungswege und muessen keinen vorherigen Crypto-/CEX-Assetbestand decken.
+  - Dust-Toleranz im transienten Audit: `0.000001`; BNSOL-Rest `-390E-9` wird dokumentiert, aber nicht als offener Fehler gezaehlt.
+- Bereinigungen seit letztem Stand:
+  - Same-Timestamp-Sortierung fuer Balance-Audits eingefuehrt, damit eingehende Legs vor Fees/Out-Legs bei identischem Timestamp laufen. Betrifft `scripts/chronological_balance_break_audit.py` und `scripts/transient_balance_undercoverage_audit.py`.
+  - BNSOL Blockpit/Binance-Referenzzeilen ausgeschlossen:
+    - Script: `scripts/apply_bnsol_blockpit_reference_exclusions.py`
+    - Report: `docs/121_BNSOL_BLOCKPIT_REFERENCE_EXCLUSIONS_2026-05-09.md`
+    - Ergebnis: `17` Blockpit-BNSOL-Referenzzeilen ausgeschlossen; Binance-API bleibt Primaerquelle.
+  - VSR als geprueftes Drop-/Dust-Artefakt ignoriert:
+    - Script: `scripts/apply_vsr_ignored_candidate.py`
+    - Report: `docs/122_VSR_IGNORED_CANDIDATE_2026-05-09.md`
+    - RAW bleibt erhalten; nur Bewertungs-/Auditpfade mit `runtime.ignored_tokens` blenden VSR aus.
+- Naechster sinnvoller Schritt:
+  - Detailreport fuer beide Restthemen:
+    - Script: `scripts/remaining_undercoverage_detail_audit.py`
+    - Report: `docs/124_REMAINING_UNDERCOVERAGE_DETAIL_AUDIT_2026-05-09.md`
+    - JSON: `var/remaining_undercoverage_detail_audit_2026-05-09.json`
+    - EUR: erster Bruch besteht aus Binance `FIAT Payments` Kreditkartenkauf `98 EUR` plus `2 EUR` Fee ohne vorherigen effektiven EUR-Zufluss; fachlich Fiat-Cash-Kontext, kein Crypto-Bestandsbruch.
+    - USDT: kritisches Pionex-Fenster zeigt Binance-Withdrawal `1245.38419 USDT` um `12:50:48Z`, Pionex-Deposit um `12:54:09Z`, danach Pionex-Trade-Out `2572.15382077 USDT` um `12:56:19Z`; fehlende temporäre Deckung `125.5260918462 USDT`.
+  - Pionex-Opening-Kandidat aktualisiert, aber weiterhin nicht steuerwirksam:
+    - Script: `scripts/refresh_pionex_opening_balance_candidate_20260509.py`
+    - Report: `docs/125_PIONEX_OPENING_CANDIDATE_REFRESH_2026-05-09.md`
+    - JSON: `var/pionex_opening_candidate_refresh_2026-05-09.json`
+    - Detailreport: `docs/146_PIONEX_USDT_PLATFORM_GAP_CURRENT_2026-05-09.md`, JSON `var/pionex_usdt_platform_gap_current_2026-05-09.json`
+    - Kandidat `pionex-usdt-opening-balance-2021-12-28` bleibt `tax_effective=false`.
+    - Aktueller normalisierter Pionex-Plattformbedarf, damit Pionex nie negativ wird: `1643.2312211162 USDT`.
+    - Opening ab erstem Pionex-Bruch: `13.53043343 USDT`.
+    - Aktiver globaler transienter USDT-Rest: `1569.91028184620000000000 USDT`.
+  - Readiness-Audit auf aktuellen Stand gebracht:
+    - Script: `scripts/tax_report_readiness_audit.py`
+    - Report: `docs/126_TAX_REPORT_READINESS_STATUS_2026-05-09.md`
+    - JSON: `var/tax_report_readiness_status_2026-05-09.json`
+    - Status: `blocked_by_active_source_balance_gaps`
+    - Draft-Report erzeugbar: `True`
+    - Final sauber markierbar: `False`
+    - Negative aktive Endbestaende: `SOL -44.78296156000000000000`, `BUSD -0.55168701480000000000`.
+    - Offene transiente Assets: `USDT`, `SOL`, `BUSD`, `USDC`.
+  - BUSD-Dust-Kandidat nach aktiver Quellenfilterung reaktiviert:
+    - Script: `scripts/refresh_busd_dust_candidate_after_active_filter_20260509.py`
+    - Report: `docs/147_BUSD_DUST_CANDIDATE_ACTIVE_FILTER_REFRESH_2026-05-09.md`
+    - JSON: `var/busd_dust_candidate_active_filter_refresh_2026-05-09.json`
+    - Kandidat `mixed-busd-dust-residual-2023-05-02` ist wieder `needs_review`, `tax_effective=false`, weil der aktive Audit BUSD wieder als kleinen negativen Endbestand zeigt.
+  - SOL-Aktivluecke fokussiert:
+    - Script: `scripts/sol_active_gap_audit_20260509.py`
+    - Report: `docs/148_SOL_ACTIVE_GAP_AUDIT_2026-05-09.md`
+    - JSON: `var/sol_active_gap_audit_2026-05-09.json`
+    - Ergebnis nach Rekonstruktion: SOL ist aktiv positiv (`10.52514844000000000000`) und hat keinen aktiven Negativbruch mehr.
+    - `3` Binance->Solana-Wallet SOL-Transfers sind per gleicher TXID gematcht.
+  - Binance-SOL-2023-Rekonstruktion ausgefuehrt:
+    - Script: `scripts/import_binance_sol_2023_blockpit_reconstruction.py`
+    - Report: `docs/149_BINANCE_SOL_2023_BLOCKPIT_RECONSTRUCTION_2026-05-09.md`
+    - JSON: `var/binance_sol_2023_blockpit_reconstruction_2026-05-09.json`
+    - Importiert wurden `4` aktive Binance-SOL-Kaufzeilen aus Blockpit-Binance-API-Referenz:
+      - `2023-05-04T04:24:52Z` `+1.2 SOL` gegen `0.00092028 BTC`
+      - `2023-06-10T16:45:04Z` `+0.36 SOL` gegen `0.00020725 BTC`
+      - `2023-06-10T16:45:04Z` `+21.89 SOL` gegen `0.01260207 BTC`, Fee `0.02189 SOL`
+      - `2023-06-10T16:45:04Z` `+31.88 SOL` gegen `0.01835331 BTC`
+    - Die passenden Withdrawal-Zeilen wurden nicht importiert, weil Binance API Withdrawals und Solana-Wallet-Counterflows bereits aktiv vorhanden sind.
+  - Neuer BTC-Folgegap dokumentiert:
+    - Script: `scripts/btc_active_gap_audit_20260509.py`
+    - Report: `docs/151_BTC_ACTIVE_GAP_AUDIT_2026-05-09.md`
+    - JSON: `var/btc_active_gap_audit_2026-05-09.json`
+    - Durch die korrekte SOL-Rekonstruktion wird BTC als Gegenasset belastet. Aktiver BTC-Endsaldo jetzt `-0.01907578600000000000`; erster Bruch `2023-05-04T04:24:52Z`.
+    - Blockpit-Binance-Referenznetto bis zum zweiten SOL-Kauf: `0.03116508 BTC`, aber die BTC-Zufluesse stammen aus BUSD/USDT/VET/WIN/DOGE-Gegenassets. Naechster Schritt ist kontrollierte BTC-Quellenketten-Rekonstruktion, nicht pauschales Aktivieren aller Referenzen.
+  - Alte Dust-Residual-Kandidaten `VTHO`/`BUSD` als ueberholt markiert:
+    - Script: `scripts/resolve_superseded_dust_residual_candidates_20260509.py`
+    - Report: `docs/127_SUPERSEDED_DUST_RESIDUAL_CANDIDATES_2026-05-09.md`
+    - Achtung: Diese Aussage ist fuer `BUSD` durch den aktiven Quellenfilter ueberholt; `BUSD` wurde in `docs/147...` wieder auf `needs_review` gesetzt. `VTHO` bleibt historisch/ueberholt.
+  - Nutzerhypothese HNT-Staking/Legacy -> Binance/Pionex -> USDT gezielt nachgeprueft:
+    - Script: `scripts/hnt_staking_to_pionex_usdt_chain_audit.py`
+    - Report: `docs/128_HNT_STAKING_TO_PIONEX_USDT_CHAIN_AUDIT_2026-05-09.md`
+    - JSON: `var/hnt_staking_to_pionex_usdt_chain_audit_2026-05-09.json`
+    - Ergebnis: Direkter HNT-Deposit zu Pionex ist im aktuellen Pionex Deposit/Withdraw-CSV nicht belegt; Pionex-Deposits in der fruehen Phase sind nur `USDT`.
+    - Belegt ist dagegen die Kette `HNT Legacy/Staking -> Binance -> HNT/USDT Trades -> USDT Withdrawal -> Pionex Deposit`.
+    - Beispiel: `2021-12-13` Legacy-HNT `11.011985972987041` out mit TX `dj72...`, Binance-HNT-Deposit `11 HNT`; danach Binance-HNT-Verkaeufe u.a. `2021-12-17` und `2021-12-25`; USDT-Withdrawal `200 USDT` am `2021-12-25` matcht Pionex-Deposit per gleicher TXID.
+    - Diese Kette erklaert die sichtbare Pionex-Finanzierung, schliesst aber den aktuellen globalen transienten USDT-Rest `125.5260918462` noch nicht vollstaendig.
+  - Neuer Aufbauplan fuer chronologisches Plattform-Ledger erstellt:
+    - Plan: `docs/129_CHRONOLOGICAL_PLATFORM_LEDGER_PLAN_2026-05-09.md`
+    - Ziel: alle effektiven Bewegungen plattformbezogen chronologisch ausspielen, Transfers gruppieren, virtuelle Plattformbestaende simulieren, heutige API-/CSV-Snapshots dagegenhalten.
+    - Lokale KI wird als Analyst fuer ungepaarte Transfers/negative Plattformfenster eingebunden, aber nicht fuer automatische steuerwirksame Buchungen.
+    - Naechster konkreter Schritt: Phase 1 `scripts/build_platform_ledger.py` implementieren und `docs/130_PLATFORM_LEDGER_EXPORT_2026-05-09.md` erzeugen.
+  1. `BTC` aktive Quellenluecke nach SOL-Rekonstruktion kontrolliert klaeren: BTC-Zufluesse aus Blockpit-Binance-Referenzen gegen BUSD/USDT/VET/WIN/DOGE als Kette pruefen und nur begrenzt importieren.
+  2. `BUSD` Dust-Convert-Kontext fachlich als Low/Dust entscheiden oder aktive Mini-Rekonstruktion belegen.
+  3. `USDT`-Pionex-Fenster um `2022-01-19 12:56:19Z` weiter detailieren: Trades, Bot-Start, Deposits, interne Pionex-Transfers, Opening-Kandidat.
+  4. Danach Plattform-Ledger, transienten Audit und Readiness erneut laufen lassen.
+
+## Aktueller Dashboard-Fix 2026-05-08
+- Nutzerproblem: Die Zeitraum-/Jahresdarstellung liess faktisch nur `2026` zu.
+- Befund:
+  - Backend `GET /api/v1/dashboard/shell` liefert korrekt Aktivitaetsjahre `2021` bis `2026`.
+  - UI hatte aber zwei Verengungen:
+    - Der globale Jahresfilter wurde aus dem gerade zuletzt geladenen Teildatensatz aufgebaut.
+    - `suggested_tax_year=2026` wurde automatisch als Dashboard-Zeitraum gesetzt.
+- Umgesetzt in `src/tax_engine/ui/static/app.js`:
+  - globale Dashboard-Jahresoptionen werden nun aus mehreren Quellen gesammelt:
+    - Mindestbereich `2020..aktuelles Jahr`
+    - Prozess-Optionen/Steuerjahre
+    - Dashboard-Aktivitaetsjahre
+    - Jahres-/Asset-Aktivitaet
+    - Portfolio-History-Punkte
+  - Nachladen von Jahresaktivitaet und Portfolio-History aktualisiert die Jahresoptionen, ohne sie auf einen Teilbereich zu verengen.
+  - Dashboard setzt nicht mehr automatisch `suggested_tax_year=2026`; das Steuerjahr fuer Reportlaeufe bleibt separat.
+- Verifikation:
+  - `node --check src/tax_engine/ui/static/app.js`
+  - `PYTHONPATH=src pytest -q tests/unit/api/test_admin_endpoints.py tests/unit/api/test_process_endpoints.py tests/unit/api/test_api_coverage_gate.py`
+  - Port `8000` neu gestartet; Listener-Prozess laut `ss`: PID `437375`.
+  - Live: `/api/v1/dashboard/shell` zeigt Jahre `[2021, 2022, 2023, 2024, 2025, 2026]`.
+  - Live: Portfolio-History `window_days=0&interval=auto&max_points=120` zeigt `64` Punkte von `2021-02-28` bis `2026-05-06`.
+
+## Aktivitaets-Plausibilitaet und DB-Optimierung 2026-05-08
+- Nutzerfrage: Warum hat `2025-02-01` so hohe Aktivitaet?
+- Ergebnis:
+  - `2025-02-01` hat `917` technische Import-Events.
+  - Davon `908` Derivate/Futures, `548` Referenzquelle Blockpit, `369` Primaer-/API-Events.
+  - Es handelt sich um einen Bitget-/Blockpit-Derivate-Cluster, nicht um 917 manuelle Spot-Trades.
+  - Groesste Minuten-Cluster: `18:36` mit `139` Events, `18:53` mit `101`, `18:49` mit `97`.
+- Neuer Audit:
+  - Script: `scripts/activity_plausibility_audit.py`
+  - Report: `docs/25_ACTIVITY_PLAUSIBILITY_AUDIT_2025_2026-05-08.md`
+  - JSON: `var/activity_plausibility_audit_2025_2026-05-08.json`
+  - Flags: `high_daily_event_count`, `derivative_dominated`, `reference_dominated`, `many_zero_quantity_events`, `timestamp_cluster`, `suspicious_reward_unit`.
+- Wichtiger Nebenfund:
+  - Aeltere HeliumGeek-Monatsimporte hatten `HNT`-Mengen teils als Rohmenge in `quantity`, z.B. `111665526`.
+  - `raw_row` enthaelt korrekt `1.11665526 HNT`.
+  - RAW-Daten wurden nicht geloescht/umgeschrieben.
+  - Effektive Mengenlogik nutzt jetzt auch fuer HeliumGeek-`HNT` die Display-Felder `HNT Tokens/HNT Token` aus `raw_row`.
+  - Betroffene Logik: `src/tax_engine/core/processor.py`, `src/tax_engine/api/dashboard.py`, `src/tax_engine/queue/service.py`.
+  - Audit zeigt fuer `2025-02-01` jetzt effektiv `9.77844495 HNT` statt `977835072.09423 HNT` fuer HeliumGeek-Rewards.
+- SQLite-Optimierung:
+  - Neue JSON-Ausdrucksindizes in `src/tax_engine/db/migration_v1.sql`:
+    - `idx_raw_events_payload_day`
+    - `idx_raw_events_payload_year`
+    - `idx_raw_events_payload_source_type`
+    - `idx_raw_events_payload_asset_day`
+  - Live-DB hat die Indizes angelegt.
+- Verifikation:
+  - `python3 -m py_compile scripts/activity_plausibility_audit.py src/tax_engine/core/processor.py src/tax_engine/api/dashboard.py src/tax_engine/queue/service.py`
+  - `PYTHONPATH=src pytest -q tests/unit/api/test_admin_endpoints.py tests/unit/api/test_process_endpoints.py tests/unit/api/test_connector_endpoints.py tests/unit/core/test_processor_fifo.py tests/unit/core/test_tax_domains.py`
+  - Ergebnis: `64 passed`.
+  - Port `8000` neu gestartet; Listener-Prozess laut `ss`: PID `443897`.
+
+## Portfolio-Wertentwicklung
+- Bug war: Jupiter-Perps/Derivate wurden als Spot-Bestand gezaehlt, wodurch Milliardenwerte entstanden.
+- Fix in `src/tax_engine/api/dashboard.py`:
+  - Derivative/Future/Perp/Margin/Liquidation und Balance-/Account-Snapshots werden nicht als Portfolio-Bestandsbewegung gezaehlt.
+- Live nach Fix:
+  - letzter Punkt `2026-05-06`: ca. `5428.30 EUR`
+  - Max-Wert ca. `52375.27 EUR`
+- Portfolio-History API unterstuetzt:
+  - `window_days`
+  - `year`
+  - `from_date`
+  - `to_date`
+  - `interval=auto|day|week|month|quarter|event`
+  - `max_points`
+- UI hat Controls fuer Zeitraum, Aufloesung und Aktualisieren.
+
+## WISO/Blockpit-Referenzen
+- Nutzer hat WISO/Blockpit-Steuerberichte in `/workspace/steuerreport/usertransfer/wiso/` eingefuegt.
+- Diese Berichte sind eingereichte Referenz, nicht primaere Wahrheit.
+- Vergleichsdokument:
+  - `docs/23_WISO_SUBMITTED_REFERENCE_COMPARE_2026-05-07.md`
+- Korrekturpaket-Entwurf 2024:
+  - `docs/24_KORREKTURPAKET_2024_ENTWURF_2026-05-07.md`
+- 2024 bleibt noch nicht final, weil weiterhin negative Bestaende offen sind.
+- WISO-Export ist in der API integriert:
+  - `GET /api/v1/report/export?job_id=<JOB>&scope=tax&fmt=wiso`
+  - `scope=all&fmt=wiso`
+
+## Offene Daten-/Importthemen
+- 2022-USDT-Root-Cause:
+  - Nach Binance-Jan-/Feb-2022-Transaction-History-Import sind die alten `2022-01-19` und `2022-03-01` Brueche geschlossen.
+  - Ohne steuerwirksamen Pionex-Kandidaten bleibt die erste globale USDT-Unterdeckung `2022-01-05T15:36:46Z`.
+  - Mit virtuellem Pionex-Opening-Kandidaten `+1643.40556756620000000000 USDT` und Solscan-Bitget-Counterflow-Import gibt es aktuell keinen globalen USDT-Negativbestand mehr.
+  - Benoetigte Quelle: Pionex-Opening-Balance/Bot-Startkapital/Bot-Grid-Historie fuer den bestehenden Kandidaten; weitere Binance Transaction-History-Zeitfenster nur bei konkretem Fehlersignal, keine pauschale Doppelimportierung.
+- Legacy-HNT -> Binance -> HNT/USDT -> USDT zu Pionex ist plausibel belegt.
+- Hinweis Nutzer:
+  - Legacy-HNT-Transfer `2022-01-02T07:11:07Z` an `13m4dW...` war wahrscheinlich Heliumtracker-Dienstadresse.
+  - Heliumtracker-API braucht aktives Abo; aktuell nicht einplanen.
+- Bitget:
+  - alte Spot-Account-Bills-API liefert fuer 2025/alte Daten `43111 param error time range illegal`.
+  - Fuer weiter zurueckliegende Bitget-Daten braucht es Support-/Web-Exports/Statements.
+
+## KI/LLM-Review
+- CT203 `192.168.2.203`:
+  - Ollama auf `11434`
+  - llama.cpp auf `11435`
+- llama.cpp Modell aktiv:
+  - `qwen3.6-35b-a3b-iq4xs`
+  - lokale GGUF-Kopie unter `/opt/models/qwen3.6-35b-a3b-ud-iq4_xs.gguf`
+  - Dienst `llama-cpp-11435.service` mit `--ctx-size 131072 --n-cpu-moe 10 --cache-type-k q4_0 --cache-type-v q4_0`.
+  - Vorheriges `qwen3-coder-30b-a3b-q4_k_m.gguf` bleibt unter `/opt/models/` und die alte Unit wurde auf CT203 als Backup gesichert.
+- API-Engine `llama-cpp-classifier` nutzt OpenAI-kompatibel `http://192.168.2.203:11435/v1/chat/completions`.
+- Runtime-Provider wurde auf `llama-cpp-classifier` gesetzt.
+- CT205 `192.168.2.205:11434` ist nur Fallback/Alt-Ollama; am 2026-05-10 wurde das geladene `llama3.2:3b-gpu` per Ollama `keep_alive=0` entladen. Steuerreport-KI nutzt weiter CT203 `11435`.
+- KI darf klassifizieren und sichere Review-Actions vorschlagen; steuerliche Fakten/Exclusions bleiben deterministisch.
+- Qwen3.6 braucht fuer JSON-Klassifikation `enable_thinking=false`; umgesetzt in `src/tax_engine/ai/ollama_client.py`.
+- Read-only DB-Zugriff fuer KI:
+  - Snapshot wird mit `scripts/build_ai_readonly_db_snapshot.py` gebaut.
+  - DB: `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Doku: `docs/204_AI_READONLY_DB_SNAPSHOT.md`
+  - Orchestrierter DB-Gegencheck: `scripts/ai_db_countercheck.py`
+  - Lauf 2026-05-10: `var/ai_db_countercheck_2026-05-10_175850.md` / `.json`, `7` KI-gewaehlte SQL-SELECTs, final `finish_reason=stop`.
+  - Die KI kann damit Schema, aktuelle Jobs, Zero-Cost-Zeilen, Raw-Events und Transfer-Matches read-only auswerten; Schreiboperationen bleiben gesperrt.
+- Persistente KI-Auftragsqueue:
+  - Script: `scripts/ai_readonly_task_queue.py`
+  - Doku: `docs/209_AI_READONLY_TASK_QUEUE_2026-05-10.md`
+  - Queue-Verzeichnis: `var/ai_readonly_queue/`
+  - Status: `python3 scripts/ai_readonly_task_queue.py status`
+  - Ergebnisindex: `var/ai_readonly_queue/results.jsonl`
+  - systemd-Unit: `steuerreport-ai-readonly-queue.service`
+  - Dashboard-Endpoint: `GET /api/v1/ai-readonly-queue/status`
+  - UI: Cockpit-Kachel `Lokale KI-Auftragsqueue`
+  - Am 2026-05-10 wurden `5` Standardauftraege angelegt; alle `5` erfolgreich abgeschlossen (`failed=0`).
+  - Validierung durch Cloud-KI: `docs/210_AI_QUEUE_RESULT_VALIDATION_2026-05-10.md`.
+    - HNT 2021/2022: Legacy->Binance Transfer-Matches belegt, aber vorgelagerte Anschaffung/Mining-Reward bleibt Evidenzthema.
+    - USDT 2022 und JUP 2024: Zero-Cost-Zeilen sind Tail-Splits von Verkaufs-Events mit vorherigen Teilmengen mit Cost Basis; Schwerpunkt ist FIFO-/Opening-Bestand, nicht fehlendes Verkaufsevent.
+    - Low-Value: Dust getrennt behandeln; IOT/CBDC/25HAYB nicht vorschnell als Rundung klassifizieren.
+- Benchmark: `docs/52_QWEN36_LLAMA_CPP_BENCHMARK_2026-05-08.md`.
+  - Alter 30B-Grosslauf: `188.79` Prompt tok/s, `9.06` Output tok/s, `409.50s`.
+  - Qwen3.6 mit `n-cpu-moe 10`: `394.03` Prompt tok/s, `27.44` Output tok/s, `185.51s`.
+  - `n-cpu-moe 5` war instabil und crasht im ROCm-Warmup; nicht verwenden.
+
+## Vollscan gesamter Datenbestand 2026-05-08
+- Komplettscan ueber `42.558` effektive Events ausgefuehrt.
+- Report: `docs/26_ACTIVITY_PLAUSIBILITY_AUDIT_ALL_2026-05-08.md`
+- JSON fuer KI/Automatisierung: `var/activity_plausibility_audit_all_2026-05-08.json`
+- Jahresverteilung:
+  - 2021: `7.289` Events
+  - 2022: `17.474` Events
+  - 2023: `9.242` Events
+  - 2024: `2.887` Events
+  - 2025: `5.518` Events
+  - 2026: `144` Events
+- Hauptflags:
+  - `reference_dominated`: `840` Tage, vor allem HeliumTracker/Legacy/Blockpit-Referenzen. Nicht automatisch Fehler, aber fuer Dashboard/Steuerlogik getrennt behandeln.
+  - `many_zero_quantity_events`: `147` Tage, vor allem Solana/Derivate/technische Open-Events.
+  - `derivative_dominated`: `69` Tage, vor allem 2025 Bitget/Blockpit-Derivate.
+  - `suspicious_reward_unit`: `43` Tage, vor allem alte HeliumGeek-Monatsdaten mit Rohmenge in `quantity`; effektive HNT/IOT/MOBILE-Menge wird jetzt aus `raw_row` korrigiert.
+  - `timestamp_cluster`: `16` Tage.
+  - `high_daily_event_count`: `13` Tage.
+- Top-Aktivitaetstage:
+  - `2025-02-01`: `917` Events, Derivate/Blockpit-Bitget-Cluster.
+  - `2025-12-26`: `371` Events, Referenz/Primaer gemischt.
+  - `2024-11-22`: `369` Primaer-Events, viele Zero-Quantity/Cluster; sollte als naechster Detailtag geprueft werden.
+- Vier Binance Card-Kauf-Events ohne normiertes Datum wurden per Review-Action korrigiert:
+  - `2021-03-05T05:45:57+00:00`
+  - `2021-03-15T09:45:59+00:00`
+  - `2021-03-23T05:26:28+00:00`
+  - `2021-03-27T13:16:45+00:00`
+- Nach Korrektur: `unknown_count 0`.
+
+## Detailpruefung 2024-11-22 2026-05-08
+- Report: `docs/27_ACTIVITY_DETAIL_2024-11-22_2026-05-08.md`
+- JSON: `var/activity_detail_2024-11-22_2026-05-08.json`
+- Befund:
+  - Roh/technisch: `369` Events.
+  - `355` davon `solana_rpc`, `7` `jupiter_perps`, `7` `pionex`.
+  - `269` Events sind fehlgeschlagene Solana-Zero-Delta-Transaktionen (`meta.err`/`status.Err`, oft `SlippageToleranceExceeded`) mit `quantity=0`.
+  - Diese sind keine echten Transfers/Trades; sie repraesentieren fehlgeschlagene On-Chain-Versuche. RAW bleibt erhalten.
+- Fix:
+  - Dashboard-Aktivitaetszaehlung ignoriert fehlgeschlagene Solana-Events mit `0` SOL-Delta.
+  - Implementiert in `src/tax_engine/api/dashboard.py` via `_counts_dashboard_activity` / `_is_failed_zero_solana_noise`.
+  - Audit-Script markiert solche Tage mit `failed_zero_solana_tx`.
+- Verifikation:
+  - `PYTHONPATH=src pytest -q tests/unit/api/test_admin_endpoints.py tests/unit/api/test_process_endpoints.py tests/unit/api/test_connector_endpoints.py tests/unit/core/test_processor_fifo.py tests/unit/core/test_tax_domains.py` -> `64 passed`.
+  - Port `8000` neu gestartet; Listener PID `465839`.
+  - Live `/api/v1/dashboard/shell`: `2024-11-22` jetzt `100` Dashboard-Aktivitaets-Events statt `369`.
+  - Live Jahreszaehlung 2024 im Dashboard: `2344` Aktivitaets-Events.
+
+## Detailpruefung 2025-12-26 2026-05-08
+- Report: `docs/28_ACTIVITY_DETAIL_2025-12-26_2026-05-08.md`
+- JSON: `var/activity_detail_2025-12-26_2026-05-08.json`
+- Befund vor Korrektur: `371` Events, davon `188` Blockpit-Referenz und `183` Solana-RPC Primaer.
+- `181` Blockpit-Zeilen wurden sicher als Referenzduplikate ausgeschlossen (`reference_import_only`): 1:1-Match gegen Solana-RPC nach Asset/Side/Menge/Zeitfenster <=90s.
+- Match-Liste: `var/blockpit_solana_duplicate_matches_2025-12-26.json`
+- Nicht ausgeschlossen: `7` Blockpit-Zeilen ohne sicheren Primaer-Match, u.a. JUP-Interest, VSR Withdrawal und kleine SOL-Zeilen.
+- Token-Metadata erweitert: `MB1EU7TZEC71KXDPSMSKOUCSSUUOGLV1DRYS1OP2JH6` wird als `MOBILE` erkannt.
+- Nach Korrektur: `2025-12-26` hat `190` effektive Events, davon `183` Solana-RPC und `7` Blockpit.
+- Live Dashboard Port `8000`: `2025-12-26` zeigt `190` Aktivitaets-Events.
+
+## Detailpruefung 2025-01-20 2026-05-08
+- Report: `docs/29_ACTIVITY_DETAIL_2025-01-20_2026-05-08.md`
+- JSON: `var/activity_detail_2025-01-20_2026-05-08.json`
+- Befund: `295` Events, alle Blockpit, keine Primaerquelle im aktuellen Datenbestand.
+- Rohfelder zeigen `Integration Name: Binance`, `Source Name: Binance`, `Source Type: API`.
+- Inhalt: Binance Spot-Trades USDT/JUP/TRUMP und Fees, plus ein JUP Interest-Reward.
+- Bewertung: nicht automatisch ausschliessen, weil keine Binance-Primärdaten fuer diese Trades im aktuellen Bestand gefunden wurden. Benoetigte Quelle: Binance Spot Trade/Order/Convert/Earn History rund um `2025-01-20`.
+
+## CEX-Compliance-Coverage 2026-05-08
+- Neuer reproduzierbarer Audit:
+  - Script: `scripts/cex_compliance_coverage_audit.py`
+  - Plan: `docs/53_CEX_COMPLIANCE_PLAN_2026-05-08.md`
+  - Coverage-JSON: `var/cex_compliance_coverage_2026-05-08.json`
+  - Coverage-Report: `docs/54_CEX_COMPLIANCE_COVERAGE_2026-05-08.md`
+  - KI-Review-JSON: `var/ai_cex_compliance_review_2026-05-08.json`
+  - KI-Review-Report: `docs/55_AI_CEX_COMPLIANCE_REVIEW_2026-05-08.md`
+- Auditbasis:
+  - `45.364` RAW-Events
+  - aktuell `40.272` effektive Events nach Review-Actions/Overrides, inklusive Bitget-/Binance-Referenzbereinigung, Binance-Simple-Earn-Primary-Import, Binance-Jan-/Feb-2022-Transaction-History-Gap-Import, Solscan-Bitget-Counterflow-Import, Blockpit-Solana-Tail-Referenzausschluss und Binance-SOL-Staking-BNSOL-Primary-Import
+  - Matrix fuer Binance, Pionex, Bitget, Jupiter/Jup.ag, Coinbase, WISO/Blockpit von `2020` bis `2026`
+  - File-Inventar aus `usertransfer` wird mit DB-Events getrennt ausgewiesen.
+- Qwen3.6 Review lief erfolgreich ueber llama.cpp:
+  - Modell: `qwen3.6-35b-a3b-iq4xs`
+  - Endpoint: `http://192.168.2.203:11435`
+  - Aktueller Lauf nach CEX-Coverage-Refresh: Dauer `43.252s`
+  - Usage: `5467` Prompt-Tokens, `1174` Completion-Tokens, `6641` total.
+- Priorisierte Luecken laut deterministischem Audit plus KI:
+  1. Pionex `2022`: high risk, Opening-Balance/Bot-Startkapital wegen USDT-Unterdeckung.
+  2. Bitget `2025`: high risk, API-Limit/Support-Export fuer Spot/Bot/Grid/Internal Transfer und Derivate.
+  3. Binance `2021/2022`: medium risk, Transaction-History-Zeitfenster gegen vorhandene Trade-Exports abgleichen, keine pauschale Doppelimportierung.
+  4. Jupiter/Jup.ag `2025`: medium risk, geringe Eventzahl gegen Solscan/Jup-Export/Jupiter-Perps plausibilisieren.
+- Wichtige Regel:
+  - Keine automatische Buchung von Opening-Balance-Adjustments oder Bitget-Daten ohne expliziten Nachweis.
+  - KI darf nur Luecken priorisieren und sichere Automatisierung vorschlagen.
+- Update Nutzerkorrektur:
+  - Gemeint war Bitget, nicht Blockpit: Bitget-Bot-Trades koennen evtl. nicht mehr historisch geliefert werden.
+  - Notiz/Regelwerk: `docs/56_BITGET_BOT_TRADE_DATENLUECKE_2026-05-08.md`
+  - CEX-Audit nutzt fuer Bitget jetzt zusaetzlich Status `unavailable_source_possible`.
+  - Wenn Bitget keine alten Bot-Details mehr liefert, keine Trades erfinden; Rekonstruktion nur ueber belegbare Salden, Transfers, PnL, Funding, Fees und expliziten Review.
+- Externe Bitget-Evidenz wurde praktisch geprueft und gesichert:
+  - Script: `scripts/bitget_external_evidence_audit.py`
+  - Report: `docs/57_BITGET_EXTERNAL_EVIDENCE_AUDIT_2026-05-08.md`
+  - JSON: `var/bitget_external_evidence_audit_2026-05-08.json`
+  - Rohdaten: `var/external_evidence/bitget_public_market_2026-05-08/`
+  - Ergebnis: `2066` Bitget-Events im Bestand, Zeitraum `2024-04-02` bis `2025-07-13`.
+  - Public Bitget Spot/Futures Daily Candles fuer `JUPUSDT`, `HNTUSDT`, `XRPUSDT`, `SOLUSDT`, `BTCUSDT` wurden gesichert.
+  - Zwei Bitget-API-Withdrawals wurden extern per Solana RPC bestaetigt:
+    - JUP Signatur `46XuA2HV...DFEck7xw`, Chain-Zeit `2025-06-15T07:30:12Z`
+    - SOL Signatur `5C1y93cU...J1iCnbG3`, Chain-Zeit `2025-06-15T07:45:21Z`
+  - Public-Market-Daten beweisen keine persoenlichen Bot-Fills; sie dienen nur Preis-/Zeitpunkt-Plausibilitaet.
+- Bitget-Rekonstruktion wurde fortgefuehrt:
+  - Script: `scripts/bitget_reconstruction_audit.py`
+  - Report: `docs/58_BITGET_RECONSTRUCTION_AUDIT_2026-05-08.md`
+  - JSON: `var/bitget_reconstruction_audit_2026-05-08.json`
+  - Befund: Nach Fee-Beruecksichtigung ist USDT aus verfuegbaren Primaerevents fast geschlossen (`-6.430858137166 USDT`), letzter gemeldeter Balance praktisch `0`.
+  - Viele Balance-Brueche stammen aus Teilfills mit gleichem Timestamp und Konto-/Strategy-/Derivate-Kontextwechseln; nicht automatisch fehlende externe Einzahlungen.
+- Bitget 2025 USDT Strategy Chain:
+  - Script: `scripts/bitget_usdt_strategy_chain.py`
+  - Report: `docs/59_BITGET_USDT_STRATEGY_CHAIN_2026-05-08.md`
+  - JSON: `var/bitget_usdt_strategy_chain_2026-05-08.json`
+  - Kern: Deposit `5009.09824537 USDT` am `2025-01-29`; Strategy-Paar `2025-02-22` netto `-1.21024890 USDT`; Risk-Capital-Transfer `-222.10227813 USDT` am `2025-02-27`.
+- Bitget Derivate-/Liquidationsfenster `2025-02-20` bis `2025-03-05`:
+  - Script: `scripts/bitget_derivative_liquidation_audit.py`
+  - Report: `docs/60_BITGET_DERIVATIVE_LIQUIDATION_AUDIT_2026-05-08.md`
+  - JSON: `var/bitget_derivative_liquidation_audit_2026-05-08.json`
+  - `425` Bitget-nahe Zeilen: `405` Bitget-Tax-API-Primary, `20` Blockpit-Referenz.
+  - Open-Long/Open-Short: `gross_amount=0`, saldenwirksam nur Fee.
+  - Close-Long/Close-Short: realisierte PnL plus Fee, saldenwirksam.
+  - Primaer-Loss: `2025-02-27T15:01:18.007Z` HNTUSDT `burst_long_loss_query`, Gross `-396.16940001 USDT`, Fee `-7.21515168 USDT`, Effect `-403.38455169 USDT`.
+  - Danach Risk-Capital-Transfer `-222.10227813 USDT`, gemeldeter Balance `0`.
+  - Hebel-Notional wird nicht als steuerlicher Einsatz vervielfacht; relevant ist der reale USDT-Balance-Effect.
+- Bitget/Blockpit-Referenzduplikate im Liquidationsfenster wurden abgegrenzt:
+  - Script: `scripts/bitget_blockpit_reference_match.py`
+  - Apply-Script: `scripts/apply_bitget_blockpit_reference_exclusions.py`
+  - Report: `docs/61_BITGET_BLOCKPIT_REFERENCE_MATCH_2026-05-08.md`
+  - JSON: `var/bitget_blockpit_reference_match_2026-05-08.json`
+  - Raw/reviewed Blockpit-Referenzzeilen im Fenster: `580`.
+  - Raw/reviewed Matches gegen Bitget-Primary: `405` (`231` tx-id-basiert, `172` tx-id-basiert gegen Bitget-Fee-Komponente, `2` Zeit/Betrag/Asset).
+  - Alle matchbaren effektiven Referenzzeilen wurden per `tax_event_overrides` mit `reference_import_only` ausgeschlossen.
+  - Re-Run Derivate-/Liquidationsaudit: `405` Rows, davon `405` Bitget-Tax-API-Primary und `0` Blockpit-Referenz.
+  - Wichtig: RAW-Daten wurden nicht geloescht; nur steuerliche Overrides verhindern Doppelzaehlung.
+- Binance 2025 Blockpit-Referenzen wurden abgegrenzt:
+  - Script: `scripts/binance_2025_blockpit_reference_match.py`
+  - Apply-Script: `scripts/apply_binance_2025_blockpit_reference_exclusions.py`
+  - Report: `docs/62_BINANCE_2025_BLOCKPIT_REFERENCE_MATCH_2026-05-08.md`
+  - JSON: `var/binance_2025_blockpit_reference_match_2026-05-08.json`
+  - Vor Apply: `63` Blockpit-Binance-Referenzzeilen, davon `21` sichere Duplikat-Events:
+    - `10` Fiat-Deposit-Gruppen, Blockpit Brutto+Fee gegen Binance-Nettozufluss.
+    - `1` JUP-Withdrawal-Fee gegen Binance-Fee-Komponente.
+  - Diese `21` Events wurden per `tax_event_overrides` mit `reference_import_only` ausgeschlossen.
+  - Danach blieben `42` Blockpit-Binance-Referenzzeilen, alle `interest` / `Earn Reward (REALTIME)`.
+- Binance Simple Earn Primary wurde nachgezogen:
+  - Probe-Script: `scripts/binance_earn_primary_probe.py`
+  - Import-Script: `scripts/import_binance_earn_primary_rewards.py`
+  - Report: `docs/63_BINANCE_EARN_PRIMARY_PROBE_2026-05-08.md`
+  - JSON: `var/binance_earn_primary_probe_2026-05-08.json`
+  - Rohbelege: `var/external_evidence/binance_earn_primary_2026-05-08/`
+  - Binance API lieferte `44` Primary-Reward-Zeilen:
+    - `43` Simple Earn Flexible `REALTIME`
+    - `1` Asset Dividend
+  - Alle `42` verbliebenen Blockpit-Earn-Referenzen matchten exakt gegen Binance-Primary nach Zeit/Asset/Betrag und wurden per `tax_event_overrides` mit `reference_import_only` ausgeschlossen.
+  - Die `44` Binance-Primary-Rewards wurden als RAW-Events unter Source-File `binance_simple_earn_primary_2025_api_2026-05-08` importiert.
+  - Nettoeffekt: +`2` effektive Events, weil Binance zusätzlich `JUP` am `2025-12-31` und `PEPE` am `2025-01-22` lieferte.
+  - CEX-Coverage nach Korrektur: Binance `2025` hat `457` Events, `457` Primary, `0` Referenz; Status nur noch `partial` wegen allgemeiner Vollständigkeitsprüfung.
+  - CEX-Audit-Fix: `binance_api`/andere Primärquellen zählen jetzt auch dann als Primary, wenn der Source-File-Name `blockpit_reference_days` enthält.
+- Aktueller Balance-Bruch-Audit nach Blockpit-Solana-Tail-Exclusions und Binance-BNSOL-Primary:
+  - Report: `docs/76_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BINANCE_BNSOL_PRIMARY_2026-05-08.md`
+  - JSON: `var/chronological_balance_break_audit_current_2026-05-08_after_binance_bnsol_primary.json`
+  - Bewegungen: `39.287`
+  - Assets mit negativem Endbestand: `2` (`VTHO`, `BUSD`)
+  - Mit virtuellem Pionex-Opening-Kandidaten gibt es aktuell keinen globalen USDT-Negativbestand mehr.
+- Pionex USDT Opening-Balance Review:
+  - Report: `docs/65_PIONEX_USDT_OPENING_BALANCE_REVIEW_2026-05-08.md`
+  - Evidence-Refresh: `docs/78_PIONEX_OPENING_EVIDENCE_REFRESH_2026-05-08.md`
+  - Ersatzrekonstruktions-Audit: `docs/84_PIONEX_OPENING_RECONSTRUCTION_AUDIT_2026-05-08.md`
+  - Ersatzrekonstruktions-JSON: `var/pionex_opening_reconstruction_audit_2026-05-08.json`
+  - JSON: `var/pionex_opening_evidence_refresh_2026-05-08.json`
+  - API-Probe: `var/pionex_api_history_probe_2026-05-08.json`
+  - Pionex-only USDT Events `2021` bis `2024`: `906`
+  - Pionex-only Endbestand fast geschlossen: `0.89137980652611250000 USDT`
+  - Tiefster Pionex-only Bestand: `-1643.40556756620000000000 USDT` am `2022-01-19T23:28:01Z`
+  - Rechnerischer Startbestand, damit Pionex-only nie negativ wird: `1643.40556756620000000000 USDT`
+  - Pionex API ist erreichbar und liefert aktuelle Balances: BTC, JUP, MXC, USDT.
+  - Aktuelle API-Balances passen eng zum Pionex-CSV-Modell, z.B. USDT Modell `0.89137980652611250000`, API `0.8958683252194125`, Differenz `0.00448851869330000000`.
+  - Pionex API liefert fuer getestete historische Fill-Fenster `2021-12-25..2022-02-01`, `2022-01` und `2024-11` jeweils `0` Rows; sie ersetzt keinen Account-/Bot-Startnachweis.
+  - Pionex-only multi-asset Mindestinventar: USDT `1643.40556756620000000000`, MXC `0.62965500`, HNT `0.16876807000000000000`, BUSD `0.12348776480000000000`, JUP `0.01085231`, EGLD `0.00074550`, BTC `120E-9`.
+  - Rekonstruktions-Audit zeigt bis zum schlimmsten USDT-Bruch:
+    - Sichtbare Pionex-USDT-Deposits bis dahin: `1445.38419000 USDT`.
+    - USDT Trade-Out bis dahin: `-4792.24756236960000000000`.
+    - Groesste Bot-/Tax-ID-Gruppe: `s_11 MXC_USDT`, netto `-2572.15382077000000000000 USDT` am `2022-01-19`.
+    - Schluss: intern konsistenter Exportstrom, aber kein primaerer Pionex-Kontosnapshot vor den Bot-Trades.
+  - Noch nicht gebucht. Das ist ein Review-/Nachweis-Kandidat fuer fehlendes Start-/Botkapital, falls kein aelteres Pionex Statement mehr beschaffbar ist.
+  - Neuer Review-only API-Layer:
+    - `GET /api/v1/review/balance-adjustment-candidates`
+    - `POST /api/v1/review/balance-adjustment-candidates/upsert`
+    - `POST /api/v1/review/balance-adjustment-candidates/delete`
+  - Gespeicherter Kandidat:
+    - `candidate_id`: `pionex-usdt-opening-balance-2021-12-28`
+    - `quantity_delta`: `1643.40556756620000000000`
+    - `effective_timestamp_utc`: `2021-12-28T00:49:11+00:00`
+    - `status`: `needs_evidence`
+    - `tax_effective`: `false`
+    - Evidenz enthaelt jetzt auch `reconstruction_report`.
+  - Port `8000`: `GET /api/v1/review/balance-adjustment-candidates` liefert live HTTP `200`, aktuell `count=3` inklusive Dust-Review-Kandidaten.
+  - Virtuelle Simulation mit demselben Movement-Builder wie der Balance-Audit:
+    - Globaler USDT-Endbestand nach virtuellem Kandidaten, Binance-Jan-/Feb-2022-Import und Solscan-Bitget-Counterflow-Import: `2333.23768980016511250000`
+    - Erster globaler Negativbestand danach: keiner
+    - Schlimmster globaler USDT-Stand danach: `0.220256 USDT` am `2021-02-09T20:58:27Z`
+    - Schluss: Pionex-Opening-Kandidat behebt den Pionex-only Startbruch vollstaendig; USDT ist nach Primaerimporten global nicht mehr negativ.
+- USDT Global Residual nach Pionex-Kandidat:
+  - Report: `docs/66_USDT_GLOBAL_RESIDUAL_AFTER_PIONEX_CANDIDATE_2026-05-08.md`
+  - `s_11:68` ist Pionex Spot-BUY `MXC_USDT`: `2572.15382077000000000000 USDT` raus, `21823.27000000000000000000 MXC` rein, Fee `10.91163500 MXC`.
+  - Kein Dezimaltrennzeichen-/Vorzeichenfehler; Raw Row ist konsistent.
+  - Direkt davor ist Binance Withdrawal `-1245.38419 USDT` und Pionex Deposit `+1245.38419000 USDT` mit gleicher Tx global netto `0`; vor dem Trade waren vor dem neuen Binance-Import nur `1399.27305295000000000000 USDT` vorhanden.
+  - Es wurde kein zweiter Adjustment-Kandidat angelegt.
+- Binance Jan-2022 Transaction-History Gap geschlossen:
+  - Script: `scripts/import_binance_transaction_history_jan2022_gap.py`
+  - Report: `docs/67_BINANCE_TRANSACTION_HISTORY_JAN2022_GAP_IMPORT_2026-05-08.md`
+  - JSON: `var/binance_transaction_history_jan2022_gap_import_2026-05-08.json`
+  - Import: `90` Binance-Ledger-Events, `0` Duplikate, Netto `+1246.375247 USDT`, `-47.91986 HNT`.
+  - Dadurch ist `s_11:68` am `2022-01-19` geschlossen: Bestand vorher `2645.64829995000000000000 USDT`, danach `73.49447918000000000000 USDT`.
+  - Neuer Balance-Audit: `docs/68_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BINANCE_JAN2022_TXHIST_2026-05-08.md`, JSON `var/chronological_balance_break_audit_current_2026-05-08_after_binance_jan2022_txhist.json`.
+  - Mit virtuellem Pionex-Opening-Kandidaten ist der erste globale USDT-Bruch jetzt `2022-03-01T05:35:52Z`, Pionex `s_14:207:out:USDT`, Bestand danach `-69.64699952000000000000 USDT`.
+- Binance Feb-2022 Transaction-History Gap geschlossen:
+  - Script: `scripts/import_binance_transaction_history_feb2022_gap.py`
+  - Report: `docs/69_BINANCE_TRANSACTION_HISTORY_FEB2022_GAP_IMPORT_2026-05-08.md`
+  - JSON: `var/binance_transaction_history_feb2022_gap_import_2026-05-08.json`
+  - Import: `9` Binance-Ledger-Events, `0` Duplikate, Netto `+1682.518797 USDT`, `-72.87 HNT`.
+  - Dadurch ist `s_14:207` am `2022-03-01` geschlossen: Bestand vorher `3370.99723348000000000000 USDT`, danach `1612.87179748000000000000 USDT`.
+  - Neuer Balance-Audit: `docs/70_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BINANCE_FEB2022_TXHIST_2026-05-08.md`, JSON `var/chronological_balance_break_audit_current_2026-05-08_after_binance_feb2022_txhist.json`.
+  - Mit virtuellem Pionex-Opening-Kandidaten war der naechste globale USDT-Bruch danach Solana/Jupiter-nah `2024-12-04T18:30:59Z`, Tx `XWx5SFm...XMTfW`, Bestand danach `-266.10776665427388750000 USDT`.
+- Solscan-Bitget-Counterflow Dez 2024 geschlossen:
+  - Script: `scripts/import_solscan_bitget_counterflow_dec2024.py`
+  - Report: `docs/71_SOLSCAN_BITGET_COUNTERFLOW_DEC2024_IMPORT_2026-05-08.md`
+  - JSON: `var/solscan_bitget_counterflow_dec2024_import_2026-05-08.json`
+  - Import: `1` Solscan-On-Chain-Event, `0` Duplikate, `+1988.00826 USDT` am `2024-12-01T13:32:32Z`, Signatur `mxDAzS4...`.
+  - Dadurch ist der Jupiter/Solana-Bruch `XWx5SFm...XMTfW` geschlossen.
+  - Mit virtuellem Pionex-Opening-Kandidaten gibt es keinen globalen USDT-Negativbestand mehr; Endbestand `2333.23768980016511250000 USDT`.
+- Blockpit-Solana-Tail-Referenzen ausgeschlossen:
+  - Script: `scripts/apply_blockpit_solana_tail_reference_exclusions.py`
+  - Report: `docs/73_BLOCKPIT_SOLANA_TAIL_REFERENCE_EXCLUSIONS_2026-05-08.md`
+  - JSON: `var/blockpit_solana_tail_reference_exclusions_2026-05-08.json`
+  - Ergebnis: `11` Blockpit-Solana-Referenzzeilen mit vorhandenen Solana/Solscan-Primary-Signaturen als `reference_import_only` ausgeschlossen.
+  - Dadurch sind `MOBILE` und `VSR` nicht mehr negative Endbestaende.
+- Binance SOL-Staking -> BNSOL Primary importiert:
+  - Script: `scripts/import_binance_sol_staking_bnsol_primary.py`
+  - Report: `docs/75_BINANCE_SOL_STAKING_BNSOL_PRIMARY_IMPORT_2026-05-08.md`
+  - JSON: `var/binance_sol_staking_bnsol_primary_import_2026-05-08.json`
+  - Probe-Evidenz: `var/binance_bnsol_jan_mar2025_probe_2026-05-08.json`, `var/binance_sol_staking_history_probe_2026-05-08.json`
+  - Binance-Primary: `/sapi/v1/sol-staking/sol/history/stakingHistory`, `2025-02-28T09:35:47Z`, `23.189761 SOL` out, `22.32304223 BNSOL` in, Status `SUCCESS`.
+  - Import: `2` Events, `0` Duplikate. Dadurch ist `BNSOL` nicht mehr negativer Endbestand.
+- Offene Mini-Restassets:
+  - `VTHO`: `-42.39387934`, ausschliesslich Binance Dust-Convert-Out am `2023-05-02T04:13:23Z`.
+  - `BUSD`: `-0.55168701480000000000`, Pionex-BUSD-Fees/Trades plus Binance Dust-Convert-Out `-0.55379925` am `2023-05-02T04:13:23Z`.
+  - Binance Asset-Dividend-Probe `var/binance_asset_dividend_2021_2023_90d_probe_2026-05-08.json` fand keine VTHO/BUSD-Zufluesse; VTHO/BUSD bleiben als Dust-/Altbestand-Nachweisfrage offen.
+  - Review-Kandidaten gespeichert, aber nicht steuerwirksam:
+    - `binance-vtho-dust-residual-2023-05-02`
+    - `mixed-busd-dust-residual-2023-05-02`
+  - Report: `docs/77_DUST_RESIDUAL_REVIEW_CANDIDATES_2026-05-08.md`
+  - JSON: `var/dust_residual_balance_candidates_2026-05-08.json`
+  - Detail-Audit: `docs/83_DUST_RESIDUAL_DETAIL_AUDIT_2026-05-08.md`
+  - Detail-JSON: `var/dust_residual_detail_audit_2026-05-08.json`
+  - Detailbewertung:
+    - `VTHO`: nur ein effektiver Binance-Dust-Convert-Out, kein Zufluss im aktuellen Datenbestand.
+    - `BUSD`: erster Bruch entsteht bei Pionex-Fee `0.12348780 BUSD`; Restbetrag wird durch Binance-Dust-Convert-Out verstaerkt. Passt fachlich zum Pionex-Opening-/Startbestand-Thema.
+  - Live API Port `8000`: `GET /api/v1/review/balance-adjustment-candidates` liefert `count=3`.
+- CEX-Coverage-Re-Run:
+  - `scripts/cex_compliance_coverage_audit.py` wurde von nicht vorhandener `requests`-Dependency auf vorhandenes `httpx` umgestellt.
+  - Re-Run ohne KI erfolgreich, effektive Events `40272`.
+  - Re-Run mit KI erfolgreich, Report `docs/55_AI_CEX_COMPLIANCE_REVIEW_2026-05-08.md`.
+- Reportfaehigkeitsstatus:
+  - Script: `scripts/tax_report_readiness_audit.py`
+  - Report: `docs/79_TAX_REPORT_READINESS_STATUS_2026-05-08.md`
+  - JSON: `var/tax_report_readiness_status_2026-05-08.json`
+  - Status: `blocked_by_pionex_opening_evidence`
+  - Draft-Report technisch erzeugbar: `true`
+  - Final sauber markierbar: `false`
+  - Blocker: Pionex-Opening-Evidence, Bitget-2025/2024 Support-/Retention-Thema, Jupiter manuelle On-Chain-Pruefung, Dust-Residuals `VTHO`/`BUSD`.
+- Bitget 2025 Remaining Reference Audit:
+  - Report: `docs/85_BITGET_2025_REMAINING_REFERENCE_AUDIT_2026-05-08.md`
+  - JSON: `var/bitget_2025_remaining_reference_audit_2026-05-08.json`
+  - Effektive Bitget-2025-Zeilen: `1986`
+  - Aktive Primaerzeilen: `1046`
+  - Noch aktive Blockpit-Referenzen: `940`
+  - Aktive Blockpit-Referenzen nach Monat:
+    - Jan `3`, Mrz `2`, Apr `37`, Mai `453`, Jun `408`, Jul `37`
+  - Referenztypen:
+    - `derivative fee` `607`
+    - `derivative loss` `156`
+    - `derivative profit` `122`
+    - `fee` `30`
+    - `trade` `19`
+    - kleine Restgruppen Withdrawal/Deposit/Non-Taxable.
+  - Tx-ID-Abgleich: `0` Raw-/Effective-Primary-Matches fuer diese noch aktiven Blockpit-Fallback-TxIDs.
+  - Schluss: Bitget 2025 bleibt `support_required`; Blockpit-Referenzen duerfen nicht automatisch als Primary umgedeutet werden. Falls Bitget nicht liefert, braucht es eine dokumentierte `unavailable_source`-Entscheidung.
+- Longrun-KI-Supervisor fuer 16h Read-only-Arbeit:
+  - Script: `scripts/ai_longrun_blocker_review.py`
+  - Zweck: Python steuert Queue/Status/Logs/Markdown/JSONL, `llama.cpp` beantwortet nur einzelne Prompts.
+  - Safety: keine RAW-Aenderungen, keine Overrides, keine `tax_effective=true`-Aktivierung, keine automatische Umdeutung von Blockpit zu Primary.
+  - Statusdatei: `var/ai_longrun_blocker_review_status.json`
+  - Resultate: `var/ai_longrun_blocker_review_results.jsonl`
+  - Markdown: `docs/86_AI_LONGRUN_BLOCKER_REVIEW_2026-05-08.md`
+  - Dry-run getestet:
+    - `PYTHONPATH=src /opt/steuerreport-venv/bin/python scripts/ai_longrun_blocker_review.py --dry-run --max-tasks 2 --max-hours 0.01 --sleep-seconds 0`
+  - Syntaxcheck erfolgreich:
+    - `PYTHONPATH=src python3 -m py_compile scripts/ai_longrun_blocker_review.py`
+  - Produktiver 16h-Start waere:
+    - `cd /workspace/steuerreport && nohup env PYTHONPATH=src /opt/steuerreport-venv/bin/python scripts/ai_longrun_blocker_review.py --max-hours 16 --max-tasks 6 --sleep-seconds 20 > var/ai_longrun_blocker_review.nohup.log 2>&1 &`
+  - Produktiver systemd-Lauf wurde am `2026-05-08T21:52:19Z` gestartet und am `2026-05-08T22:01:21Z` erfolgreich beendet.
+  - Wichtig: Er lief nicht 16h, weil die 6 geplanten Tasks in ca. 9 Minuten abgeschlossen waren.
+  - Service-Unit: `/etc/systemd/system/steuerreport-ai-longrun.service`
+  - Autostart wurde nach Abschluss deaktiviert: `systemctl disable steuerreport-ai-longrun.service`; Unit-Datei bleibt fuer manuelle Starts vorhanden.
+  - Finaler Status:
+    - `status=completed`
+    - `completed_count=6`
+    - alle JSONL-Tasks `success`
+  - Token/Timing:
+    - Bitget unavailable-source: `53.013s`, `21643` Prompt, `1137` Completion, Ampel `red`
+    - Bitget Symbol/Monat: `67.137s`, `20052` Prompt, `876` Completion, Ampel `yellow`
+    - Pionex Opening: `67.246s`, `21858` Prompt, `731` Completion, Ampel `yellow`
+    - Jupiter Restjahre: `78.805s`, `20499` Prompt, `1231` Completion, Ampel `yellow`
+    - Dust VTHO/BUSD: `61.269s`, `15892` Prompt, `1008` Completion, Ampel `yellow`
+    - Final Readiness: `94.906s`, `23836` Prompt, `1454` Completion, Ampel `yellow`
+  - Inhaltliches Ergebnis:
+    - Bitget 2025 bleibt `red`: `940` aktive Blockpit-Referenzen ohne Primary-Tx-Match, Schwerpunkt Mai/Juni 2025; Supportexport oder dokumentierte `unavailable_source`-Entscheidung noetig.
+    - Pionex Opening bleibt `yellow`: Ersatzrekonstruktion mathematisch konsistent, aber kein Primaer-Kontosnapshot; fachliche Entscheidung noetig.
+    - Dust VTHO/BUSD bleibt `yellow`: Mini-Residuals, Kandidaten vorhanden, aber nicht steuerwirksam.
+    - Jupiter 2025 bleibt `green`; Jupiter 2023/2024/2026 brauchen noch Read-only Solscan/Perps-Kontrolle.
+    - USDT global ist `green`, wenn der Pionex-Kandidat virtuell angenommen wird; nicht automatisch gebucht.
+- Jupiter/Jup.ag `2025` Solscan-Coverage erledigt:
+  - Report: `docs/80_JUPITER_2025_SOLSCAN_COVERAGE_AUDIT_2026-05-08.md`
+  - JSON: `var/jupiter_2025_solscan_coverage_audit_2026-05-08.json`
+  - Alte Preview hatte `20` Zeilen / `9` Signaturen fuer 2025, aber diese Liste kam aus dem zu engen Wallet-Adressvergleich gegen `solana_rpc`.
+  - True-Missing-Preview enthaelt `0` Zeilen fuer 2025.
+  - Alle alten 2025-Signaturen sind lokal als Rohdaten vorhanden; kein weiterer Solscan/Jupiter-Import fuer 2025 noetig.
+  - FIFO-Kern korrigiert: bekannte Solana-Mints werden jetzt fuer die Steuerverarbeitung kanonisch auf Symbole gemappt (`JUP`, `HNT`, `IOT`, `USDC`, `MOBILE`), ohne Rohdaten zu veraendern.
+  - Gezielte Tests: `PYTHONPATH=src pytest tests/unit/core/test_processor_fifo.py tests/unit/api/test_issue_endpoints.py::test_review_negative_balances_canonicalizes_known_token_mints -q` erfolgreich.
+  - Aktueller 2025-Verarbeitungslauf: `5459` Events, `486` Tax-Lines, bekannte Solana-Mint-Inventar-Keys nach Kanonisierung `0`.
+  - Neuer Balance-Audit nach Jupiter-Coverage: `docs/81_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_JUPITER_COVERAGE_2026-05-08.md`, JSON `var/chronological_balance_break_audit_current_after_jupiter_coverage_2026-05-08.json`.
+  - Negativer Endbestand bleibt nur `VTHO` und `BUSD`.
+
+## Update 2026-05-09 Bitget 2025 API/Blockpit/Solana
+- Nutzerklarstellung: `bitget` `2025` soll soweit moeglich per API/API-nahem Abgleich laufen; die Bitget-Supportantwort deckt nur `2024` ab.
+- Bitget 2025 API-Deep-Probe:
+  - Script: `scripts/bitget_2025_api_deep_probe.py`
+  - Report: `docs/88_BITGET_2025_API_DEEP_PROBE_2026-05-09.md`
+  - JSON: `var/bitget_2025_api_deep_probe_2026-05-09.json`
+  - Ergebnis: Credential-Check ok; `13` 30-Tage-Fenster; `1138` API-Zeilen, aber `0` neu importiert / `1138` Duplikate.
+  - Warnungen: `fills_fetch_failed` und `bitget_spot_account_bills_history_limit` je `13`; alte Spot Account Bills bleiben API-seitig limitiert.
+- Neuer Blockpit-Export importiert:
+  - Datei: `usertransfer/blockpit/blockpit 09052026 Transactions.csv`
+  - Script: `scripts/import_blockpit_reference_export_20260509.py`
+  - Report: `docs/89_BLOCKPIT_REFERENCE_EXPORT_IMPORT_2026-05-09.md`
+  - JSON: `var/blockpit_reference_export_import_2026-05-09.json`
+  - Ergebnis: `7629` Rohzeilen, `9446` normalisierte neue RAW-Events, `0` Duplikate.
+  - Bitget-Anteil: `2375` rohe Bitget-Zeilen, davon `2304` in `2025`.
+  - Wichtig: Blockpit bleibt Referenz/Suchanker, nicht automatisch Primaerquelle.
+- Globaler Bitget-2025-Blockpit-Abgleich:
+  - Script: `scripts/bitget_2025_blockpit_global_match.py`
+  - Report: `docs/90_BITGET_2025_BLOCKPIT_GLOBAL_MATCH_2026-05-09.md`
+  - JSON: `var/bitget_2025_blockpit_global_match_2026-05-09.json`
+  - Ergebnis: `1138` Bitget-Primary-Zeilen vs. `4708` normalisierte Bitget-Blockpit-Referenzzeilen; `665` Matches.
+  - Offen bleiben `2923` effektive Referenzzeilen ohne 1:1-API-Match, Schwerpunkt `2025-02`, `2025-05`, `2025-06`; Typen vor allem `derivative fee`, `derivative loss`, `derivative profit`.
+- Lokale KI hat die verdichtete Bitget-2025-Lage bewertet:
+  - Script: `scripts/ai_bitget_2025_blockpit_review.py`
+  - Report: `docs/91_AI_BITGET_2025_BLOCKPIT_REVIEW_2026-05-09.md`
+  - JSON: `var/ai_bitget_2025_blockpit_review_2026-05-09.json`
+  - LLM: CT203 llama.cpp `qwen3.6-35b-a3b-iq4xs`, `9731` Prompt-Tokens, `894` Completion-Tokens, Dauer `44.468s`.
+  - Ergebnis: Ampel `yellow`; Blockpit-Zeilen als Suchanker nutzen, keine automatische Buchung.
+- Solana-Zieladressanker aus Blockpit/Solana-Signatur:
+  - Seed-Signatur: `61gUSpVfrTHWVQj9j2Yqv9RvAYkuJ8tGhUAMqNeWnZgD9gjJfeFdis8W83UMMw4KS6j7Epvo6WNoQx89oPRWC9Nb`
+  - Script: `scripts/bitget_solana_target_address_audit.py`
+  - Report: `docs/92_BITGET_SOLANA_TARGET_ADDRESS_AUDIT_2026-05-09.md`
+  - JSON: `var/bitget_solana_target_address_audit_2026-05-09.json`
+  - Abgeleitet: Ziel-Token-Account `DyFAEnWd6YF1sCe86USKvLePzpueMZsbDD7HZn4CDezn`, Ziel-Owner `5C27rSU2Sh2g49aEu94ZmqW2MikDxUB6E95TJ8Sy6DfL`.
+  - Lokale Treffer zu diesem Owner: `7` Signaturen von `2024-03-07` bis `2025-04-04`, Summen `2355.000001 USDT`, `500 USDC`, `16.16462275 HNT`.
+  - Bewertung: belastbarer On-Chain-Suchanker fuer Transfers Richtung Bitget/Blockpit-Zieladresse; ersetzt keinen CEX-internen Trade-/PnL-Export.
+- CEX/Solana-Adress-Cross-Audit erstellt:
+  - Script: `scripts/cex_solana_address_cross_audit.py`
+  - Report: `docs/93_CEX_SOLANA_ADDRESS_CROSS_AUDIT_2026-05-09.md`
+  - JSON: `var/cex_solana_address_cross_audit_2026-05-09.json`
+  - Geprueft wurden `215` Binance-/Bitget-Transferereignisse mit Adressen/TxIDs, `8` bekannte Adressen, `2745` Solscan-Account-Transfers und `1381` aus Solana-RPC abgeleitete Counterparties.
+  - Adressrollen getrennt:
+    - `cex_deposit_address`: z.B. Binance-Deposit-Adressen wie `138bCXP...`, `EnbD7...`
+    - `cex_hot_or_source_address`: z.B. Bitget-Source `A77HE...`
+    - `user_or_external_destination_address`: z.B. eigene Wallet `wBrPoi...` oder TRX/Pionex-Ziele; nicht als CEX-Zieladresse behandeln.
+  - Ergebnis: `113` direkte Solscan/Signatur-Matches gegen bekannte CEX-Transfers und `54` Solana-RPC Owner/Token-Account-Matches.
+  - Wichtige CEX-Ziel-Counterparties aus Solscan: `A77HErqtfN1hLLpvZ9pCtu66FEtM8BveoaKbbMoZ4RiR` und `EnbD7GwdYtWgPv5ReEKgCVpExuZsFxiYqjeEM4SgEvhn`.
+  - Naechster Schritt: sichere CEX-Adresscluster als Evidence-Layer nutzen; nur bei 1:1-Zeit/Betrag/Signatur-Match Blockpit-Referenzen als `reference_import_only` vorschlagen.
+- Helium Legacy / Binance / Solscan gezielt geprueft:
+  - Script: `scripts/helium_legacy_binance_solscan_audit.py`
+  - Report: `docs/95_HELIUM_LEGACY_BINANCE_SOLSCAN_AUDIT_2026-05-09.md`
+  - JSON: `var/helium_legacy_binance_solscan_audit_2026-05-09.json`
+  - Ergebnis Binance-HNT: `64` Deposit-Zeilen, aber `19` eindeutige Deposit-TXIDs; alle `19/19` eindeutigen Binance-HNT-Deposits matchen per Legacy-TXID gegen `helium_legacy_cointracking`.
+  - Eindeutige Binance-HNT-Depositmenge: `959.74309828 HNT`; gematcht `959.74309828 HNT`, unmatched `0`.
+  - Bekannte Binance-HNT-Deposit-Adresse: `138bCXPVfSq7yyTfoDUrVwztPmUr4WGyA7TED9Y41djmF7rjA8y`, Zeitraum `2021-07-27` bis `2022-07-12`.
+  - Solscan/Post-Migration: `561` effective Solana-Helium Events (`solana_rpc`/`solscan_wallet_discovery`), cached Solscan HNT Transfers `169`.
+  - Wichtig: Die harte Aussage "alles komplett sauber ausser Helium-Blockchain" ist fast, aber nicht final: Binance-HNT ist stark belegt; die alte Helium-L1-Explorer-/Archiv-Gegenpruefung bleibt der eigentliche Restpunkt.
+- HeliumGeek-Mengenproblem in Bestandsbruch-Auswertung korrigiert:
+  - Code: `scripts/chronological_balance_break_audit.py`
+  - Report: `docs/96_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_HELIUMGEEK_QUANTITY_FIX_2026-05-09.md`
+  - JSON: `var/chronological_balance_break_audit_current_2026-05-09_after_heliumgeek_quantity_fix.json`
+  - Ursache: einige HeliumGeek `payload.quantity` Werte sind Roh-Subunits Faktor `1e6`; `raw_row` enthaelt korrekte Display-Mengen wie `IOT Tokens`.
+  - Dashboard/Core hatten bereits Schutzlogik; die Balance-Audit nutzt jetzt ebenfalls die Display-Mengen.
+  - HNT ist nach Fix nicht negativ und nicht mehr im Milliardenbereich: final ca. `2681.67191191143114379127906 HNT`.
+  - IOT ist nach Fix nicht negativ und nicht mehr im Billionenbereich: final ca. `2522892.1320230 IOT`.
+- Legacy-Datenordner inventarisiert:
+  - Ordner: `usertransfer/legacy_daten/`
+  - Script: `scripts/legacy_data_inventory_ai_audit.py`
+  - Report: `docs/97_LEGACY_DATA_INVENTORY_AI_AUDIT_2026-05-09.md`
+  - JSON: `var/legacy_data_inventory_ai_audit_2026-05-09.json`
+  - Dateien: `180`, davon `85` lesbare Tabellendateien.
+  - Kategorien: `cointracking_tax_or_export 51`, `heliumtracker_rewards 44`, `bank_barclays_evidence 31`, `bank_kontist_evidence 28`, `binance_export 10`, `helium_legacy_cointracking 6`, `hardware_invoice_evidence 5`, `helium_legacy_raw 3`, `solscan_export 1`.
+  - Exakte Duplikatgruppen: `25`; gleiche Dateinamen-Gruppen: `22`.
+  - Kandidaten: `19` Primaer-/Match-Kandidaten, `64` Referenz-/Crosscheck-Kandidaten, `91` Evidence-only.
+  - Wichtiger Nutzerhinweis: KI-Reasoning darf nicht genutzt werden. Script sendet jetzt `/no_think`, ignoriert `reasoning_content` und markiert KI-Ergebnis als `invalid_empty_content`, wenn kein sichtbarer `content` kommt.
+  - Aktueller KI-Lauf war deswegen absichtlich nicht verwertet: `ai_status=invalid_empty_content`, obwohl `completion_tokens=1800`; es wurde kein Reasoning als Ergebnis uebernommen.
+- Legacy-Primärkandidaten gegen bestehende RAW-Events abgeglichen:
+  - Script: `scripts/legacy_primary_candidate_match_audit.py`
+  - Report: `docs/98_LEGACY_PRIMARY_CANDIDATE_MATCH_AUDIT_2026-05-09.md`
+  - JSON: `var/legacy_primary_candidate_match_audit_2026-05-09.json`
+  - Es wurde nichts importiert.
+  - Fingerprint-Preview: `helium_legacy_raw 21833` potenziell neu, `binance 3814` potenziell neu, `helium_legacy_cointracking 1636` potenziell neu; aber diese Zahlen sind nur Fingerprint-basiert.
+  - Normalizer-Fix: `src/tax_engine/ingestion/connectors.py` behandelt Helium-Legacy-Raw `rewards_v1` jetzt korrekt als `mining_reward`/`in` statt irrtuemlich als Transfer/out.
+- Legacy-Semantik-Overlap erstellt:
+  - Script: `scripts/legacy_semantic_overlap_audit.py`
+  - Report: `docs/99_LEGACY_SEMANTIC_OVERLAP_AUDIT_2026-05-09.md`
+  - JSON: `var/legacy_semantic_overlap_audit_2026-05-09.json`
+  - Helium raw 2021: `5657/5657` Basis-TXIDs matchen bestehende Helium-Legacy-TXIDs.
+  - Helium raw 2022: `11893/11893` Basis-TXIDs matchen.
+  - Helium raw 2023: `4283/4283` Basis-TXIDs matchen.
+  - Helium Workbooks 2021-2023: `5672/5672` Basis-TXIDs matchen.
+  - Entscheidung: Helium raw/workbooks nicht zusaetzlich steuerwirksam importieren; als Evidence-/Validierungsschicht behalten, solange CoinTracking-Helium bereits aktiv ist.
+  - Binance Pivot/Skalierung: `0` normalisierte Rows mit tx_id, `0` semantische Matches; nicht automatisch importieren. Nur konkrete fehlende Earn/Savings/Distribution-Zeilen isoliert und mit Primaerbeleg/API-Abgleich behandeln.
+- Binance-2021-Account-Statement-Ertraege isoliert und teilweise importiert:
+  - Audit: `scripts/binance_2021_account_statement_income_audit.py`
+  - Importer: `scripts/import_binance_2021_account_statement_income.py`
+  - Bewertungs-Audit: `scripts/binance_2021_account_statement_income_valuation_audit.py`
+  - Preisbackfill: `scripts/backfill_binance_2021_income_candidate_prices.py`
+  - Reports: `docs/100_BINANCE_2021_ACCOUNT_STATEMENT_INCOME_AUDIT_2026-05-09.md`, `docs/101_BINANCE_2021_ACCOUNT_STATEMENT_INCOME_IMPORT_2026-05-09.md`, `docs/102_BINANCE_2021_ACCOUNT_STATEMENT_INCOME_VALUATION_AUDIT_2026-05-09.md`, `docs/103_BINANCE_2021_INCOME_CANDIDATE_PRICE_BACKFILL_2026-05-09.md`
+  - Quelle: `usertransfer/legacy_daten/Steuer-2021/Binance-export/BINANCE - TRADING - Export - PIVOT.xlsx`, Sheet `part-00000-3d734e3b-9531-4c31-9`.
+  - Isoliert wurden `317` income-like Rows: `311` Savings Interest plus `6` Distribution/NFT.
+  - Yahoo-Backfill fuer ADA/DOGE erfolgreich: ADA `275/275` Tage, DOGE `28/28` Tage.
+  - Bewertbar/importiert: `311` Interest-Zeilen fuer `ADA`, `DOGE`, `USDT`, Gesamtwert ca. `0.1975450171 EUR`.
+  - Importstatus nach Kontrolle: `311` bestehende Duplikate, `0` neue Kandidaten; DB enthaelt `311` `binance_account_statement`-Rows.
+  - Blockiert: `6` NFT/APENFT-Distribution-Zeilen mit `23302.344666 NFT`; erst importieren, wenn Symbolmapping/Preisbeleg geklaert ist.
+- Nachkontrolle nach Binance-2021-Ertragsimport:
+  - Report: `docs/104_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BINANCE_2021_INCOME_2026-05-09.md`
+  - JSON: `var/chronological_balance_break_audit_after_binance_2021_income_2026-05-09.json`
+  - Bewegungen: `49044`, Assets: `225`, negative Endbestaende: `3`.
+  - Negative Endbestaende: `VTHO -84.78775868`, `BUSD -0.55168701480000000000`, `GFT -0.0081`.
+  - Naechster technischer Fokus: VTHO/GFT vermutlich Dust-/Blockpit/Binance-Dust-Convert-Abgleich, BUSD Pionex/Blockpit/Fee-Rest klaeren.
+- Binance-Dust/Blockpit-Referenzduplikate bereinigt:
+  - Script: `scripts/apply_binance_dust_blockpit_reference_exclusions.py`
+  - Report: `docs/105_BINANCE_DUST_BLOCKPIT_REFERENCE_EXCLUSIONS_2026-05-09.md`
+  - JSON: `var/binance_dust_blockpit_reference_exclusions_2026-05-09.json`
+  - Excluded per `runtime.tax_event_overrides`: Blockpit-Referenzzeilen fuer `VTHO 42.39387934`, `BUSD 0.55379925`, `GFT 0.0081`.
+  - Grund: Binance-API-Primary-Dust-Converts existieren mit gleicher Zeit/Menge (`136251331484` fuer VTHO/BUSD, `47394524243` fuer GTO/GFT).
+  - Nachkontrolle: `docs/106_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BINANCE_DUST_REFERENCE_EXCLUSIONS_2026-05-09.md`, negative Endbestaende danach nur noch `1` (`VTHO -42.39387934`).
+- VTHO-Restbestand aus Binance-Dust-Convert rekonstruiert:
+  - BNB-Preis per Yahoo fuer `2023-05-02` gecacht: `BNB-USD 321.95269775390625`.
+  - Script: `scripts/import_inferred_vtho_reward_from_binance_dust.py`
+  - Report: `docs/107_INFERRED_VTHO_REWARD_FROM_BINANCE_DUST_2026-05-09.md`
+  - JSON: `var/inferred_vtho_reward_from_binance_dust_2026-05-09.json`
+  - Importiert: `1` explizit inferred/reviewed `asset_dividend`/`INCOME_SO`, `42.39387934 VTHO`, Timestamp `2023-05-02T04:13:22+00:00`, Evidence TX `136251331484`.
+  - Wertableitung: Gross-BNB aus Dust-Convert `0.00018130 BNB`, Wert ca. `0.0583700241 USD` / `0.0532328783 EUR`.
+  - Finale Nachkontrolle: `docs/108_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_VTHO_INFERRED_REWARD_2026-05-09.md`, `negative_final_assets=0`.
+- Token-Alias-/Ignored-Token- und Referenzduplikat-Schicht bereinigt:
+  - Code-Fix: `src/tax_engine/api/dashboard.py` nutzt `runtime.token_aliases` jetzt in `_asset_canonical_symbol()`.
+  - Test erweitert: `tests/unit/api/test_api_coverage_gate.py::test_dashboard_setting_helpers_cover_alias_overrides_and_invalid_payloads`.
+  - Audit-Script-Fix: `scripts/chronological_balance_break_audit.py` nutzt Token-Aliase und `runtime.ignored_tokens`; Derivate/`jupiter_perps` werden im Spot-Bestandsaudit nicht mehr als Tokenbewegungen gezählt.
+  - Spam-Ignored: `scripts/apply_spam_token_ignored_candidates.py`, Report `docs/110_SPAM_TOKEN_IGNORED_CANDIDATES_2026-05-09.md`.
+  - Ignored Tokens: `CM8VSESV7MBHAFD5UDXH84QFGXMAVWJCVVHOPB1DZIF4`, `BONKBOX`, `JUPDROP`; RAW bleibt erhalten, Portfolio/Bewertung blendet sie aus.
+  - Solana-Blockpit-Exact-Referenzen: `scripts/apply_solana_blockpit_reference_exclusions.py`, Report `docs/112_SOLANA_BLOCKPIT_REFERENCE_EXCLUSIONS_2026-05-09.md`.
+  - Ergebnis: `1875` exakte Blockpit-Solana-Referenzevents ausgeschlossen; Aliase gesetzt `7AT... -> CWIF` und `2KFZ... -> CBDC`.
+  - Binance-Blockpit-Transferreferenzen: `scripts/apply_binance_blockpit_transfer_reference_exclusions.py`, Report `docs/115_BINANCE_BLOCKPIT_TRANSFER_REFERENCE_EXCLUSIONS_2026-05-09.md`.
+  - Ergebnis: `18` exakte Blockpit-Binance-Transferlegs ausgeschlossen; Fees bewusst nicht pauschal ausgeschlossen.
+  - Solana SOL Composite-Referenzen: `scripts/apply_solana_blockpit_composite_sol_exclusions.py`, Report `docs/117_SOLANA_BLOCKPIT_COMPOSITE_SOL_EXCLUSIONS_2026-05-09.md`.
+  - Ergebnis: `153` Composite-Matches, `306` Blockpit-SOL-Splitbuchungen ausgeschlossen, wenn Withdrawal+Fee exakt der Solana-RPC-Native-SOL-Balanceaenderung entspricht.
+  - Finale Nachkontrolle: `docs/118_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_SOLANA_COMPOSITE_SOL_EXCLUSIONS_2026-05-09.md`, `negative_final_assets=0`, `SOL` final ca. `387.953262004`.
+- Chronologisches Plattform-Ledger und Dashboard-Seite umgesetzt:
+  - Plan: `docs/129_CHRONOLOGICAL_PLATFORM_LEDGER_PLAN_2026-05-09.md`.
+  - Ledger: `scripts/build_platform_ledger.py`, JSONL `var/platform_ledger_2026-05-09.jsonl`, CSV `var/platform_ledger_2026-05-09.csv`, Report `docs/130_PLATFORM_LEDGER_EXPORT_2026-05-09.md`.
+  - Aktiver Datenstand: `42950` Ledger-Zeilen gesamt, davon `37849` aktive Primaerzeilen und `5101` Referenzzeilen. Blockpit/Cointracking/Koinly werden als Referenzplattformen getrennt, damit native CEX-/Wallet-Salden nicht doppelt simuliert werden.
+  - Transfergruppen: `scripts/match_platform_transfers.py`, JSON `var/platform_transfer_groups_2026-05-09.json`, Report `docs/131_PLATFORM_TRANSFER_GROUPS_2026-05-09.md`; aktuell `10` exakte TXID-Gruppen und `817` unmatched transfer-like aktive Zeilen.
+  - Plattform-Simulation: `scripts/simulate_platform_balances.py`, JSON `var/platform_balance_simulation_2026-05-09.json`, Report `docs/132_PLATFORM_BALANCE_SIMULATION_2026-05-09.md`; aktuell `12` Plattform/Asset-Konten mit negativem Verlauf oder Endsaldo.
+  - KI-Hypothesenlauf: `scripts/ai_platform_reconciliation_review.py`, JSON `var/ai_platform_reconciliation_review_2026-05-09.json`, Report `docs/133_AI_PLATFORM_RECONCILIATION_REVIEW_2026-05-09.md`; Modellalias `qwen3.6-35b-a3b-iq4xs`, Modellpfad laut llama.cpp `/opt/models/qwen3.6-35b-a3b-ud-iq4_xs.gguf`, Endpoint `http://192.168.2.203:11435`.
+  - Ursache fuer den leeren ersten KI-Output: llama.cpp/Qwen-Chat-Template braucht `chat_template_kwargs: {"enable_thinking": false}`. Der Top-Level-Key `enable_thinking=false` wurde ignoriert; Output landete deshalb in `reasoning_content` und `content` blieb leer. Nach Fix: `status=success`, `finish_reason=stop`, `reasoning_content_present=false`, `prompt_tokens=16656`, `completion_tokens=1149`, `8` Hypothesen.
+  - API/UI: neuer Endpunkt `/api/v1/platform-ledger/status`; neue Dashboard-Seite `Plattform-Ledger` in `src/tax_engine/ui/static/index.html` und `src/tax_engine/ui/static/app.js`. Port `8000` wurde neu gestartet und liefert den Endpunkt erfolgreich aus.
+- Transfer-Kandidaten und Bruchstellen-Resolution ergaenzt:
+  - Kandidaten-Script: `scripts/match_platform_transfer_candidates.py`.
+  - JSON/Report: `var/platform_transfer_candidates_2026-05-09.json`, `docs/134_PLATFORM_TRANSFER_CANDIDATES_2026-05-09.md`.
+  - Ergebnis nach Dedupe: `27` Transfer-Kandidaten, davon `13 high`, `11 medium`, `3 low`; `24` same_asset_amount_6h, `2` address_amount_time, `1` same_asset_amount_3d.
+  - Resolution-Script: `scripts/platform_break_resolution_plan.py`.
+  - JSON/Report: `var/platform_break_resolution_plan_2026-05-09.json`, `docs/135_PLATFORM_BREAK_RESOLUTION_PLAN_2026-05-09.md`.
+  - Bruchstellen: `12`; Status: `candidate_transfer_review 2`, `opening_balance_or_bot_history_needed 1`, `bitget_history_needed 1`, `onchain_counterflow_needed 1`, `nearby_transfer_context 3`, `dust_or_rounding_review 4`.
+  - UI/API erweitert: `/api/v1/platform-ledger/status` liefert jetzt `transfer_candidates` und `break_resolution`; Dashboard-Tab `Plattform-Ledger` zeigt Transfer-Kandidaten und priorisierte Bruchstellen.
+- Bitget JUP/SOL Doppelquelle bereinigt:
+  - Script: `scripts/apply_bitget_tax_api_duplicate_withdrawal_exclusions.py`.
+  - Report: `docs/136_BITGET_TAX_API_DUPLICATE_WITHDRAWAL_EXCLUSIONS_2026-05-09.md`, JSON `var/bitget_tax_api_duplicate_withdrawal_exclusions_2026-05-09.json`.
+  - Ausgeschlossen per `runtime.tax_event_overrides`: `2` Bitget-Tax-API-Withdrawal-Duplikate (`JUP 2025-06-15`, `SOL 2025-06-15`).
+  - Fachgrund: `bitget_api` enthaelt Bruttowithdrawal inkl. Fee, Zieladresse und Onchain-Trade-ID; `bitget_tax_api` war derselbe Vorgang als Nettoauszahlung plus Fee-Feld. Transfer-In-Zeilen aus Bitget Tax API bleiben aktiv.
+  - Nach Rebuild: Plattform-Bruchstellen `12 -> 10`, Kandidaten `27 -> 25`, High-Prioritaeten `5 -> 3`.
+  - Globaler chronologischer Audit nach Cleanup: `docs/137_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BITGET_TAX_DUPLICATE_CLEANUP_2026-05-09.md`, JSON `var/chronological_balance_break_audit_after_bitget_tax_duplicate_cleanup_2026-05-09.json`; `negative_final_assets=0`, `transient_break_assets=0`.
+- Aktiver Quellenfilter, SOL/BTC/BUSD-Korrektur und Binance-Quellenkette:
+  - Active-Source-Audit filtert Referenzintegrationen aus (`scripts/chronological_balance_break_audit.py` nutzt `filter_events_for_processing(... include_reference_sources=False)`).
+  - SOL wurde nicht per Opening geschlossen, sondern durch `4` echte Binance-SOL-Kaeufe gegen BTC aus Blockpit-Binance-API-Referenzen rekonstruiert.
+  - Import: `scripts/import_binance_sol_2023_blockpit_reconstruction.py`, Report `docs/149_BINANCE_SOL_2023_BLOCKPIT_RECONSTRUCTION_2026-05-09.md`, JSON `var/binance_sol_2023_blockpit_reconstruction_2026-05-09.json`.
+  - Danach war BTC der naechste belegte Gap. Ein einzeln gedeckter USDT->BTC-Trade wurde importiert: `scripts/import_binance_btc_2023_usdt_blockpit_reconstruction.py`, Report `docs/153_BINANCE_BTC_2023_USDT_BLOCKPIT_RECONSTRUCTION_2026-05-09.md`.
+  - Die restliche BTC/BUSD-Luecke wurde als geschlossene Binance-Quellenkette 2022/2023 rekonstruiert: EUR->BUSD, BUSD->DOGE, DOGE/BTC, EUR->BUSD, BUSD/HNT, HNT->BUSD, BUSD->BTC.
+  - Import: `scripts/import_binance_2022_2023_blockpit_source_chain_reconstruction.py`, Report `docs/155_BINANCE_2022_2023_BLOCKPIT_SOURCE_CHAIN_RECONSTRUCTION_2026-05-09.md`, JSON `var/binance_2022_2023_blockpit_source_chain_reconstruction_2026-05-09.json`.
+  - Kandidaten-Audit vor Import: `docs/152_BINANCE_BTC_SOURCE_CHAIN_CANDIDATE_AUDIT_2026-05-09.md`, JSON `var/binance_btc_source_chain_candidate_audit_2026-05-09.json`.
+  - Finale globale Nachkontrolle: `docs/156_CHRONOLOGICAL_BALANCE_BREAK_AUDIT_AFTER_BINANCE_SOURCE_CHAIN_RECONSTRUCTION_2026-05-09.md`, JSON `var/chronological_balance_break_audit_after_binance_source_chain_reconstruction_2026-05-09.json`.
+  - Ergebnis: `negative_final_assets=0`; BTC final `0.002523704`, BUSD final `0.0021122352`, USDT final `1715.7067142110101125`.
+  - Alte BUSD/VTHO-Dust-Kandidaten wurden wieder als `superseded_by_current_balance_audit` markiert: `scripts/resolve_superseded_dust_residual_candidates_20260509.py`, Report `docs/127_SUPERSEDED_DUST_RESIDUAL_CANDIDATES_2026-05-09.md`.
+  - Aktuelle Readiness: `docs/126_TAX_REPORT_READINESS_STATUS_2026-05-09.md`, JSON `var/tax_report_readiness_status_2026-05-09.json`, Status `blocked_by_pionex_opening_evidence`.
+  - Offene aktive Endbestaende: keine. Offene transiente Brueche: Pionex/USDT `-1569.9102818462`, BTC Dust/Timing `-0.0000763`, USDC Dust `-0.000002`.
+- Pionex/USDT Entscheidungsdossier erstellt:
+  - Script: `scripts/pionex_opening_decision_dossier_20260509.py`
+  - Report: `docs/157_PIONEX_OPENING_DECISION_DOSSIER_2026-05-09.md`
+  - JSON: `var/pionex_opening_decision_dossier_2026-05-09.json`
+  - Lokale KI-Gegenpruefung: `qwen3.6-35b-a3b-iq4xs`, `prompt_tokens=589`, `completion_tokens=134`, `reasoning_content_present=false`.
+  - KI-Ergebnis: nicht automatisch steuerwirksam buchen; fehlender Beleg ist Anfangskapital bzw. Erklaerung der Differenz zwischen sichtbaren Deposits `1445.38419 USDT` und benoetigtem Opening `1643.2312211162 USDT`.
+  - Kandidat wurde per API `POST /api/v1/review/balance-adjustment-candidates/upsert` aktualisiert: `pionex-usdt-opening-balance-2021-12-28`, Status `ready_for_explicit_review_decision`, `tax_effective=false`.
+  - `scripts/tax_report_readiness_audit.py` zaehlt `ready_for_explicit_review_decision` weiterhin als Blocker; Status bleibt korrekt `blocked_by_pionex_opening_evidence`.
+- HNT-Plattformkontext-Audit erstellt:
+  - Script: `scripts/hnt_platform_context_audit_20260509.py`
+  - Report: `docs/158_HNT_PLATFORM_CONTEXT_AUDIT_2026-05-09.md`
+  - JSON: `var/hnt_platform_context_audit_2026-05-09.json`
+  - Globaler HNT-Endsaldo ist positiv: `705.50501480143114379127906`.
+  - HNT-Probleme sind plattformlokale Kontext-/Zuordnungsthemen: `solana_wallet -788.53827501`, `bitget -10.96718245`, `binance -1.62738672`, `pionex -0.16629829`.
+  - Keine globale HNT-Korrektur buchen; naechster HNT-Fokus ist Solana-HNT Migration/Wallet-Kontext und Bitget-Support/API.
+- Plattform-Restfaelle final dokumentiert:
+  - Script: `scripts/platform_residual_review_audit_20260509.py`
+  - Report: `docs/166_PLATFORM_RESIDUAL_REVIEW_AUDIT_2026-05-09.md`
+  - JSON: `var/platform_residual_review_audit_2026-05-09.json`
+  - Ergebnis: `4` Nicht-Pionex-USDT-Restfaelle, Status `documented_platform_context_residual 1`, `documented_rounding_dust 3`.
+  - `binance/HNT -1.62738672` ist durch Blockpit-Binance-Referenzkontext eingegrenzt; globaler HNT-Bestand bleibt positiv.
+  - `pionex/HNT -0.16629829`, `solana_wallet/USDC -0.000002` und `solana_wallet/USDT -0.000003` sind Klein-/Rundungsreste.
+  - Keine automatische Buchung und kein steuerwirksames Adjustment empfohlen.
+- Dashboard/API-Status fuer Restfaelle umgesetzt:
+  - `GET /api/v1/platform-ledger/status` trennt jetzt `active_rows` und `documented_rows`.
+  - Live auf Port `8000` geprueft: `active_blocker_count=1`, `documented_residual_count=4`.
+  - UI zeigt im Plattform-Ledger eigene KPIs und eine separate Tabelle fuer dokumentierte Plattformreste.
+- Pionex-USDT finaler Blocker-Audit erstellt und Entscheidung gespeichert:
+  - `docs/167_PIONEX_USDT_FINAL_BLOCKER_AUDIT_2026-05-09.md`
+  - `var/pionex_usdt_final_blocker_audit_2026-05-09.json`
+  - Ergebnis: kein weiterer Onchain-/Binance-Beleg fuer die fehlenden `197.8470311162 USDT` vor dem Worst-Zeitpunkt.
+  - Kandidat `pionex-usdt-opening-balance-2021-12-28` wurde per API auf `needs_evidence` gesetzt; Entscheidung `request_more_evidence`, `tax_effective=false`.
+- Review-Gate-Integration fuer Balance-Kandidaten umgesetzt:
+  - `GET /api/v1/review/gates` blockiert jetzt bei `needs_evidence`/`ready_for_explicit_review_decision`.
+  - Live auf Port `8000`: `balance_adjustment_candidates_open=1`, `allow_export=false`.
+  - UI: `Review Gates` zeigt den offenen Kandidaten in einer eigenen Tabelle.
+- Aktuelle Draft-Laeufe und Exportdateien erzeugt:
+  - `docs/168_CURRENT_TAX_DRAFT_RUNS_2026-05-09.md`
+  - `var/current_tax_draft_jobs_2026-05-09.jsonl`
+  - `var/report_exports_current_2026-05-09/`
+  - Nur Entwurf, nicht final sauber, solange Pionex-USDT `needs_evidence` offen ist.
+- MOBILE/Solscan Missing-Price-Blocker behoben:
+  - Report: `docs/169_MOBILE_SOLSCAN_VALUE_SUM_PRICE_FIX_2026-05-09.md`.
+  - Event `9e9de7a0a36f34129ba33933c47dba9e39e7a70ef01957f808db60e2526c8135` hatte bereits `raw_row.value_usd_sum=22.000764000000007`; Review/FX/Processor nutzen `value_usd_sum` jetzt als Bewertungsquelle.
+  - Tests: `tests/unit/api/test_issue_endpoints.py::test_solscan_indexed_swap_value_is_not_missing_price`, `tests/unit/fx/test_fx_service.py::test_enrich_events_converts_raw_value_usd_sum`, `tests/unit/core/test_processor_fifo.py::test_raw_value_usd_sum_with_fx_sets_unit_price_for_swap`; kompletter Block `tests/unit/api/test_issue_endpoints.py tests/unit/fx/test_fx_service.py tests/unit/core/test_processor_fifo.py` mit `41 passed`.
+  - Live auf Port `8000`: `/api/v1/issues/inbox` liefert `issues_total=0`, `high_open=0`, `missing_price_open=0`.
+  - Neuer 2023-Draft: `c8065ea8-d697-4721-8873-d091478b5341`; Exporte unter `var/report_exports_current_2026-05-09/2023_c8065ea8-d697-4721-8873-d091478b5341_*`.
+  - `docs/168_CURRENT_TAX_DRAFT_RUNS_2026-05-09.md` und `var/current_tax_draft_summary_2026-05-09.json` wurden auf den neuen 2023-Job aktualisiert.
+- Pionex Review-Gate CTA umgesetzt:
+  - Report: `docs/170_PIONEX_REVIEW_GATE_CTA_2026-05-09.md`.
+  - `GET /api/v1/review/gates` liefert jetzt `draft_export_policy`, `required_evidence` und `api_actions` je offenem Balance-Kandidaten.
+  - Dashboard Steuer > Review Gates zeigt einen konkreten Pionex/USDT-CTA und kann Entwurfsdateien laden, ohne die finale Gate-Sperre aufzuheben.
+  - Live Port `8000`: `final_export_allowed=false`, `draft_export_allowed=true`, `balance_adjustment_candidates_open=1`.
+  - Tests: `python3 -m py_compile src/tax_engine/api/review.py`, `node --check src/tax_engine/ui/static/app.js`, `PYTHONPATH=src pytest -q tests/unit/api/test_issue_endpoints.py::test_review_gates_block_on_balance_adjustment_candidate_needing_evidence`.
+- Entwurfs-Hinweise direkt in Exporte eingebettet:
+  - Report: `docs/171_DRAFT_EXPORT_NOTICE_EMBEDDING_2026-05-09.md`.
+  - JSON: `data.draft_notice` plus erste Zeile `line_type=draft_notice`.
+  - CSV: Notice-Spalten und erste Datenzeile `draft_notice`.
+  - WISO-CSV: Header enthaelt `Draft_Status:NOT_FINAL`, `Draft_Blocker`, `Draft_Candidate`.
+  - PDF: Seitenkopf zeigt `ENTWURF - NICHT FINAL` mit Pionex-Belegbedarf.
+  - Report-Dateiliste markiert Dateien mit `ENTWURF - ...`.
+  - Lokale Dateien in `var/report_exports_current_2026-05-09/` wurden neu geschrieben (`22` Dateien).
+  - Tests: `python3 -m py_compile src/tax_engine/api/processing.py src/tax_engine/api/reporting.py`, `PYTHONPATH=src pytest -q tests/unit/api/test_api_coverage_gate.py::test_report_export_marks_draft_when_balance_candidate_blocks_gate tests/unit/api/test_api_coverage_gate.py::test_report_export_integrity_snapshot_and_compliance_paths`.
+- Pionex-Beleganforderungspaket erzeugt:
+  - Script: `scripts/pionex_evidence_request_package_20260509.py`.
+  - Report: `docs/172_PIONEX_EVIDENCE_REQUEST_PACKAGE_2026-05-09.md`.
+  - JSON-Paket: `var/pionex_evidence_request_package_2026-05-09.json`.
+  - Transfer-Anhang: `var/pionex_usdt_known_transfers_for_support_2026-05-09.csv`.
+  - Supporttexte: `var/pionex_support_request_usdt_history_en_2026-05-09.txt`, `var/pionex_support_request_usdt_history_de_2026-05-09.txt`.
+  - Zweck: Pionex gezielt nach Spot-/Bot-/Grid-Historie, Opening Balances vor `2021-12-28`, internen Transfers und ggf. schriftlicher Nichtverfuegbarkeitsbestaetigung fragen.
+- Pionex nicht-steuerwirksame Entscheidungs-Vorschau umgesetzt:
+  - API: `GET /api/v1/review/balance-adjustment-candidates/{candidate_id}/decision-preview`.
+  - Live fuer `pionex-usdt-opening-balance-2021-12-28` geprueft: `current_status=needs_evidence`, `blocks_final_export=true`, vorbereitete Entscheidung `approve_non_tax_inventory_normalization`.
+  - Preview ist read-only und aendert den Kandidaten nicht.
+  - Report: `docs/173_PIONEX_NON_TAX_DECISION_PREVIEW_2026-05-09.md`.
+  - JSON: `var/pionex_non_tax_decision_preview_2026-05-09.json`.
+  - Tests: `python3 -m py_compile src/tax_engine/api/review.py src/tax_engine/api/app.py`, `PYTHONPATH=src pytest -q tests/unit/api/test_issue_endpoints.py::test_balance_adjustment_candidate_decision_preview_is_read_only tests/unit/api/test_issue_endpoints.py::test_balance_adjustment_candidate_decision_is_review_only`.
+- Dashboard-UI fuer Pionex-Entscheidungsvorschau umgesetzt:
+  - Report: `docs/174_DASHBOARD_PIONEX_DECISION_PREVIEW_UI_2026-05-09.md`.
+  - Steuer > Review Gates: Pionex/USDT-Karte ist klickbar und laedt die read-only Preview mit Payload und Safety Notes.
+  - Kein UI-Button zur Freigabe eingebaut; Entscheidung bleibt bewusst API-/Review-gesteuert.
+  - Live geprueft: `/app` enthaelt `gateDecisionPreview`, `/ui/static/app.js` enthaelt `loadGateDecisionPreview`.
+  - Test: `node --check src/tax_engine/ui/static/app.js`.
+- Pionex-Belegpaket per API und ZIP angebunden:
+  - Report: `docs/175_PIONEX_EVIDENCE_PACKAGE_API_ZIP_2026-05-09.md`.
+  - API: `GET /api/v1/review/balance-adjustment-candidates/{candidate_id}/evidence-package`.
+  - ZIP: `var/pionex_support_package_2026-05-09.zip`.
+  - Inhalt: Supporttexte DE/EN, bekannte Pionex/TRON-USDT Transfers, Audit-/Evidence-Dateien.
+  - Dashboard: In der Pionex-Entscheidungsvorschau gibt es jetzt einen Belegpaket-Button.
+  - Live Port `8000`: Paket-Endpoint `status=success`, ZIP vorhanden, `known_transfer_count=8`.
+  - Tests: `python3 -m py_compile src/tax_engine/api/review.py src/tax_engine/api/app.py`, `node --check src/tax_engine/ui/static/app.js`, `PYTHONPATH=src pytest -q tests/unit/api/test_issue_endpoints.py::test_pionex_balance_adjustment_candidate_evidence_package_builds_zip tests/unit/api/test_issue_endpoints.py::test_balance_adjustment_candidate_decision_preview_is_read_only tests/unit/api/test_issue_endpoints.py::test_review_gates_block_on_balance_adjustment_candidate_needing_evidence`.
+- Pionex/USDT Alt-Kontext nicht steuerwirksam freigegeben und finale Exporte erzeugt:
+  - Report: `docs/176_PIONEX_NON_TAX_RELEASE_AND_FINAL_EXPORTS_2026-05-09.md`.
+  - Kandidat `pionex-usdt-opening-balance-2021-12-28` wurde nach Nutzerbestaetigung per API auf `approved_non_tax_inventory_normalization` gesetzt.
+  - Entscheidung ist `tax_effective=false`, erzeugt keinen Import und aendert keine Rohdaten.
+  - Live Port `8000`: `allow_export=true`, `issues_total=0`, `issues_high_open=0`, `unmatched_total=0`, `balance_adjustment_candidates_open=0`.
+  - Snapshot: `var/review_gate_snapshot_2026-05-09.json`.
+  - Aktualisierte Uebersicht: `docs/168_CURRENT_TAX_DRAFT_RUNS_2026-05-09.md`, `var/current_tax_draft_summary_2026-05-09.json`.
+  - Finale Exporte: `var/report_exports_final_2026-05-09/` mit `23` Dateien; alle Jahres-JSONs haben `draft_notice=null`, keine Treffer fuer `ENTWURF`, `Draft_Status` oder `NOT_FINAL`.
+  - Script-Fix: `scripts/current_tax_draft_summary_20260509.py` liest Gate-Snapshots jetzt korrekt aus `data`.
+- Nullbasis-Review-Gate fuer fachliche Anschaffungskostenpruefung umgesetzt:
+  - Report: `docs/177_ZERO_COST_TAX_LOT_GATE_2026-05-10.md`.
+  - Code: `src/tax_engine/api/review.py` erzeugt jetzt `zero_cost_tax_lots` Issues aus den neuesten abgeschlossenen Steuerlaeufen.
+  - Schwelle: `>= 1000 EUR` Erloes wird Issue, `>= 5000 EUR` wird `high`.
+  - Test: `tests/unit/api/test_issue_endpoints.py::test_review_gates_block_on_material_zero_cost_tax_lots`.
+  - Live Port `8000`: `allow_export=false`, `issues_total=3`, `issues_high_open=1`, `unmatched_total=0`, `balance_adjustment_candidates_open=0`.
+  - Offene Issues: `2025/JUP high` mit `54` Zeilen und `11228.97 EUR` Erloes; `2024/USDC medium` mit `6` Zeilen und `2843.31 EUR`; `2022/USDT medium` mit `3` Zeilen und `1377.09 EUR`.
+  - Die vorher erzeugten Dateien in `var/report_exports_final_2026-05-09/` sind dadurch historisch vorhanden, aber fachlich nicht mehr als final freigegeben zu behandeln.
+- JUP 2025 Nullbasis-High durch Solscan-Stable-Counterflow-Bewertung behoben:
+  - Report: `docs/178_JUP_2025_SOLSCAN_STABLE_COUNTERFLOW_VALUATION_2026-05-10.md`.
+  - Code: `src/tax_engine/queue/service.py` uebernimmt fuer aktive `solana_rpc`-Events ohne Wert nun zusaetzlich Stable-Gegenfluesse aus gecachten Solscan-Detailtransaktionen, wenn Wallet, Token, Richtung und Menge passen.
+  - Referenzmarker: `valuation_reference_source=solscan_transaction_counterflow`.
+  - Tests: `tests/unit/api/test_process_endpoints.py::test_attach_reference_usd_value_anchors_from_solscan_to_solana_rpc`, `tests/unit/api/test_process_endpoints.py::test_attach_reference_usd_value_anchors_from_solscan_stable_counterflow`, `tests/unit/core/test_processor_fifo.py::test_raw_value_usd_sum_with_fx_sets_eur_cost_basis`, `tests/unit/api/test_issue_endpoints.py::test_review_gates_block_on_material_zero_cost_tax_lots` mit `4 passed`.
+  - Neuer 2025-Job: `dc4aae2c-338d-430a-914a-eaa2eb80d904`.
+  - Bewertungsanker im Lauf: `327` angehaengt, davon `63` aus `solscan_transaction_counterflow`.
+  - 2025 Anlage SO: Leistungen `747.7890097989682380400235705 EUR`; private Veraeusserungen steuerpflichtig netto `14389.70577854374306336500091 EUR`.
+  - Live Port `8000`: `allow_export=true`, `issues_total=2`, `issues_high_open=0`, keine Blocker.
+  - Offene Medium-Issues: `2022/USDT` `1377.09 EUR`, `2024/USDC` `2843.31 EUR`.
+- Processing-Dedupe und Counterflow-Review erweitert:
+  - Report: `docs/179_PROCESSING_DEDUPE_AND_COUNTERFLOW_REVIEW_2026-05-10.md`.
+  - Code: `src/tax_engine/queue/service.py` hat jetzt zusaetzlich `drop_exact_pionex_duplicate_events()` und WSOL/SOL-Counterflow-Bewertung ueber vorhandene SOL/USD-Kurse.
+  - Pionex-Dubletten im aktiven Rohbestand: `1719` exakte Dubletten werden nur zur Verarbeitung entfernt; Rohdaten bleiben unveraendert.
+  - Solscan-Dubletten: `264` `solscan_wallet_discovery`-Events werden entfernt, wenn ein passendes `solana_rpc`-Primaerevent aktiv ist.
+  - Tests: relevanter Block mit `7 passed`.
+  - Neue Jobs: 2022 `c94a113e-1423-4ac1-8a72-9a12cd1156b1`, 2024 `42cf80fc-2d66-4e9e-af73-bcaf563e5dc3`.
+  - 2024 ZEUS-High ist geloest; Live Port `8000` nach Server-Neustart: `allow_export=true`, `issues_total=4`, `issues_high_open=0`, keine Blocker.
+  - Offene Medium-Issues: `2022/USDT` `1377.09 EUR`, `2024/IOT` `1692.24 EUR`, `2024/USDC` `2843.31 EUR`, `2024/JUP` `1941.79 EUR`.
+- Medium-Nullbasis-Issues mit lokaler KI geprueft:
+  - Script: `scripts/ai_zero_cost_medium_review.py`.
+  - Report: `docs/180_ZERO_COST_MEDIUM_REVIEW_2026-05-10.md`.
+  - JSON: `var/zero_cost_medium_review_2026-05-10.json`.
+  - LLM: CT203 llama.cpp `http://192.168.2.203:11435`, Modell `qwen3.6-35b-a3b-iq4xs`, `prompt_tokens=15447`, `completion_tokens=814`, `reasoning_content_present=false`.
+  - Hinweis: erste Versuche gegen Ollama `11434` waren falsch bzw. Speicher-limitiert; funktionierender Pfad ist llama.cpp `11435/v1/chat/completions`.
+  - KI-Einschaetzung: fuer alle vier Medium-Issues `safe_to_auto_fix_boolean=false`.
+  - `2022/USDT`: `missing_acquisition_chain`, Confidence `0.95`; alle 3 Zeilen sind `empty_lot`.
+  - `2024/IOT`: `missing_acquisition_chain`, Confidence `0.9`; 9 von 11 Zeilen sind `empty_lot`, 2 haben Solana-Lot ohne Anschaffungswert.
+  - `2024/JUP`: `duplicate_or_reference_overlap`, Confidence `0.85`; Lot-Splitting/Referenzueberlappung manuell pruefen, kein Auto-Fix.
+  - `2024/USDC`: `missing_acquisition_chain`, Confidence `0.9`; alle 6 Zeilen sind `empty_lot`.
+  - Deterministische Zusatzpruefung: aktuelle Processing-Pipeline zeigt erste Brueche bei `USDT 2022-01-05T15:36:46`, `IOT 2023-04-26T14:56:02`, `USDC 2024-04-02T06:52:04`; `JUP` hat keinen globalen Endbruch, aber einzelne Zero-Value-Lots.
+- `2022/USDT` Nullbasis-Dossier erstellt:
+  - Script: `scripts/usdt_2022_zero_cost_dossier.py`.
+  - Report: `docs/181_USDT_2022_ZERO_COST_DOSSIER_2026-05-10.md`.
+  - JSON: `var/usdt_2022_zero_cost_dossier_2026-05-10.json`.
+  - Lokale KI-Zweitpruefung: `var/usdt_2022_zero_cost_ai_review_2026-05-10.json`, Modell `qwen3.6-35b-a3b-iq4xs`, `prompt_tokens=3611`, `completion_tokens=344`, `reasoning_content_present=false`.
+  - Ergebnis: `3` steuerpflichtige USDT-Zeilen mit Cost Basis 0, Menge `1562.1471864862 USDT`, Erloes `1377.093968129900714 EUR`.
+  - Line `106`: Binance USDT Spend am `2022-01-05T15:36:46Z`; erster aktiver USDT-Bruch nach dieser Zeile `-75.1046222062 USDT`.
+  - Lines `136` und `149`: Pionex Trade-Outs am `2022-01-19`; Worst `-1569.9102818462 USDT` nach `s_11:68:out:USDT`.
+  - Zusatzpruefung der Binance-Rohzeilen: am `2022-01-05T08:39:37Z` wurden HNT gegen USDT verkauft, am `2022-01-05T15:36:46Z` wurde HNT mit USDT zurueckgekauft; kein Dezimaltrennzeichen-/Parsingfehler sichtbar.
+  - Bewertung: kein Auto-Fix und keine steuerwirksame Zuflussfiktion. Belegziele bleiben Binance-Erwerbskette vor `2022-01-05` und Pionex Bot-/Opening-Historie vor `2022-01-19`.
+
+## Naechste sinnvolle Schritte
+1. Keine automatische Korrektur fuer die vier Medium-Issues anwenden.
+2. Naechster Dossier-Fokus: `2024/IOT`, danach `2024/USDC`, danach `2024/JUP`.
+3. Fuer `2022/USDT`: fruehe Binance/Pionex-Anschaffungskette nur weiter bearbeiten, wenn neue Primaerbelege/Exports auftauchen; aktueller Softwarestand zeigt keinen deterministischen Fix.
+4. Fuer `2024/IOT` und `2024/USDC`: Solana/Helium-/Bridge- bzw. CEX-Herkunft vor dem ersten Bruch klaeren.
+5. Fuer `2024/JUP`: vorhandene Solana-Lots ohne Anschaffungswert gezielt gegen Counterflow/Referenzueberlappung pruefen.
+6. Danach Review-Gate erneut pruefen und finale Exporte neu erzeugen; der alte Ordner `var/report_exports_final_2026-05-09/` ist durch den neueren Gate-Stand historisch/superseded.
+7. 2024 Derivate weiter plausibilisieren: Derivate-CSV ist rechnerisch konsistent, aber Processing-Summary meldet `4` unmatched closes.
+8. Fuer dokumentierte Plattform-/Rundungsreste aus `docs/166_PLATFORM_RESIDUAL_REVIEW_AUDIT_2026-05-09.md` weiter keine steuerwirksamen Imports erzeugen.
+
+## Update 2026-05-10 13:37 UTC - Betriebsvermoegen vs Privatvermoegen Audit
+- Anlass: Nutzer fragte, was mittlerweile Betriebsvermoegen und was privat ist, weil die Solana-Wallet beide Sphaeren genutzt hat.
+- Script: `scripts/business_private_lot_audit_20260510.py`.
+- Ergebnisdateien:
+  - Doku: `docs/197_BUSINESS_PRIVATE_LOT_AUDIT_2026-05-10.md`
+  - JSON: `var/business_private_lot_audit_2026-05-10.json`
+- Ergebnisstatus: `read_only_audit`; keine Rohdaten und keine Steuerzeilen wurden dadurch geaendert.
+- Regelannahme: Reward-/Mining-nahe Zufluesse sind Betriebsvermoegen; sie bleiben Betriebsvermoegen bis zu einer dokumentierten Entnahme. Private Kauf-/Swap-Lots bleiben privat.
+- Kernergebnis:
+  - Offene Business-Assets: `11`
+  - Offene Private-Assets: `40`
+  - Gemischte offene Assets: `8` (`ADA`, `DOGE`, `HNT`, `IOT`, `JUP`, `SHARKS...NR1S`, `SOL`, `TRUMP`)
+  - Business-Origin-Verkaeufe/Swaps in der Simulation: `28794`
+  - Shortfall-Hinweise: `13`
+- Aktuelle Fokus-Bestaende:
+  - `HNT`: business `224.06014297`, private `977.91485394000001756127906`
+  - `IOT`: business `338468.922815`, private `2336045.469342`
+  - `SOL`: business `0.145607172`, private `179.099206605`
+  - `JUP`: business `12.84176164`, private `19828.73089815`
+- Business-Origin-Disposals im Fokus:
+  - `HNT`: 2021 Gewinn `8055.860776972771024512513701`, 2022 Verlust `-10084.43842393730970360306672`, 2023 Verlust `-874.0434958398433028835268948`, 2025 Verlust `-3.350640045613056`
+  - `IOT`: 2023 Verlust `-158.5398179010335818515727372`, 2024 Gewinn `1609.46868208569383160337966`
+  - `MOBILE`: 2024 Gewinn `1.584982396438957750443390956`, 2025 Verlust `-1.427504399117377190021099999`
+  - `JUP`: 2025 Gewinn `4.81467347806439254203`
+- Wichtige Grenze: Transferketten propagieren die Herkunftsdomain noch nicht automatisch ueber Plattformgrenzen. Naechste technische Stufe ist daher Lot-Domain im Kern-FIFO plus Transfer-Matching, bevor Business-Origin-Sales final in EÜR statt §23 umgebucht werden.
+- Validierung:
+  - `python3 -m py_compile scripts/business_private_lot_audit_20260510.py`
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/core/test_processor_fifo.py tests/unit/core/test_tax_domains.py` -> `18 passed`
+
+## Update 2026-05-10 14:12 UTC - Business-/Privat-FIFO produktiv und private Haltefrist-Uebersicht
+- Anlass: Nutzer wollte nach dem Audit die echte technische Trennung sowie eine Privat-Uebersicht, welcher Token welche Haltefrist erreicht hat.
+- Report: `docs/198_BUSINESS_PRIVATE_FIFO_AND_PRIVATE_HOLDING_OVERVIEW_2026-05-10.md`
+- Code:
+  - `src/tax_engine/core/processor.py`: FIFO-Lots tragen jetzt `domain=business|private`; Reward-/Mining-Lots werden Business-Lots; Business-Origin-Verkaeufe bekommen `tax_domain=euer_business_disposal`, `tax_status=business`, `lot_domain=business`.
+  - `src/tax_engine/core/tax_domains.py`: Business-Origin-Disposals laufen in EÜR-Kennzahlen und werden nicht mehr als private Anlage-SO-Veräußerung summiert.
+  - `src/tax_engine/db/migration_v1.sql` und `src/tax_engine/db/store.py`: `tax_lines` haben neue Spalten `tax_domain` und `lot_domain`.
+  - `src/tax_engine/queue/service.py`: Processing uebergibt bestehende Transfer-Matches an den FIFO-Prozessor.
+  - `src/tax_engine/api/dashboard.py`: `GET /api/v1/portfolio/lot-aging` unterstuetzt `domain=private|business`; Asset-Summary wird passend zum Domain-Filter neu aggregiert.
+  - `src/tax_engine/ui/static/index.html` und `src/tax_engine/ui/static/app.js`: Lot-Aging hat einen Bereichsfilter `Privat`, `Betriebsvermögen`, `Alle` und eine Bereich-Spalte.
+  - `src/tax_engine/api/reporting.py`: CSV/JSON-Export enthaelt `tax_domain` und `lot_domain`.
+- Transferlogik:
+  - Gematchte Transfers propagieren die urspruengliche Lot-Herkunft, den Erwerbszeitpunkt und die Cost Basis auf den Ziel-Transfer.
+  - Nicht gematchte Transfers koennen die Herkunft weiterhin nicht sicher fortschreiben.
+- Neuer Gesamtlauf 2020..2026:
+  - Script: `scripts/run_current_tax_years_20260510.py`
+  - Summary: `var/current_tax_summary_2026-05-10.json`
+  - Jahresreport: `docs/190_CURRENT_TAX_RUNS_2026-05-10.md`
+  - Jobs: 2020 `ebfa221e-3a63-4508-9df5-26857affbb00`, 2021 `7eca7e99-899c-4397-893c-72341fac395a`, 2022 `3f28e472-06f1-43a5-b7f8-cf9cea5aa383`, 2023 `2becbdd1-ad2e-4b99-bb21-f45d6985131b`, 2024 `99d1a66a-9556-422d-9c01-34d763d1af56`, 2025 `629171d6-d5f4-4e01-8aa7-6d4eb482eb28`, 2026 `130f8123-fb30-4296-aa86-a58c836906c3`
+- Wichtige Summen nach neuer Trennung:
+  - 2021 private Anlage SO netto `25589.86108601877668630073922`, EÜR BV-Veräußerung netto `8055.915712504424293312513697`, EÜR Ergebnis `20091.60739633581739216509304`
+  - 2022 private Anlage SO netto `-9788.606190760881971889011824`, EÜR BV-Veräußerung netto `-10084.43842393730970360306668`, EÜR Ergebnis `-322.726595509983894505036169`
+  - 2023 private Anlage SO netto `-4501.887241509443459687292038`, EÜR BV-Veräußerung netto `-1032.636546619158381988517602`, EÜR Ergebnis `559.153033683591521689170865`
+  - 2024 private Anlage SO netto `-1751.84514207395545202546904`, EÜR BV-Veräußerung netto `1611.053564472835508252762095`, EÜR Ergebnis `3902.992268106862097953019423`
+  - 2025 private Anlage SO netto `9738.584749217347301097332569`, EÜR BV-Veräußerung netto `0.037523227099415481468900001`, EÜR Ergebnis `747.8265330260676535214924705`
+- Live Port 8000 wurde neu gestartet.
+  - Health OK.
+  - Korrektur nach Nutzerhinweis "ich habe aber keine 441 SOL": Lot-Aging hatte zunaechst nicht die volle Processing-Pipeline genutzt.
+  - Fix: `src/tax_engine/api/dashboard.py` nutzt fuer Lot-Aging jetzt `_list_processing_effective_raw_events()` mit Integration-Filter, Pionex-/Solscan-Dedupe, Preisankerung, Review-Actions, Overrides und FX-Enrichment.
+  - Private SOL-Haltefrist `2026-12-31`: `74` private Lots, `179.099206605 SOL`, davon `179.099206605` steuerfrei und `0` noch steuerpflichtig.
+  - Business SOL-Haltefrist `2026-12-31`: `101` Business-Lots, `0.145607172 SOL`.
+- Review-Gate nach Gesamtlauf: `allow_export=True`, offen bleibt nur `zero_cost_tax_lots:2022:USDT:3f28e472-06f1-43a5-b7f8-cf9cea5aa383`.
+- Validierung:
+  - PyCompile der betroffenen Python-Module erfolgreich.
+  - `node --check src/tax_engine/ui/static/app.js`
+  - FIFO/Tax/API-Tests: `23 passed`
+  - Breiter API/Reporting-Block: `39 passed`
+
+## Update 2026-05-10 14:32 UTC - SOL-Bestand nach Nutzerhinweis erneut korrigiert
+- Anlass: Nutzer stellte klar, dass die angezeigten SOL-Bestaende weiterhin nicht zu den realen Binance-/Jupiter-/Solana-/CEX-Bestaenden passen.
+- Neuer Reconciliation-Report: `docs/199_SOL_CURRENT_BALANCE_RECONCILIATION_2026-05-10.md`
+- JSON: `var/sol_current_balance_reconciliation_2026-05-10.json`
+- Weitere Code-Korrektur:
+  - `src/tax_engine/core/processor.py`: Nicht gematchte Nicht-Stable-Transfer-Outs verbrauchen FIFO-Lots, erzeugen aber ohne Verkauf keine Steuerzeile.
+  - `src/tax_engine/core/processor.py`: Bitget `fiat_balance_success_user_in/out` wird als interner Transfer klassifiziert, nicht als Anschaffung.
+  - `tests/unit/core/test_processor_fifo.py`: Tests fuer Transfer-Out-Lotverbrauch und Bitget-Internevent ergaenzt.
+- Port `8000` wurde per `systemctl restart steuerreport-api.service` neu gestartet und live geprueft.
+- Aktuelle SOL-Lot-Aging-Werte fuer `2026-12-31T23:59:59Z`:
+  - Gesamt `3.975449536 SOL`
+  - Privat `3.829842364 SOL`
+  - Betriebsvermoegen `0.145607172 SOL`
+- Secret-Store-Fix:
+  - `src/tax_engine/connectors/models.py`: CEX-Credentials im Request optional.
+  - `src/tax_engine/api/connectors.py`: fehlende CEX-Credentials werden ueber `secret.cex.<connector>.*` geladen.
+  - Grund: Die Secrets waren vorhanden und maskiert sichtbar, aber CEX-Endpunkte verlangten bisher Keys im Request-Body; dadurch liefen einzelne Probes an den gespeicherten Secrets vorbei.
+- Live-/API-Abgleich nach Secret-Store-Fix:
+  - Solana-Wallet `wBrPoi...JbV2oB`: live `0.236270174 SOL`
+  - Binance Spot: `1.39855608 SOL`
+  - Binance Locked Earn/Staking Principal: `9.84095708 SOL`
+  - Binance Locked Earn/Staking accrued Reward-Feld: `0.14855608 SOL`
+  - Bitget API: `0 SOL`
+  - Pionex API: `0 SOL`
+  - Verifiziert gesamt ohne accrued Reward-Feld: `11.475783334 SOL`
+  - Verifiziert gesamt mit accrued Reward-Feld: `11.624339414 SOL`
+  - FIFO-Modell: `3.975449536 SOL`
+  - Offene Differenz: FIFO-Modell jetzt mindestens `7.500333798 SOL` zu niedrig.
+- Bewertung: Die hohen falschen Werte `441 SOL` und `179 SOL` sind beseitigt. Nach Einbezug von Binance Earn/Staking ist das Problem aber umgedreht: der historische FIFO-Bestand ist zu niedrig, weil die aktive Binance-Locked-Earn/SOL-Position im Steuerlauf noch nicht sauber historisch integriert ist.
+- Binance-Earn-Balance-Fix:
+  - `src/tax_engine/connectors/service.py`: Binance Balance-Preview zaehlt jetzt `simple_earn_flexible` und `simple_earn_locked` Positionen separat.
+  - Tests: `tests/unit/connectors/test_cex_service.py`
+- Naechster Fokus:
+  1. Binance Locked-Earn/SOL-Position `Sol*120` historisch importieren bzw. gegen `stakingHistory`, Purchase-Zeit, Reward-Zufluesse und BNSOL/SOL-Konvertierungen abgleichen.
+  2. Verifizierte Live-Bestaende nur als Reconciliation-Anker verwenden, nicht als Ersatz fuer fehlende historische Transaktionen.
+  3. Danach Restgruppen suchen: Binance `trade` `1.932808951 SOL`, Binance `fiat_payment_in` `0.897119410 SOL`, Solana/Jupiter `sol_transfer` `0.999914003 SOL`.
+  4. Danach Steuerjahre erneut laufen lassen; `docs/190_CURRENT_TAX_RUNS_2026-05-10.md` ist durch diesen FIFO-Fix fachlich ueberholt.
+- Validierung:
+  - `python3 -m py_compile src/tax_engine/core/processor.py src/tax_engine/api/dashboard.py`
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/core/test_processor_fifo.py tests/unit/core/test_tax_domains.py tests/unit/api/test_process_endpoints.py::test_portfolio_lot_aging_shows_split_lots` -> `25 passed`
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_cex_connector_endpoints.py tests/unit/api/test_admin_endpoints.py::test_admin_cex_credentials_load_returns_saved_secret_values tests/unit/connectors/test_cex_service.py` -> `29 passed`
+  - Nach Binance-Earn-Fix: `PYTHONPATH=src python3 -m pytest -q tests/unit/connectors/test_cex_service.py tests/unit/api/test_cex_connector_endpoints.py` -> `29 passed`
+
+## Update 2026-05-10 14:50 UTC - All-Token-Livebestand gegen FIFO abgeglichen
+- Anlass: Nutzer fragte, ob auch die anderen Tokens nachgezogen und abgeglichen wurden.
+- Report: `docs/200_ALL_TOKEN_CURRENT_BALANCE_RECONCILIATION_2026-05-10.md`
+- Quellen:
+  - Port `8000` Lot-Aging all assets
+  - Binance Balances Preview via Secret-Store inklusive Spot, Simple Earn Flexible, Simple Earn Locked
+  - Bitget Balances Preview via Secret-Store
+  - Pionex Balances Preview via Secret-Store
+  - Solana Wallet Balance Snapshot
+- Kernergebnis:
+  - Nicht nur SOL ist betroffen. Grosse Abweichungen gibt es u.a. bei `JUP`, `LDJUP`, `ADA`, `DOGE`, `USDT`, `USDC`, `HNT`, `BTC`, `ETH`, `TRX`, `XLM`, `PEPE`.
+  - Einige grosse Zeilen sind Alias-/Anzeigeprobleme und duerfen nicht steuerlich auto-korrigiert werden: z.B. Modell `2KFZCK...FV2J` entspricht live `CBDC` mit gleicher Menge `4202343.53`.
+  - Naechste technische Stufe: Solana-Mint-Alias-Normalisierung fuer Reconciliation, dann Binance Earn/Staking-Historie importieren.
+
+## Update 2026-05-10 15:00 UTC - Erste Mint-Aliases produktiv
+- Code:
+  - `src/tax_engine/connectors/token_metadata.py`: bekannte Mints fuer `CBDC` (`2KFZCKFXJ1US8YRQZA5VKTSXY3GPZFZVVHWJ91N8FV2J`) und `SHARK` (`SHARKSYJJQANYXVFRPNBN9PJGKHWDHATNMYICWPNR1S`) ergaenzt.
+  - `tests/unit/api/test_process_endpoints.py`: Test `test_portfolio_lot_aging_uses_known_solana_mint_symbols`.
+- Validierung:
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_process_endpoints.py::test_portfolio_lot_aging_uses_known_solana_mint_symbols tests/unit/api/test_process_endpoints.py::test_portfolio_lot_aging_shows_split_lots tests/unit/connectors/test_cex_service.py tests/unit/api/test_cex_connector_endpoints.py` -> `31 passed`
+  - Port `8000` per `systemctl restart steuerreport-api.service` neu gestartet.
+  - Live Lot-Aging zeigt jetzt `CBDC 4202343.53` und `SHARK 1641.002014`; `2KFZCK...FV2J` und `SHARKS...NR1S` erscheinen nicht mehr.
+- Nach erneutem All-Token-Abgleich:
+  - `CBDC`: Modell `4202343.53`, live `4202343.53`, Differenz `0`.
+  - `SHARK`: Modell `1641.002014`, live `963.536668`, Differenz `677.465346`; jetzt echte Mengendifferenz statt Aliasproblem.
+  - Naechster Fokus bleibt Binance Earn/Staking-Historie fuer `SOL`, `JUP`, `LDJUP` und danach weitere echte Differenzen.
+
+## Update 2026-05-10 15:05 UTC - Binance Earn/Staking-Historie reproduzierbar abgelegt
+- Script: `scripts/binance_earn_position_reconciliation_20260510.py`
+- Report: `docs/201_BINANCE_EARN_POSITION_RECONCILIATION_2026-05-10.md`
+- JSON: `var/binance_earn_position_reconciliation_2026-05-10.json`
+- Secret-Nutzung: Binance API-Zugriff erfolgt ueber `resolve_cex_credentials("binance")`, keine Keys im Script/Report.
+- Binance API History 2025-01-01 bis 2026-05-10:
+  - `simple_locked_subscription`: `1` Row, `SOL=9.84095708`
+  - `simple_locked_rewards`: `104` Rows, `SOL=0.14855608`
+  - `simple_flexible_subscription`: `10` Rows, `JUP=35054.64490723`, `DOGE=5900.094`, `BNSOL=22.32304223`, `TRUMP=0.00151204`
+  - `simple_flexible_redemption`: `6` Rows, `JUP=18507.23806847`, `DOGE=5900.09835444`, `BNSOL=22.32305193`, `TRUMP=0.00151209`
+  - `simple_flexible_rewards_realtime`: `172` Rows, `JUP=72.26237433`, `DOGE=0.00435444`, `BNSOL=0.00000970`, `TRUMP=0.00000005`
+- Bewertung:
+  - Produktbewegungen duerfen nicht pauschal als steuerliche Trades importiert werden.
+  - Naechster technischer Schritt: eigene Produktpositions-Historie modellieren; Rewards separat als steuerliche Zufluesse behandeln.
+
+## Update 2026-05-10 16:25 UTC - Produktpositions-Historie als DB/API-Ebene umgesetzt
+- DB:
+  - `src/tax_engine/db/migration_v1.sql`: neue Tabelle `product_position_events`.
+  - `src/tax_engine/db/store.py`: `upsert_product_position_events()` und `list_product_position_events()`.
+- API:
+  - `src/tax_engine/api/product_positions.py`
+  - `GET /api/v1/product-positions/events`
+  - `GET /api/v1/product-positions/summary`
+  - Router in `src/tax_engine/api/app.py` registriert.
+- Binance-Earn-Script erweitert:
+  - `scripts/binance_earn_position_reconciliation_20260510.py` persistiert Produktbewegungen und Reward-Kandidaten in `product_position_events`.
+  - Principal/Subscription/Redemption: `tax_treatment=non_taxable_principal_movement`.
+  - Rewards: `tax_treatment=reward_income_candidate`.
+- Live-Ergebnis nach Import:
+  - `product_position_events`: `293` Binance-Earn-Events.
+  - Principal-Bewegungen: `17`.
+  - Reward-Kandidaten: `276`.
+  - Asset-Summary API:
+    - `BNSOL`: Principal `44.64609416`, Rewards `0.00000970`
+    - `DOGE`: Principal `11800.19235444`, Rewards `0.00435444`
+    - `JUP`: Principal `53561.88297570`, Rewards `72.26237433`
+    - `SOL`: Principal `9.84095708`, Rewards `0.14855608`
+    - `TRUMP`: Principal `0.00302413`, Rewards `50E-9`
+- Validierung:
+  - `python3 -m py_compile src/tax_engine/db/store.py src/tax_engine/api/product_positions.py src/tax_engine/api/app.py scripts/binance_earn_position_reconciliation_20260510.py`
+  - `PYTHONPATH=src python3 -m pytest -q tests/unit/api/test_product_positions_endpoints.py tests/unit/api/test_process_endpoints.py::test_portfolio_lot_aging_uses_known_solana_mint_symbols tests/unit/connectors/test_cex_service.py tests/unit/api/test_cex_connector_endpoints.py` -> `31 passed`
+  - Port `8000` per `systemctl restart steuerreport-api.service`; API live `success`.
+- Naechster Schritt:
+  - Reward-Kandidaten gegen bestehende RAW-Reward-Ereignisse deduplizieren.
+  - Danach nur fehlende Rewards steuerlich integrieren; Principal-Bewegungen bleiben nicht steuerliche Produktpositionsbewegungen.
+
+## Update 2026-05-10 16:30 UTC - Binance-Earn-Rewards dedupliziert und fehlende Rewards importiert
+- Neues Audit:
+  - Script: `scripts/binance_earn_reward_candidate_dedupe_20260510.py`
+  - Report: `docs/202_BINANCE_EARN_REWARD_DEDUPE_2026-05-10.md`
+  - JSON: `var/binance_earn_reward_dedupe_2026-05-10.json`
+- Match-Regel:
+  - Asset gleich, Betrag exakt gleich, Zeitdifferenz maximal `3600` Sekunden.
+  - Vergleich gegen steuerlich wirksame `raw_events` nach Review-Actions.
+- Ergebnis nach Nachimport:
+  - Reward-Kandidaten: `276`
+  - Bereits/jetzt in `raw_events` belegt: `276`
+  - Offen: `0`
+  - Mengen: `BNSOL=0.000009700`, `DOGE=0.00435444`, `JUP=72.26237433`, `SOL=0.14855608`, `TRUMP=50E-9`
+- Fehlende Rewards:
+  - Import-Script: `scripts/import_binance_earn_unmatched_rewards_20260510.py`
+  - Report: `docs/203_BINANCE_EARN_UNMATCHED_REWARD_IMPORT_2026-05-10.md`
+  - Importiert wurden `11` 2026-Rewards als `binance_api` / `interest` / `side=in`.
+  - Mengen: `JUP=3.13961569`, `SOL=0.00593132`.
+- Wichtig:
+  - Principal-Bewegungen bleiben nur in `product_position_events` und sind nicht steuerliche Produktbewegungen.
+  - Naechster Schritt ist Preis-/EUR-Backfill fuer die neuen Reward-Rohereignisse und danach erneuter Steuerlauf/Reconciliation.
+
+## Update 2026-05-10 16:35 UTC - Preisbackfill und Steuerjahre neu gerechnet
+- Preisbackfill:
+  - Command: `PYTHONPATH=src python3 scripts/crypto_price_backfill_usd.py --start-date 2026-05-03 --end-date 2026-05-10 --assets JUP,SOL --provider auto --max-requests 20 --sleep-seconds 0 --timeout-seconds 30`
+  - Ergebnis: `15` Tagespreise aus `coingecko_history` gecached.
+- Steuerjahre:
+  - Command: `PYTHONPATH=src python3 scripts/run_current_tax_years_20260510.py`
+  - Report: `docs/190_CURRENT_TAX_RUNS_2026-05-10.md`
+  - Exporte: `var/report_exports_current_2026-05-10/`
+  - Jobs 2020-2026 alle `completed`.
+- Review-Gate nach Lauf:
+  - `allow_export=False`
+  - Offene Issues: `6`
+  - High: `2` (`HNT 2021`, `JUP 2025`)
+  - Medium: `USDT 2022`, `JUP 2024`, `ZEUS 2024`, `HNT 2025`
+  - Unmatched transfers: `0`
+  - Balance adjustment candidates offen: `0`
+- 2026 nach Binance-Earn-Nachimport:
+  - EÜR Mining-/Reward-Einnahmen: `27.6050838742287413350536939 EUR`
+  - Unresolved valuation im Domain-Summary: `1`, aktuell SHARK-Token-Transfer vom `2026-01-02`; kein Binance-Earn-Blocker.
+
+## Update 2026-05-10 17:05 UTC - JUP 2025 Zero-Cost-Blocker reduziert und KI-Readonly-DB erstellt
+- JUP 2025:
+  - Report: `docs/205_JUP_2025_TRANSFER_CHAIN_FIX_2026-05-10.md`
+  - Persistierter Transfer-Match:
+    - Match-ID `336bc837-6bad-440e-b1fe-e35f8d434dd2`
+    - Outbound `66c83f0938ecfa7de8bc01ae923225d74645b48ead9e26133013c9074ce8bfd9`
+    - Inbound `5d8ab9f6e38c42111eef2e1485c4f2274121426f80c682f8a7d3a63044d04457`
+    - TX `5c7CXkmruCzSXVvQFeqRJxyaTYg5YZ5eUkvcbnqub7i6Xra9xvWEwYwPNNP42apa8QsST8W9AHt3fA17Av2rNfge`
+    - Betrag `8427.293653 JUP`, Zeitdifferenz `97` Sekunden.
+  - Breite Core-Änderung fuer `timestamp_utc`/`side=in|out` wurde bewusst nicht uebernommen, weil sie das Review-Gate mit tausenden alten Transfer-Kandidaten aufblaeht.
+- Steuerjahre danach neu gerechnet:
+  - `docs/190_CURRENT_TAX_RUNS_2026-05-10.md`
+  - 2025 Job `2e43521d-bbe8-4810-95bb-ee85884494e3`
+  - `JUP 2025` ist nicht mehr im Review-Gate.
+  - Review-Gate: `5` offene Issues, `1` High, `0` unmatched Transfers.
+- KI-Readonly-DB:
+  - Script: `scripts/build_ai_readonly_db_snapshot.py`
+  - Doc: `docs/204_AI_READONLY_DB_SNAPSHOT.md`
+  - Snapshot: `/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite`
+  - Datei ist `0444`; SQLite URI: `file:/root/.local/share/steuerreport/ai_readonly/steuerreport_ai_readonly.sqlite?mode=ro&immutable=1`
+  - Nicht enthalten: `settings`, `audit_trail`, `sqlite_sequence`.
+  - Views: `ai_raw_events_flat`, `ai_tax_lines_flat`, `ai_latest_completed_jobs`, `ai_transfer_matches_flat`.
