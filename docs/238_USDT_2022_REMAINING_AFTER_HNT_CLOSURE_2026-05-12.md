@@ -16,15 +16,15 @@ Stand: 2026-05-12
 | Jahr | Job | Tax Lines | Derivative Lines | Aktualisiert |
 | --- | --- | --- | --- | --- |
 | 2021 | `e26811e1-becc-477f-a83c-fdf60cea327b` | 5454 | 43 | 2026-05-12T19:05:43.826732+00:00 |
-| 2022 | `d1c40860-d286-4ff7-a7e7-1a173f99ad4e` | 11765 | 630 | 2026-05-11T21:29:04.737184+00:00 |
+| 2022 | `155397bd-fe29-4827-9b74-f83389a2d836` | 11793 | 630 | 2026-05-12T19:58:24.776475+00:00 |
 
 ## Offene Zeilen
 
 | Line | Asset | Menge | Zeit | Erloes EUR | Quelle |
 | --- | --- | --- | --- | --- | --- |
-| 412 | USDT | 75.10462220620000000000 | 2022-01-05T15:36:46+00:00 | 66.3526805805115140000000000 | fe030531d67b... |
-| 442 | USDT | 168.76468350000000000000 | 2022-01-19T12:45:42+00:00 | 148.7576302710750000000000000 | a20292c0e922... |
-| 514 | USDT | 1325.95876277000000000000 | 2022-01-19T12:56:19+00:00 | 1168.766351443616500000000000 | b5422e7c322b... |
+| 390 | USDT | 75.10462220620000000000 | 2022-01-05T15:36:46+00:00 | 66.3526805805115140000000000 | fe030531d67b... |
+| 420 | USDT | 168.76468350000000000000 | 2022-01-19T12:45:42+00:00 | 148.7576302710750000000000000 | a20292c0e922... |
+| 504 | USDT | 1325.95876277000000000000 | 2022-01-19T12:56:19+00:00 | 1168.766351443616500000000000 | b5422e7c322b... |
 
 ## Raw-Event-Kontext
 
@@ -84,8 +84,8 @@ Stand: 2026-05-12
 
 ## Einordnung
 
-- Line `412` ist Binance-USDT-Verbrauch am `2022-01-05`; am selben Tag sind HNT/USDT-Verkaeufe sichtbar, aber die spaeteren USDT-Spends uebersteigen den belegten Tagesbestand.
-- Lines `442` und `514` sind Pionex-`MXC_USDT`-BUY-Kontext; das erklaert die USDT-Verwendung, aber nicht die vorherige USDT-Herkunft.
+- Line `390` ist Binance-USDT-Verbrauch am `2022-01-05`; am selben Tag sind HNT/USDT-Verkaeufe sichtbar, aber die spaeteren USDT-Spends uebersteigen den belegten Tagesbestand.
+- Lines `420, 504` sind Pionex-`MXC_USDT`-BUY-Kontext; das erklaert die USDT-Verwendung, aber nicht die vorherige USDT-Herkunft.
 - `raw-trading-details.csv` liefert mehr Fill-Details, aber keine separate Opening-Balance oder Strategy-/Bot-Kapitalbuchung.
 - Nebenlisten `others`, `staking`, `structured-products`, `position_futures` sind fuer den fruehen USDT-Block leer.
 - Naechster sicherer Schritt bleibt ein Primaerbeleg: Pionex Opening Balance, Bot/Grid-/Strategy-Statement oder eine explizite Review-Entscheidung.

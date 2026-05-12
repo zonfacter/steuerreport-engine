@@ -259,6 +259,14 @@ def table(headers: list[str], body: list[list[str]]) -> list[str]:
 
 def render_doc(audit: dict[str, Any]) -> str:
     remaining = audit["remaining_lines"]
+    line_by_event = {row["source_event_id"]: row["line_no"] for row in remaining}
+    binance_line = next(
+        (line_by_event.get(event["event_id"], "?") for event in audit["source_events"] if event["source"] == "binance"),
+        "?",
+    )
+    pionex_lines = [
+        line_by_event.get(event["event_id"], "?") for event in audit["source_events"] if event["source"] == "pionex"
+    ]
     total_qty = sum((dec(row["qty"]) for row in remaining), Decimal("0"))
     total_proceeds = sum((dec(row["proceeds_eur"]) for row in remaining), Decimal("0"))
     lines = [
@@ -363,8 +371,8 @@ def render_doc(audit: dict[str, Any]) -> str:
             "",
             "## Einordnung",
             "",
-            "- Line `412` ist Binance-USDT-Verbrauch am `2022-01-05`; am selben Tag sind HNT/USDT-Verkaeufe sichtbar, aber die spaeteren USDT-Spends uebersteigen den belegten Tagesbestand.",
-            "- Lines `442` und `514` sind Pionex-`MXC_USDT`-BUY-Kontext; das erklaert die USDT-Verwendung, aber nicht die vorherige USDT-Herkunft.",
+            f"- Line `{binance_line}` ist Binance-USDT-Verbrauch am `2022-01-05`; am selben Tag sind HNT/USDT-Verkaeufe sichtbar, aber die spaeteren USDT-Spends uebersteigen den belegten Tagesbestand.",
+            f"- Lines `{', '.join(pionex_lines)}` sind Pionex-`MXC_USDT`-BUY-Kontext; das erklaert die USDT-Verwendung, aber nicht die vorherige USDT-Herkunft.",
             "- `raw-trading-details.csv` liefert mehr Fill-Details, aber keine separate Opening-Balance oder Strategy-/Bot-Kapitalbuchung.",
             "- Nebenlisten `others`, `staking`, `structured-products`, `position_futures` sind fuer den fruehen USDT-Block leer.",
             "- Naechster sicherer Schritt bleibt ein Primaerbeleg: Pionex Opening Balance, Bot/Grid-/Strategy-Statement oder eine explizite Review-Entscheidung.",

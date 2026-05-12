@@ -106,6 +106,28 @@ Stand: 2026-05-09
     Binance `Buy Crypto` / `Fiat Order History` / Kartenkauf-Historie oder
     Kreditkarten-/Bankbeleg fuer `2021-12` bis `2022-01` mit Zeit,
     EUR-Betrag, USDT-Menge und Gebuehren.
+- Binance->Pionex-USDT-Transfers per TXID gematcht:
+  `docs/240_USDT_BINANCE_PIONEX_TRANSFER_MATCH_2026-05-12.md`
+  - Skript: `scripts/usdt_binance_pionex_transfer_match_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/usdt_binance_pionex_transfer_match_2026-05-12.json`
+  - Persistierte Matches:
+    `ec1bca59-973d-46a3-9b1a-01fa78311712` fuer `200 USDT` am
+    `2021-12-25`, TX `b742f811...c724182`;
+    `954e170d-a35d-4e60-afba-f637f0f0007a` fuer `1245.38419 USDT` am
+    `2022-01-19`, TX `b930ad78...17aa`.
+  - Onchain-Beleg fuer `b930ad78...17aa`: TRC20-USDT von Binance-Hot-Wallet
+    `TAzsQ9...` an Pionex-Adresse `TMHP82...`, Betrag `1245.38419 USDT`,
+    Blockzeit `2022-01-19T12:51:36+00:00`.
+  - 2022 neu gerechnet: Job `155397bd-fe29-4827-9b74-f83389a2d836`,
+    `tax_lines=11793`, `derivative_lines=630`.
+  - Ergebnis nach Readonly-Rebuild: offener USDT-Rest bleibt `3` Zeilen,
+    `1569.8280684762 USDT`, `1383.876662295203014 EUR`; Zeilen nun
+    `390`, `420`, `504`.
+  - Einordnung: TXID belegt Transferkontinuitaet, aber nicht die
+    urspruengliche USDT-Anschaffung. Der Pionex-MXC-BUY um
+    `2022-01-19T12:45:42+00:00` liegt vor dem Binance-Transfer; fuer ihn
+    bleibt Pionex-Start-/Botbestand oder frueherer Beleg erforderlich.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
