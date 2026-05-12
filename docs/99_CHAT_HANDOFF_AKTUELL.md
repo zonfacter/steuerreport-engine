@@ -34,6 +34,27 @@ Stand: 2026-05-09
   - Gesichert: beide eigenen Wallets plus `10` direkte Gegenwallets.
   - Downloadfehler: `0`.
   - Keine CSV-Dateien committen; nur Manifest/Befunde auswerten.
+- Fairspot-Cache-Auswertung fuer die verbleibenden 2021-HNT-Restzeilen:
+  `docs/236_FAIRSPOT_HNT_2021_REMAINING_CACHE_AUDIT_2026-05-12.md`
+  - Skript: `scripts/fairspot_hnt_2021_remaining_cache_audit_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/fairspot_hnt_2021_remaining_cache_audit_2026-05-12.json`
+  - Fairspot wurde inklusive `rewards_v1`, `payment_v1`, `payment_v2` und
+    Fees ausgewertet.
+  - Vor dem Binance-HNT-Verkauf am `2021-08-17` zeigt Fairspot fuer die
+    Haupt-Wallet nur `20.0447256801337252586127 HNT` Restbestand; es gibt
+    keinen zusaetzlichen Binance-Zufluss zwischen den bekannten Deposits am
+    `2021-08-10` und dem Verkauf am `2021-08-17`.
+  - Vor dem `2021-08-20`-Abgang an Binance (`dd5353...`) ist Fairspot-seitig
+    genug Hauptwallet-Bestand sichtbar, aber ein Teil stammt aus Gegenwallet-
+    Inbounds und darf nicht automatisch als bewertete Cost-Basis verwendet
+    werden.
+  - `14o7...` ist ein belegnaher Roundtrip (`100 HNT` hin, `99.75 HNT`
+    zurueck). `14Ye...` wirkt wegen tausender Zahlungsgegenparteien wie eine
+    Service-/Pool-Wallet und ist kein Eigenwallet-Nachweis.
+  - Kein automatischer Preis-, FX- oder Cost-Basis-Fix wurde abgeleitet.
+    Naechster sicherer Schritt: separater Review-/Importpfad nur fuer
+    belegbare eigene Roundtrips oder nachgelieferte Primaerbelege.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
