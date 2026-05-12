@@ -72,6 +72,23 @@ Stand: 2026-05-09
   - Ergebnis: 2021-HNT-Zero-Cost-Zeilen >= `50 EUR` sind von `3`
     (`40.9633640723911826493873 HNT`, `805.2140123327466767853450105 EUR`)
     auf `0` gefallen.
+- USDT-Restblock nach HNT-Schliessung aktualisiert:
+  `docs/238_USDT_2022_REMAINING_AFTER_HNT_CLOSURE_2026-05-12.md`
+  - Skript: `scripts/usdt_2022_remaining_after_hnt_closure_20260512.py`
+  - Lokaler JSON-Output, nicht committen:
+    `var/usdt_2022_remaining_after_hnt_closure_2026-05-12.json`
+  - Verbleibender >=50-EUR-Restblock ist nur noch `2022/USDT`:
+    `3` Zeilen, `1569.8280684762 USDT`, `1383.876662295203014 EUR`.
+  - Line `412`: Binance-USDT-Verbrauch am `2022-01-05T15:36:46+00:00`;
+    am selben Tag sind Binance-HNT/USDT-Erloese sichtbar, die spaeteren
+    USDT-Spends uebersteigen den belegten Tagesbestand aber weiter.
+  - Lines `442` und `514`: Pionex-`MXC_USDT`-BUY-Kontext; erklaert die
+    USDT-Verwendung, aber nicht die vorherige USDT-Herkunft.
+  - Lokale Pionex-Nebenlisten `others`, `staking`, `structured-products` und
+    `position_futures` sind fuer den fruehen USDT-Block leer; `raw-trading-
+    details.csv` liefert Fill-Details, aber keine Opening-/Bot-Kapitalbuchung.
+  - Kein automatischer Fix: weiter nur mit Pionex Opening Balance,
+    Bot/Grid-/Strategy-Statement oder expliziter Review-Entscheidung.
 - Folgefix: `docs/232_BINANCE_TXHIST_STABLE_COUNTERFLOW_HNT_FIX_2026-05-11.md`
 - Report: `docs/231_HNT_LEGACY_SELF_WALLET_TRANSFER_MATCH_2026-05-11.md`
 - Skript: `scripts/hnt_legacy_self_wallet_transfer_match_20260511.py`
